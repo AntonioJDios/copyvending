@@ -42,11 +42,11 @@ function systemPrompt(analyses: Analysis[], options: Record<string, unknown>, in
     `- acabado: ${finishes || 'sinencuadernacion, grapado, AnillasColores, dos_agujeros, cuatro_agujeros, perforado'}`,
     '- juntos: agrupados | individual · orientacion: vertical | horizontal · sinMargenes: true|false',
     '',
-    'CRITERIOS:',
-    '- Muchas páginas (p.ej. >40) → sugiere encuadernación (anillas si es grande, grapado si es pequeño) y doble cara para ahorrar.',
-    '- COLOR: decide SIEMPRE según el color DETECTADO (campos hasColor / colorPages), nunca por el tipo de documento. Si hasColor=false (ninguna página/imagen tiene color) → color=BN. Si prácticamente todo tiene color → Color. Si solo unas pocas páginas → mantén BN y coméntalo (aún no cobramos color por página).',
+    'CRITERIOS (decide ponderando TODO el contexto, no como reglas rígidas):',
+    '- Muchas páginas (p.ej. >40) → suele convenir encuadernación (anillas si es grande, grapado si es pequeño) y doble cara para ahorrar.',
+    '- COLOR: el color detectado (hasColor / colorPages) es un factor MUY IMPORTANTE, pero decide junto con el resto del contexto (tipo de documento, finalidad, nº de páginas). Guía: si no se detecta color, tiende a BN (más barato); si se detecta color, valora Color según lo que tenga sentido. No propongas color en algo que se ve en blanco y negro solo porque parezca una foto.',
     '- Respeta el tamaño detectado (size). Si es "desconocido", no cambies el tamaño.',
-    '- Foto/imagen suelta → sin encuadernación; el color SEGÚN hasColor: una imagen en blanco y negro (hasColor=false) va en BN, NO sugieras color.',
+    '- Foto/imagen suelta → normalmente sin encuadernación; el color según lo detectado y el contexto.',
     '- No inventes precios (el sistema los calcula). Cambia solo lo que aporte.',
     instructions && instructions.trim()
       ? `\nINSTRUCCIONES DEL DUEÑO (prioritarias, si no contradicen las reglas ni los valores válidos):\n${instructions.trim().slice(0, 2000)}\n`
