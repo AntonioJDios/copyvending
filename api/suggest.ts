@@ -44,9 +44,9 @@ function systemPrompt(analyses: Analysis[], options: Record<string, unknown>, in
     '',
     'CRITERIOS:',
     '- Muchas páginas (p.ej. >40) → sugiere encuadernación (anillas si es grande, grapado si es pequeño) y doble cara para ahorrar.',
-    '- Si NINGUNA página tiene color → color=BN. Si prácticamente todo es color → Color. Si solo unas pocas, mantén BN y coméntalo (aún no cobramos color por página).',
+    '- COLOR: decide SIEMPRE según el color DETECTADO (campos hasColor / colorPages), nunca por el tipo de documento. Si hasColor=false (ninguna página/imagen tiene color) → color=BN. Si prácticamente todo tiene color → Color. Si solo unas pocas páginas → mantén BN y coméntalo (aún no cobramos color por página).',
     '- Respeta el tamaño detectado (size). Si es "desconocido", no cambies el tamaño.',
-    '- Foto/imagen suelta → probablemente Color, sin encuadernación.',
+    '- Foto/imagen suelta → sin encuadernación; el color SEGÚN hasColor: una imagen en blanco y negro (hasColor=false) va en BN, NO sugieras color.',
     '- No inventes precios (el sistema los calcula). Cambia solo lo que aporte.',
     instructions && instructions.trim()
       ? `\nINSTRUCCIONES DEL DUEÑO (prioritarias, si no contradicen las reglas ni los valores válidos):\n${instructions.trim().slice(0, 2000)}\n`
