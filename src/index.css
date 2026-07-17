@@ -2561,3 +2561,11 @@ body {
   resize: vertical;
   box-sizing: border-box;
 }
+
+/* Botón "Preguntar al asistente" del banner de sugerencia */
+.suggest-ai {
+  background: #fff;
+  color: #0b7c8b;
+  border: 1px solid rgba(14, 165, 183, 0.45);
+}
+.suggest-ai:hover { background: rgba(14, 165, 183, 0.08); }

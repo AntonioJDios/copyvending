@@ -1,4 +1,5 @@
 import { useConfigurator } from '../store/useConfigurator';
+import { useAssistant } from '../store/useAssistant';
 
 /** Shows the AI's auto-configuration proposal after files are analysed. */
 export function SuggestionBanner() {
@@ -6,6 +7,8 @@ export function SuggestionBanner() {
   const suggestion = useConfigurator((s) => s.suggestion);
   const applySuggestion = useConfigurator((s) => s.applySuggestion);
   const dismissSuggestion = useConfigurator((s) => s.dismissSuggestion);
+  const chatEnabled = useConfigurator((s) => s.catalog.assistant?.enabled !== false);
+  const openAssistant = useAssistant((s) => s.openWith);
 
   if (analyzing) {
     return (
@@ -25,6 +28,15 @@ export function SuggestionBanner() {
         <button type="button" className="btn btn-primary btn-small" onClick={() => applySuggestion()}>
           Aplicar
         </button>
+        {chatEnabled && (
+          <button
+            type="button"
+            className="btn btn-small suggest-ai"
+            onClick={() => openAssistant([{ role: 'assistant', content: suggestion.reply }])}
+          >
+            ✨ Preguntar al asistente
+          </button>
+        )}
         <button type="button" className="chip" onClick={() => dismissSuggestion()}>
           Descartar
         </button>

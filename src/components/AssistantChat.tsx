@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfigurator } from '../store/useConfigurator';
+import { useAssistant } from '../store/useAssistant';
 import { askAssistant, type ChatMsg } from '../lib/assistant';
 import { computePrice } from '../domain/pricing';
 import { normalize } from '../domain/rules';
@@ -23,7 +24,7 @@ const SUGGESTIONS = ['¿Cuánto cuesta?', 'A4 a doble cara', 'Encuadernar en ani
  */
 export function AssistantChat() {
   const { catalog, config, copias, files, setField, setCopias, setColorAnillas, setColorContraportada, setFileColor } = useConfigurator();
-  const [open, setOpen] = useState(false);
+  const { open, seed, openWith, close, consumeSeed } = useAssistant();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,6 +35,14 @@ export function AssistantChat() {
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open, busy]);
+
+  // Pre-load the chat when opened with a seed (e.g. from the suggestion banner).
+  useEffect(() => {
+    if (open && seed && seed.length) {
+      setMessages(seed);
+      consumeSeed();
+    }
+  }, [open, seed, consumeSeed]);
 
   const docColorOf = (v: unknown): 'no' | 'cover' | 'all' => (v === 'cover' || v === 'all' ? v : 'no');
 
@@ -92,7 +101,7 @@ export function AssistantChat() {
 
   return (
     <>
-      <button type="button" className={`assistant-fab${open ? ' open' : ''}`} onClick={() => setOpen((o) => !o)} aria-label="Asistente">
+      <button type="button" className={`assistant-fab${open ? ' open' : ''}`} onClick={() => (open ? close() : openWith())} aria-label="Asistente">
         {open ? '×' : '💬'}
       </button>
       {open && (
@@ -102,7 +111,7 @@ export function AssistantChat() {
               <strong>Asistente</strong>
               <span className="assistant-sub">pregúntame o dime cómo lo quieres</span>
             </div>
-            <button type="button" className="assistant-x" onClick={() => setOpen(false)} aria-label="Cerrar">
+            <button type="button" className="assistant-x" onClick={() => close()} aria-label="Cerrar">
               ×
             </button>
           </header>
