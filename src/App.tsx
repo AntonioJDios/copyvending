@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useConfigurator } from './store/useConfigurator';
+import { hasBackend } from './lib/api';
+import { AssistantChat } from './components/AssistantChat';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
 import { PriceBar } from './components/PriceBar';
@@ -110,6 +112,7 @@ export default function App() {
       )}
       <PriceBar />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
+      {hasBackend && <AssistantChat />}
     </div>
   );
 }
