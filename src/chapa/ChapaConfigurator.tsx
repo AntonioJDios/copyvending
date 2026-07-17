@@ -46,6 +46,7 @@ export function ChapaConfigurator() {
       kind: 'chapa',
       nombre,
       preview: imageUrl,
+      printImage: imageUrl, // the round crop is the artwork to print
       back: backLabel,
       sizeMm: SIZE_MM,
       cantidad,

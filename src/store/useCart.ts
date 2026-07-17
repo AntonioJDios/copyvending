@@ -32,8 +32,10 @@ export interface CopiasProject extends CartBase {
 /** A personalised mug. */
 export interface TazaProject extends CartBase {
   kind: 'taza';
-  /** Cropped photo preview (data URL). */
+  /** Display preview (data URL) — e.g. the 3D render snapshot. */
   preview: string;
+  /** Print-ready edited artwork delivered to the shop (flat, data URL). */
+  printImage: string;
   cantidad: number;
 }
 
@@ -41,6 +43,8 @@ export interface TazaProject extends CartBase {
 export interface ChapaProject extends CartBase {
   kind: 'chapa';
   preview: string;
+  /** Print-ready edited artwork delivered to the shop (data URL). */
+  printImage: string;
   back: string;
   sizeMm: number;
   cantidad: number;

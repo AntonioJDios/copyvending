@@ -1,4 +1,5 @@
 import { LocalUploadService } from './localUploadService';
+import { R2UploadService } from './r2UploadService';
 import type { UploadService } from './types';
 
 export type { UploadService, UploadResult } from './types';
@@ -16,6 +17,8 @@ export function validateFile(file: File): string | null {
   return null;
 }
 
-/** The single upload service used across the app. Swap this line for the
- *  Vercel Blob adapter when the backend is ready — no UI changes needed. */
-export const uploadService: UploadService = new LocalUploadService();
+/** The single upload service used across the app. If VITE_UPLOAD_API points at
+ *  the Cloudflare Worker, files go to R2; otherwise the local IndexedDB adapter
+ *  runs (demo without a backend). No UI changes either way. */
+const api = (import.meta.env as Record<string, string | undefined>).VITE_UPLOAD_API;
+export const uploadService: UploadService = api ? new R2UploadService(api) : new LocalUploadService();

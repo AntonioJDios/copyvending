@@ -41,6 +41,7 @@ export function MugConfigurator() {
       kind: 'taza',
       nombre,
       preview: snapshot,
+      printImage: textureUrl, // flat edited artwork for sublimation
       cantidad,
       total: price * cantidad,
     });

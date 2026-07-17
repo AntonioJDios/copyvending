@@ -16,9 +16,11 @@ export function PriceBar() {
   const warnings = validate(config, files, catalog);
   const hasFiles = files.length > 0;
   const uploading = files.some((f) => f.uploadStatus === 'uploading');
+  const failed = files.some((f) => f.uploadStatus === 'error');
+  const notReady = uploading || failed;
 
   const onAddToCart = () => {
-    if (!hasFiles || uploading) return;
+    if (!hasFiles || notReady) return;
     flyToCart();
     addToCart({
       id: crypto.randomUUID(),
@@ -83,8 +85,8 @@ export function PriceBar() {
           )}
         </div>
 
-        <button type="button" className="btn btn-primary" disabled={!hasFiles || uploading} onClick={onAddToCart}>
-          {uploading ? 'Subiendo…' : 'Añadir proyecto al carrito'}
+        <button type="button" className="btn btn-primary" disabled={!hasFiles || notReady} onClick={onAddToCart}>
+          {uploading ? 'Subiendo…' : failed ? 'Hay un archivo con error' : 'Añadir proyecto al carrito'}
         </button>
       </div>
     </footer>
