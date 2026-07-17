@@ -288,6 +288,46 @@ export function AdminPanel() {
         {/* Colores */}
         <ColorEditor title="Colores de anillas" items={draft.ringColors} onChange={(items) => change((d) => { d.ringColors = items; })} />
         <ColorEditor title="Colores de contraportada" items={draft.coverColors} onChange={(items) => change((d) => { d.coverColors = items; })} />
+
+        {/* Asistente IA */}
+        <section className="card">
+          <h2>Asistente (IA)</h2>
+          <p className="muted">Controla el chat de ayuda y las sugerencias automáticas al subir documentos.</p>
+          {(() => {
+            const a = draft.assistant ?? { enabled: true, suggestEnabled: true, instructions: '' };
+            const setA = (patch: Partial<typeof a>) =>
+              change((d) => {
+                d.assistant = { enabled: true, suggestEnabled: true, instructions: '', ...d.assistant, ...patch };
+              });
+            return (
+              <>
+                <div className="chk-row">
+                  <label className="chk">
+                    <input type="checkbox" checked={a.enabled} onChange={(e) => setA({ enabled: e.target.checked })} />
+                    Mostrar el chat de ayuda a los clientes
+                  </label>
+                  <label className="chk">
+                    <input type="checkbox" checked={a.suggestEnabled} onChange={(e) => setA({ suggestEnabled: e.target.checked })} />
+                    Proponer configuración automáticamente al subir
+                  </label>
+                </div>
+                <label className="field-block">
+                  Instrucciones para el asistente (texto libre)
+                  <textarea
+                    className="assistant-instructions"
+                    rows={5}
+                    placeholder={'Ej.: "Para un TFM recomienda anillas y doble cara. En un CV sugiere 120 g y color. No propongas color salvo que sea una foto. Si son más de 200 páginas, avisa de que puede tardar."'}
+                    value={a.instructions}
+                    onChange={(e) => setA({ instructions: e.target.value })}
+                  />
+                </label>
+                <p className="muted">
+                  El asistente sigue estas indicaciones, pero nunca puede saltarse los precios ni las opciones válidas del catálogo.
+                </p>
+              </>
+            );
+          })()}
+        </section>
       </div>
 
       <footer className="admin-actions">

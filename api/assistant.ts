@@ -20,6 +20,7 @@ interface Ctx {
   config: Record<string, unknown>;
   copias: number;
   price?: { total?: number; sheets?: number; hasFiles?: boolean; pages?: number };
+  instructions?: string;
   options: {
     sizes?: { key: string; label: string }[];
     grosoresBySize?: Record<string, number[]>;
@@ -69,6 +70,9 @@ function systemPrompt(ctx: Ctx): string {
     '- No inventes el precio de una configuración distinta: si cambias opciones, di que el total se actualiza abajo (el sistema lo recalcula). No des un euro inventado.',
     '- Si el cliente solo pregunta, responde y deja "changes" vacío.',
     '',
+    ctx.instructions && ctx.instructions.trim()
+      ? `\nINSTRUCCIONES DEL DUEÑO DE LA COPISTERÍA (síguelas siempre que no contradigan las reglas ni los valores válidos):\n${ctx.instructions.trim().slice(0, 2000)}\n`
+      : '',
     'RESPONDE SIEMPRE con un único objeto JSON válido, sin texto fuera del JSON:',
     '{ "reply": "<tu respuesta en español>", "changes": { <clave>: <valor>, ... } }',
     'Ejemplo: { "reply": "Listo: A4, doble cara y anillas.", "changes": { "size": "A4", "dobleCara": "1", "acabado": "AnillasColores" } }',
@@ -85,12 +89,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       config?: Record<string, unknown>;
       copias?: number;
       price?: Ctx['price'];
+      instructions?: string;
       options?: Ctx['options'];
     };
     const history = Array.isArray(body.history) ? body.history : [];
 
     const messages = [
-      { role: 'system', content: systemPrompt({ config: body.config ?? {}, copias: body.copias ?? 1, price: body.price, options: body.options ?? {} }) },
+      {
+        role: 'system',
+        content: systemPrompt({
+          config: body.config ?? {},
+          copias: body.copias ?? 1,
+          price: body.price,
+          instructions: body.instructions,
+          options: body.options ?? {},
+        }),
+      },
       ...history.slice(-12).map((m) => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: String(m.content ?? '').slice(0, 2000),

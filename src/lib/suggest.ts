@@ -13,7 +13,7 @@ export async function suggestConfig(analyses: FileAnalysis[], catalog: Catalog):
   const res = await fetch(`${API_BASE ?? ''}/suggest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ analyses, options: buildOptions(catalog) }),
+    body: JSON.stringify({ analyses, options: buildOptions(catalog), instructions: catalog.assistant?.instructions ?? '' }),
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };

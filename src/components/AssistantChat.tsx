@@ -88,6 +88,8 @@ export function AssistantChat() {
     }
   };
 
+  if (catalog.assistant?.enabled === false) return null; // owner hid the assistant
+
   return (
     <>
       <button type="button" className={`assistant-fab${open ? ' open' : ''}`} onClick={() => setOpen((o) => !o)} aria-label="Asistente">

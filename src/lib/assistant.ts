@@ -42,7 +42,14 @@ export async function askAssistant(
   const res = await fetch(`${API_BASE ?? ''}/assistant`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ history, config, copias, price, options: buildOptions(catalog) }),
+    body: JSON.stringify({
+      history,
+      config,
+      copias,
+      price,
+      options: buildOptions(catalog),
+      instructions: catalog.assistant?.instructions ?? '',
+    }),
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };

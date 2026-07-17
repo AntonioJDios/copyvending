@@ -23,7 +23,7 @@ interface Analysis {
   likelyPhoto?: boolean;
 }
 
-function systemPrompt(analyses: Analysis[], options: Record<string, unknown>): string {
+function systemPrompt(analyses: Analysis[], options: Record<string, unknown>, instructions?: string): string {
   const sizes = (options.sizes as { key: string; label: string }[] | undefined)?.map((s) => `${s.key} (${s.label})`).join(', ');
   const finishes = (options.finishes as { key: string; label: string }[] | undefined)?.map((f) => `${f.key} (${f.label})`).join(', ');
   return [
@@ -48,6 +48,9 @@ function systemPrompt(analyses: Analysis[], options: Record<string, unknown>): s
     '- Respeta el tamaño detectado (size). Si es "desconocido", no cambies el tamaño.',
     '- Foto/imagen suelta → probablemente Color, sin encuadernación.',
     '- No inventes precios (el sistema los calcula). Cambia solo lo que aporte.',
+    instructions && instructions.trim()
+      ? `\nINSTRUCCIONES DEL DUEÑO (prioritarias, si no contradicen las reglas ni los valores válidos):\n${instructions.trim().slice(0, 2000)}\n`
+      : '',
     '',
     'RESPONDE SOLO con un objeto JSON válido:',
     '{ "reply": "<explicación breve y amable>", "changes": { <clave>: <valor>, ... } }',
@@ -58,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
     if (!API_KEY) return res.status(500).json({ error: 'Falta GROQ_API_KEY (o LLM_API_KEY) en el servidor' });
-    const body = (req.body ?? {}) as { analyses?: Analysis[]; options?: Record<string, unknown> };
+    const body = (req.body ?? {}) as { analyses?: Analysis[]; options?: Record<string, unknown>; instructions?: string };
     const analyses = Array.isArray(body.analyses) ? body.analyses.slice(0, 12) : [];
     if (analyses.length === 0) return res.status(400).json({ error: 'sin documentos que analizar' });
 
@@ -70,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         temperature: 0.2,
         max_tokens: 500,
         response_format: { type: 'json_object' },
-        messages: [{ role: 'system', content: systemPrompt(analyses, body.options ?? {}) }],
+        messages: [{ role: 'system', content: systemPrompt(analyses, body.options ?? {}, body.instructions) }],
       }),
     });
     if (!r.ok) {

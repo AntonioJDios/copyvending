@@ -262,10 +262,11 @@ export function FileGrid() {
   // to propose the best/cheapest configuration. Best-effort: a nicety, never blocks.
   const runSuggestion = async (fileList: File[]) => {
     if (!hasBackend || fileList.length === 0) return;
+    const { catalog } = useConfigurator.getState();
+    if (catalog.assistant?.suggestEnabled === false) return; // owner turned it off
     setAnalyzing(true);
     try {
       const analyses = await Promise.all(fileList.map((f) => analyzeFile(f)));
-      const { catalog } = useConfigurator.getState();
       const s = await suggestConfig(analyses, catalog);
       if (s.changes && Object.keys(s.changes).length) setSuggestion(s);
     } catch {

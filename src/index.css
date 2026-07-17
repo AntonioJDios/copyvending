@@ -2548,3 +2548,16 @@ body {
   .suggest-banner { flex-wrap: wrap; }
   .suggest-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* Instrucciones del asistente (admin) */
+.assistant-instructions {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  box-sizing: border-box;
+}

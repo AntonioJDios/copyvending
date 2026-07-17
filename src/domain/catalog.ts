@@ -17,10 +17,22 @@ export interface ColorOption {
   enabled?: boolean;
 }
 
+/** Owner-editable behaviour of the AI assistant (from the admin panel). */
+export interface AssistantConfig {
+  /** Show the chat assistant to customers. */
+  enabled: boolean;
+  /** Auto-propose a configuration when files are uploaded. */
+  suggestEnabled: boolean;
+  /** Free-text guidance injected into the assistant/suggestion prompts. */
+  instructions: string;
+}
+
 export interface Catalog {
   version: 6;
   /** Quick-start profiles shown above the options. */
   presets: Preset[];
+  /** AI assistant behaviour (optional; absent = defaults on). */
+  assistant?: AssistantConfig;
   /** Paper sizes offered to the customer. */
   enabledSizes: Size[];
   /** Ring/spiral colors offered when the finish is AnillasColores. */
@@ -90,6 +102,11 @@ export const SIZE_LABEL: Record<Size, string> = {
 export const DEFAULT_CATALOG: Catalog = {
   version: 6,
   presets: DEFAULT_PRESETS,
+  assistant: {
+    enabled: true,
+    suggestEnabled: true,
+    instructions: '',
+  },
   enabledSizes: ['A4', 'A3', 'A5'],
   ringColors: [
     { name: 'Transparente', hex: '#f2f2f2', img: '/anillas/transparente.png', enabled: true },
