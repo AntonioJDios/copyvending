@@ -14,7 +14,8 @@ export interface FileAnalysis {
   colorPages: number;
   colorApprox: boolean;
   hasColor: boolean;
-  /** First ~500 chars of page 1 (to infer the document type). Never the whole doc. */
+  /** ~30% of page 1's text (bounded) so the model can guess the document type.
+   *  Only page 1 — never the whole doc, so token cost stays tiny. */
   textExcerpt: string;
   likelyPhoto: boolean;
 }
@@ -109,12 +110,15 @@ export async function analyzeFile(file: File, onProgress?: (done: number, total:
   let textExcerpt = '';
   try {
     const tc = await p1.getTextContent();
-    textExcerpt = tc.items
+    const full = tc.items
       .map((it) => ('str' in it ? it.str : ''))
       .join(' ')
       .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 500);
+      .trim();
+    // ~30% of page 1 (from the start, where titles live), min 600, hard cap 2000
+    // chars so the token cost stays tiny (one page, never the whole doc).
+    const take = Math.min(2000, Math.max(600, Math.round(full.length * 0.3)));
+    textExcerpt = full.slice(0, take);
   } catch {
     /* scanned PDF w/o text layer */
   }

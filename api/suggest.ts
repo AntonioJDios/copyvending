@@ -28,6 +28,7 @@ function systemPrompt(analyses: Analysis[], options: Record<string, unknown>): s
   const finishes = (options.finishes as { key: string; label: string }[] | undefined)?.map((f) => `${f.key} (${f.label})`).join(', ');
   return [
     'Eres un experto de imprenta. Te doy el análisis (determinista) de los documentos que un cliente acaba de subir.',
+    'Cada documento incluye "textExcerpt" (parte del texto de su primera página). ÚSALO para adivinar qué es (TFM, apuntes, CV, contrato, póster, presentación, foto…) y menciónalo en tu explicación.',
     'Propón la MEJOR configuración de impresión, buscando además que sea ECONÓMICA, y explícalo en 1-2 frases claras en español.',
     '',
     'Documentos analizados:',
