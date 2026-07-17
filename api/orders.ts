@@ -1,5 +1,33 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { ensureSchema, sql } from './_db';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+
+// Self-contained. Lazy DB init so a missing DATABASE_URL returns a clean JSON
+// error instead of crashing the function at import time.
+let _sql: NeonQueryFunction<false, false> | null = null;
+let _ready: Promise<void> | null = null;
+
+function db(): NeonQueryFunction<false, false> {
+  if (!_sql) {
+    if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL en el servidor');
+    _sql = neon(process.env.DATABASE_URL);
+  }
+  return _sql;
+}
+function ensureSchema(): Promise<void> {
+  if (!_ready) {
+    _ready = (async () => {
+      await db()`
+        create table if not exists orders (
+          id text primary key, created_at bigint not null, source text not null,
+          customer jsonb not null, items jsonb not null,
+          total double precision not null, status text not null)`;
+    })().catch((e) => {
+      _ready = null;
+      throw e;
+    });
+  }
+  return _ready;
+}
 
 interface OrderRow {
   id: string;
@@ -10,7 +38,6 @@ interface OrderRow {
   total: string | number;
   status: string;
 }
-
 function mapRow(r: OrderRow) {
   return {
     id: r.id,
@@ -22,7 +49,6 @@ function mapRow(r: OrderRow) {
     status: r.status,
   };
 }
-
 function queryId(req: VercelRequest): string | undefined {
   const v = req.query.id;
   return Array.isArray(v) ? v[0] : v;
@@ -32,6 +58,7 @@ function queryId(req: VercelRequest): string | undefined {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
+    const sql = db();
 
     if (req.method === 'GET') {
       const rows = (await sql`

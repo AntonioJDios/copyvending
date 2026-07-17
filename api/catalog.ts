@@ -1,11 +1,36 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { ensureSchema, sql } from './_db';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-/** Shared admin settings (catalog / prices) so every device sees the same shop
- *  configuration. Stored as a single JSON row in `settings`. */
+// Self-contained. Lazy DB init (see orders.ts).
+let _sql: NeonQueryFunction<false, false> | null = null;
+let _ready: Promise<void> | null = null;
+
+function db(): NeonQueryFunction<false, false> {
+  if (!_sql) {
+    if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL en el servidor');
+    _sql = neon(process.env.DATABASE_URL);
+  }
+  return _sql;
+}
+function ensureSchema(): Promise<void> {
+  if (!_ready) {
+    _ready = (async () => {
+      await db()`
+        create table if not exists settings (
+          key text primary key, value jsonb not null, updated_at bigint not null)`;
+    })().catch((e) => {
+      _ready = null;
+      throw e;
+    });
+  }
+  return _ready;
+}
+
+/** Shared admin settings (catalog / prices) so every device sees the same shop. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
+    const sql = db();
 
     if (req.method === 'GET') {
       const rows = (await sql`select value from settings where key = 'catalog'`) as { value: unknown }[];
