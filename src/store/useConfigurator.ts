@@ -58,6 +58,10 @@ interface ConfiguratorState {
   proyectoId: string;
   /** Customer-facing name for this print project. */
   nombreProyecto: string;
+  /** AI proposal for the uploaded files (config + explanation), or null. */
+  suggestion: { reply: string; changes: Record<string, unknown> } | null;
+  /** True while the uploaded files are being analysed for a suggestion. */
+  analyzing: boolean;
   /** Selected ring and back-cover colors (only meaningful for AnillasColores). */
   colorAnillas: string;
   colorContraportada: string;
@@ -80,6 +84,11 @@ interface ConfiguratorState {
   loadProject: (project: CartProject) => void;
   /** Refresh the catalog from the shared backend (if wired). */
   fetchCatalog: () => Promise<void>;
+  setAnalyzing: (b: boolean) => void;
+  setSuggestion: (s: { reply: string; changes: Record<string, unknown> } | null) => void;
+  /** Apply the current AI suggestion to the config and clear it. */
+  applySuggestion: () => void;
+  dismissSuggestion: () => void;
 }
 
 const initialCatalog = loadCatalog();
@@ -92,6 +101,8 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   comentario: '',
   proyectoId: crypto.randomUUID(),
   nombreProyecto: '',
+  suggestion: null,
+  analyzing: false,
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
 
@@ -129,7 +140,8 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   setCopias: (n) => set({ copias: Math.max(1, Math.floor(n) || 1) }),
   setComentario: (comentario) => set({ comentario }),
   setNombreProyecto: (nombreProyecto) => set({ nombreProyecto }),
-  clearProject: () => set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID() }),
+  clearProject: () =>
+    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false }),
   loadProject: (p) => {
     if (p.kind !== 'copias') return;
     set((s) => ({
@@ -172,4 +184,29 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
       /* keep the local cache */
     }
   },
+
+  setAnalyzing: (analyzing) => set({ analyzing }),
+  setSuggestion: (suggestion) => set({ suggestion }),
+  dismissSuggestion: () => set({ suggestion: null }),
+  applySuggestion: () =>
+    set((s) => {
+      const ch = s.suggestion?.changes;
+      if (!ch) return { suggestion: null };
+      const cfgPatch: Record<string, unknown> = {};
+      let copias = s.copias;
+      let colorAnillas = s.colorAnillas;
+      let colorContraportada = s.colorContraportada;
+      let files = s.files;
+      for (const [k, v] of Object.entries(ch)) {
+        if (k === 'copias') copias = Math.max(1, Math.floor(Number(v)) || 1);
+        else if (k === 'colorAnillas') colorAnillas = String(v);
+        else if (k === 'colorContraportada') colorContraportada = String(v);
+        else if (k === 'docColor') {
+          const c = v === 'cover' || v === 'all' ? v : 'no';
+          files = files.map((f) => ({ ...f, color: c }));
+        } else cfgPatch[k] = v;
+      }
+      const config = normalize({ ...s.config, ...cfgPatch }, s.catalog);
+      return { config, copias, colorAnillas, colorContraportada, files, suggestion: null };
+    }),
 }));

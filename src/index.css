@@ -2513,3 +2513,38 @@ body {
   cursor: pointer;
 }
 .assistant-input button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Banner de sugerencia (auto-configurador IA) ─────────────────── */
+.suggest-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(14, 165, 183, 0.12), rgba(14, 165, 183, 0.05));
+  border: 1px solid rgba(14, 165, 183, 0.3);
+  animation: suggest-in 0.25s ease;
+}
+@keyframes suggest-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.suggest-icon { font-size: 22px; line-height: 1; }
+.suggest-text { flex: 1; margin: 0; font-size: 14px; color: #0f3f47; line-height: 1.4; }
+.suggest-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-small { padding: 7px 14px; font-size: 13px; }
+.suggest-analyzing { color: #0b7c8b; font-size: 14px; }
+.suggest-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(14, 165, 183, 0.3);
+  border-top-color: var(--brand, #0ea5b7);
+  border-radius: 50%;
+  animation: suggest-spin 0.7s linear infinite;
+}
+@keyframes suggest-spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) {
+  .suggest-banner { flex-wrap: wrap; }
+  .suggest-actions { width: 100%; justify-content: flex-end; }
+}

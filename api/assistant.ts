@@ -13,6 +13,7 @@ const CONFIG_KEYS = [
   'size', 'color', 'grosor', 'dobleCara', 'orientacion', 'paginasPorHoja',
   'acabado', 'acabadoFolios', 'juntos', 'sinMargenes', 'ladoEncuadernacion',
   'foliosDelante', 'foliosDetras', 'colorAnillas', 'colorContraportada', 'copias',
+  'docColor',
 ];
 
 interface Ctx {
@@ -54,6 +55,7 @@ function systemPrompt(ctx: Ctx): string {
     `- colorAnillas (solo si acabado=AnillasColores): ${(o.ringColors || []).join(', ')}`,
     `- colorContraportada (solo si acabado=AnillasColores): ${(o.coverColors || []).join(', ')}`,
     '- copias: número de copias del pedido',
+    "- docColor (color POR DOCUMENTO, solo útil con color=BN y con ficheros subidos): 'no' (todo en B/N) | 'cover' (SOLO la PORTADA en color) | 'all' (el documento entero en color). Ejemplos: 'quiero la portada en color' → { \"color\": \"BN\", \"docColor\": \"cover\" }; 'imprime todo en color' → { \"color\": \"Color\" }.",
     '',
     `Configuración ACTUAL del cliente: ${JSON.stringify(ctx.config)} · copias: ${ctx.copias}`,
     ctx.price?.hasFiles

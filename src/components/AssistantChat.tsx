@@ -22,7 +22,7 @@ const SUGGESTIONS = ['¿Cuánto cuesta?', 'A4 a doble cara', 'Encuadernar en ani
  * always computed by the domain (never by the model).
  */
 export function AssistantChat() {
-  const { catalog, config, copias, files, setField, setCopias, setColorAnillas, setColorContraportada } = useConfigurator();
+  const { catalog, config, copias, files, setField, setCopias, setColorAnillas, setColorContraportada, setFileColor } = useConfigurator();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
@@ -35,12 +35,15 @@ export function AssistantChat() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open, busy]);
 
+  const docColorOf = (v: unknown): 'no' | 'cover' | 'all' => (v === 'cover' || v === 'all' ? v : 'no');
+
   const applyChanges = (changes: Record<string, unknown>) => {
     const set = setField as unknown as (k: string, v: unknown) => void;
     for (const [k, v] of Object.entries(changes)) {
       if (k === 'copias') setCopias(Number(v));
       else if (k === 'colorAnillas') setColorAnillas(String(v));
       else if (k === 'colorContraportada') setColorContraportada(String(v));
+      else if (k === 'docColor') files.forEach((f) => setFileColor(f.id, docColorOf(v)));
       else set(k as keyof Configuracion, v);
     }
   };
@@ -54,7 +57,8 @@ export function AssistantChat() {
     }
     const cfg = normalize({ ...config, ...patch }, catalog);
     const nCopias = 'copias' in changes ? Math.max(1, Math.floor(Number(changes.copias)) || 1) : copias;
-    return computePrice({ config: cfg, files, copias: nCopias }, catalog).total;
+    const pricedFiles = 'docColor' in changes ? files.map((f) => ({ ...f, color: docColorOf(changes.docColor) })) : files;
+    return computePrice({ config: cfg, files: pricedFiles, copias: nCopias }, catalog).total;
   };
 
   const send = async (preset?: string) => {

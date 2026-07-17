@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { useConfigurator } from './store/useConfigurator';
 import { hasBackend } from './lib/api';
 import { AssistantChat } from './components/AssistantChat';
+import { SuggestionBanner } from './components/SuggestionBanner';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
 import { PriceBar } from './components/PriceBar';
@@ -91,6 +92,7 @@ export default function App() {
       <button type="button" className="options-toggle" onClick={() => setOptionsOpen(true)}>
         ⚙ Opciones de impresión
       </button>
+      {hasBackend && <SuggestionBanner />}
       <div className={`layout${optionsCollapsed ? ' focus' : ''}`}>
         <OptionsPanel
           open={optionsOpen}

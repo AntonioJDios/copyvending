@@ -5,6 +5,9 @@ import { readFileInfo, renderPdfPage } from '../lib/pdf';
 import { bindingExtraCost, documentCost } from '../domain/pricing';
 import { FINISH_LABEL } from '../domain/catalog';
 import { MAX_FILE_MB, uploadService, validateFile } from '../lib/uploads';
+import { analyzeFile } from '../lib/analyzePdf';
+import { suggestConfig } from '../lib/suggest';
+import { hasBackend } from '../lib/api';
 import type { DocFile } from '../domain/types';
 import { useConfigurator } from '../store/useConfigurator';
 import { SpiralBinding } from './SpiralBinding';
@@ -248,12 +251,29 @@ function GroupedBinding() {
 }
 
 export function FileGrid() {
-  const { files, addFiles, patchFile, reorder, proyectoId } = useConfigurator();
+  const { files, addFiles, patchFile, reorder, proyectoId, setAnalyzing, setSuggestion } = useConfigurator();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  // Analyse the uploaded files (deterministic, in-browser) and ask the assistant
+  // to propose the best/cheapest configuration. Best-effort: a nicety, never blocks.
+  const runSuggestion = async (fileList: File[]) => {
+    if (!hasBackend || fileList.length === 0) return;
+    setAnalyzing(true);
+    try {
+      const analyses = await Promise.all(fileList.map((f) => analyzeFile(f)));
+      const { catalog } = useConfigurator.getState();
+      const s = await suggestConfig(analyses, catalog);
+      if (s.changes && Object.keys(s.changes).length) setSuggestion(s);
+    } catch {
+      /* suggestion is optional — stay silent on failure */
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const ingest = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -306,6 +326,9 @@ export function FileGrid() {
           .then(({ key }) => patchFile(doc.id, { uploadStatus: 'done', uploadProgress: 1, storageKey: key }))
           .catch((e: unknown) => patchFile(doc.id, { uploadStatus: 'error', uploadError: e instanceof Error ? e.message : 'Error' }));
       }
+
+      // Analyse + propose configuration in the background (doesn't block the UI).
+      void runSuggestion(accepted);
     } finally {
       setBusy(false);
       if (fileInput.current) fileInput.current.value = '';
