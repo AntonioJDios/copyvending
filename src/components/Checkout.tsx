@@ -31,21 +31,30 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [saving, setSaving] = useState(false);
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
   const canContinue = nombre.trim().length > 0 && apellidos.trim().length > 0;
 
-  const confirm = () => {
-    addOrder({
-      id: orderId,
-      createdAt: Date.now(),
-      source: 'mostrador',
-      customer: { nombre: nombre.trim(), apellidos: apellidos.trim(), telefono: telefono.trim() || undefined },
-      items: items.map((p) => ({ ...p })),
-      total,
-      status: 'nuevo',
-    });
-    setStep(2);
+  const confirm = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await addOrder({
+        id: orderId,
+        createdAt: Date.now(),
+        source: 'mostrador',
+        customer: { nombre: nombre.trim(), apellidos: apellidos.trim(), telefono: telefono.trim() || undefined },
+        items: items.map((p) => ({ ...p })),
+        total,
+        status: 'nuevo',
+      });
+      setStep(2);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');
+    } finally {
+      setSaving(false);
+    }
   };
   const finish = () => {
     clear();
@@ -133,8 +142,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               <span>Total (se paga en el mostrador)</span>
               <strong>{eur(total)}</strong>
             </div>
-            <button type="button" className="btn btn-primary checkout-next" onClick={confirm}>
-              Confirmar pedido
+            <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving}>
+              {saving ? 'Enviando…' : 'Confirmar pedido'}
             </button>
           </section>
         )}

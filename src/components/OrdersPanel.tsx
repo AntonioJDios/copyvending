@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useOrders, type Order, type OrderStatus } from '../store/useOrders';
 import type { CartProject } from '../store/useCart';
 import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain/orderSpec';
@@ -155,7 +155,17 @@ function OrderCard({ order }: { order: Order }) {
 
 export function OrdersPanel() {
   const orders = useOrders((s) => s.orders);
+  const loading = useOrders((s) => s.loading);
+  const fetchOrders = useOrders((s) => s.fetchOrders);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
+
+  // Load from the shared backend on open and poll so orders placed on other
+  // devices/browsers show up here without a manual reload.
+  useEffect(() => {
+    void fetchOrders();
+    const t = setInterval(() => void fetchOrders(), 15000);
+    return () => clearInterval(t);
+  }, [fetchOrders]);
 
   const counts = {
     todos: orders.length,
@@ -171,6 +181,9 @@ export function OrdersPanel() {
       <header className="topbar">
         <h1>Pedidos</h1>
         <nav className="topnav">
+          <button type="button" className="btn" onClick={() => void fetchOrders()} disabled={loading}>
+            {loading ? 'Actualizando…' : '↻ Actualizar'}
+          </button>
           <a className="btn" href="#admin">
             Catálogo
           </a>

@@ -1,8 +1,9 @@
+import { API_BASE } from '../api';
 import { LocalUploadService } from './localUploadService';
 import { R2UploadService } from './r2UploadService';
 import type { UploadService } from './types';
 
-export type { UploadService, UploadResult } from './types';
+export type { UploadService, UploadResult, UploadOptions } from './types';
 
 /** Max upload size and accepted types (shop policy; move to catalog later). */
 export const MAX_FILE_MB = 300;
@@ -17,8 +18,7 @@ export function validateFile(file: File): string | null {
   return null;
 }
 
-/** The single upload service used across the app. If VITE_UPLOAD_API points at
- *  the Cloudflare Worker, files go to R2; otherwise the local IndexedDB adapter
- *  runs (demo without a backend). No UI changes either way. */
-const api = (import.meta.env as Record<string, string | undefined>).VITE_UPLOAD_API;
-export const uploadService: UploadService = api ? new R2UploadService(api) : new LocalUploadService();
+/** The single upload service used across the app. With a backend (VITE_API_BASE
+ *  → /api/presign → R2) files are reachable across devices; otherwise the local
+ *  IndexedDB adapter runs (demo without a backend). No UI changes either way. */
+export const uploadService: UploadService = API_BASE ? new R2UploadService(API_BASE) : new LocalUploadService();

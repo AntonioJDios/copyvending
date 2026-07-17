@@ -6,6 +6,8 @@ import { useCart } from '../store/useCart';
 import { useConfigurator } from '../store/useConfigurator';
 import { flyToCart } from '../lib/flyToCart';
 import { CartButton } from '../components/CartButton';
+import { uploadService } from '../lib/uploads';
+import { dataUrlToFile, downscaleDataUrl } from '../lib/imageDownscale';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -30,6 +32,7 @@ export function ChapaConfigurator() {
   const [back, setBack] = useState<Back>('imperdible');
   const [nombre, setNombre] = useState('');
   const [cantidad, setCantidad] = useState(1);
+  const [adding, setAdding] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -38,24 +41,36 @@ export function ChapaConfigurator() {
   const price = useConfigurator((s) => s.catalog.badgePrice);
   const addToCart = useCart((s) => s.add);
 
-  const onAddToCart = () => {
-    if (!imageUrl) return;
+  const onAddToCart = async () => {
+    if (!imageUrl || adding) return;
     flyToCart({ el: previewRef.current, imageUrl, round: true });
-    addToCart({
-      id: crypto.randomUUID(),
-      kind: 'chapa',
-      nombre,
-      preview: imageUrl,
-      printImage: imageUrl, // the round crop is the artwork to print
-      back: backLabel,
-      sizeMm: SIZE_MM,
-      cantidad,
-      total: price * cantidad,
-    });
-    setOriginalUrl(null);
-    setImageUrl(null);
-    setNombre('');
-    setCantidad(1);
+    setAdding(true);
+    try {
+      const id = crypto.randomUUID();
+      // Full-res round crop → storage (print artwork); order keeps just the key.
+      const file = await dataUrlToFile(imageUrl, 'chapa.png');
+      const { key } = await uploadService.upload(file, { projectId: id });
+      const preview = await downscaleDataUrl(imageUrl, 480);
+      addToCart({
+        id,
+        kind: 'chapa',
+        nombre,
+        preview,
+        printImageKey: key,
+        back: backLabel,
+        sizeMm: SIZE_MM,
+        cantidad,
+        total: price * cantidad,
+      });
+      setOriginalUrl(null);
+      setImageUrl(null);
+      setNombre('');
+      setCantidad(1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo añadir la chapa. Inténtalo de nuevo.');
+    } finally {
+      setAdding(false);
+    }
   };
 
   const onFile = (file: File | undefined) => {
@@ -158,8 +173,8 @@ export function ChapaConfigurator() {
               <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
             </label>
             <span className="product-price">{eur(price * cantidad)}</span>
-            <button type="button" className="btn btn-primary" disabled={!imageUrl} onClick={onAddToCart}>
-              Añadir al carrito
+            <button type="button" className="btn btn-primary" disabled={!imageUrl || adding} onClick={onAddToCart}>
+              {adding ? 'Añadiendo…' : 'Añadir al carrito'}
             </button>
           </div>
         </section>

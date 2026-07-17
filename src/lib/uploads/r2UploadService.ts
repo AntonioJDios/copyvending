@@ -1,9 +1,9 @@
-import type { UploadResult, UploadService } from './types';
+import type { UploadOptions, UploadResult, UploadService } from './types';
 
 /**
- * Real adapter: asks the signing Worker for a presigned URL and uploads the
- * file directly to R2 (the bytes never pass through the Worker → no size
- * limits). Downloads/deletes also go through short-lived presigned URLs.
+ * Real adapter: asks the signing API (/api/presign on Vercel) for a presigned
+ * URL and uploads the file directly to R2 (the bytes never pass through the
+ * function → no size limits). Downloads/deletes also go through the API.
  */
 export class R2UploadService implements UploadService {
   private api: string;
@@ -24,12 +24,14 @@ export class R2UploadService implements UploadService {
     return res.json() as Promise<T>;
   }
 
-  async upload(file: File, onProgress?: (f: number) => void, signal?: AbortSignal): Promise<UploadResult> {
+  async upload(file: File, opts: UploadOptions = {}): Promise<UploadResult> {
+    const { projectId, onProgress, signal } = opts;
     const { key, url } = await this.presign<{ key: string; url: string }>({
       op: 'put',
       name: file.name,
       type: file.type,
       size: file.size,
+      projectId,
     });
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();

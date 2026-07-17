@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { CartProject } from './useCart';
+import { API_BASE, apiGet, apiSend } from '../lib/api';
 
 export type OrderStatus = 'nuevo' | 'en_proceso' | 'listo' | 'entregado';
 export type OrderSource = 'mostrador' | 'online';
@@ -16,7 +17,7 @@ export interface Order {
 
 const KEY = 'copisteria/orders/v1';
 
-function load(): Order[] {
+function loadLocal(): Order[] {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return JSON.parse(raw) as Order[];
@@ -25,7 +26,7 @@ function load(): Order[] {
   }
   return [];
 }
-function save(orders: Order[]): void {
+function saveLocal(orders: Order[]): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(orders));
   } catch {
@@ -35,29 +36,47 @@ function save(orders: Order[]): void {
 
 interface OrdersState {
   orders: Order[];
-  addOrder: (order: Order) => void;
-  setStatus: (id: string, status: OrderStatus) => void;
-  remove: (id: string) => void;
+  loading: boolean;
+  /** Reload from the shared backend (no-op in local mode). */
+  fetchOrders: () => Promise<void>;
+  addOrder: (order: Order) => Promise<void>;
+  setStatus: (id: string, status: OrderStatus) => Promise<void>;
+  remove: (id: string) => Promise<void>;
 }
 
-export const useOrders = create<OrdersState>()((set) => ({
-  orders: load(),
-  addOrder: (order) =>
-    set((s) => {
-      const orders = [order, ...s.orders];
-      save(orders);
-      return { orders };
-    }),
-  setStatus: (id, status) =>
-    set((s) => {
-      const orders = s.orders.map((o) => (o.id === id ? { ...o, status } : o));
-      save(orders);
-      return { orders };
-    }),
-  remove: (id) =>
-    set((s) => {
-      const orders = s.orders.filter((o) => o.id !== id);
-      save(orders);
-      return { orders };
-    }),
+export const useOrders = create<OrdersState>()((set, get) => ({
+  // With a backend, start empty and let fetchOrders fill it; otherwise localStorage.
+  orders: API_BASE ? [] : loadLocal(),
+  loading: false,
+
+  fetchOrders: async () => {
+    if (!API_BASE) return;
+    set({ loading: true });
+    try {
+      const orders = await apiGet<Order[]>('/orders');
+      set({ orders });
+    } catch {
+      /* keep whatever we had; backoffice shows a stale-but-usable list */
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  addOrder: async (order) => {
+    set((s) => ({ orders: [order, ...s.orders] }));
+    if (API_BASE) await apiSend('POST', '/orders', order);
+    else saveLocal(get().orders);
+  },
+
+  setStatus: async (id, status) => {
+    set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, status } : o)) }));
+    if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { status });
+    else saveLocal(get().orders);
+  },
+
+  remove: async (id) => {
+    set((s) => ({ orders: s.orders.filter((o) => o.id !== id) }));
+    if (API_BASE) await apiSend('DELETE', `/orders?id=${encodeURIComponent(id)}`);
+    else saveLocal(get().orders);
+  },
 }));

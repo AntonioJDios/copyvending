@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { useConfigurator } from './store/useConfigurator';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
 import { PriceBar } from './components/PriceBar';
@@ -27,9 +28,15 @@ function useHashRoute(): string {
 
 export default function App() {
   const route = useHashRoute();
+  const fetchCatalog = useConfigurator((s) => s.fetchCatalog);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+
+  // Pull the shared admin catalog (prices) so every device shows the same shop.
+  useEffect(() => {
+    void fetchCatalog();
+  }, [fetchCatalog]);
 
   if (route.startsWith('#admin'))
     return (

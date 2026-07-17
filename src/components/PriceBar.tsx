@@ -7,7 +7,7 @@ import { flyToCart } from '../lib/flyToCart';
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
 export function PriceBar() {
-  const { catalog, config, files, copias, comentario, nombreProyecto, setCopias, setComentario, clearProject } =
+  const { catalog, config, files, copias, comentario, nombreProyecto, proyectoId, setCopias, setComentario, clearProject } =
     useConfigurator();
   const colorAnillas = useConfigurator((s) => s.colorAnillas);
   const colorContraportada = useConfigurator((s) => s.colorContraportada);
@@ -23,7 +23,7 @@ export function PriceBar() {
     if (!hasFiles || notReady) return;
     flyToCart();
     addToCart({
-      id: crypto.randomUUID(),
+      id: proyectoId, // same id as the R2 folder jobs/<proyectoId>/…
       kind: 'copias',
       nombre: nombreProyecto,
       config: { ...config },

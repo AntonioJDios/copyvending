@@ -248,7 +248,7 @@ function GroupedBinding() {
 }
 
 export function FileGrid() {
-  const { files, addFiles, patchFile, reorder } = useConfigurator();
+  const { files, addFiles, patchFile, reorder, proyectoId } = useConfigurator();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -298,10 +298,11 @@ export function FileGrid() {
       }
       addFiles(started.map((s) => s.doc));
 
-      // Kick off the uploads (abstraction: local now, Vercel Blob later).
+      // Kick off the uploads (abstraction: R2 via /api/presign, or local).
+      // projectId groups this project's files into one R2 folder.
       for (const { doc, file } of started) {
         uploadService
-          .upload(file, (p) => patchFile(doc.id, { uploadProgress: p }))
+          .upload(file, { projectId: proyectoId, onProgress: (p) => patchFile(doc.id, { uploadProgress: p }) })
           .then(({ key }) => patchFile(doc.id, { uploadStatus: 'done', uploadProgress: 1, storageKey: key }))
           .catch((e: unknown) => patchFile(doc.id, { uploadStatus: 'error', uploadError: e instanceof Error ? e.message : 'Error' }));
       }

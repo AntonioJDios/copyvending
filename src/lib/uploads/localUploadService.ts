@@ -1,20 +1,20 @@
 import { createStore, del, get, set } from 'idb-keyval';
-import type { UploadResult, UploadService } from './types';
+import type { UploadOptions, UploadResult, UploadService } from './types';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Persistent local store so the demo survives reloads and works when deployed
-// (e.g. on Vercel) without any backend. Same browser only — the Vercel Blob /
-// R2 adapter will make files reachable across devices.
+// without any backend. Same browser only — the API/R2 adapter makes files
+// reachable across devices.
 const store = createStore('copisteria-uploads', 'blobs');
 
 /**
  * Development / demo adapter: persists blobs in IndexedDB and simulates chunked
- * progress so the real upload UX can be built and shown without a backend. The
- * R2/Blob adapter will implement this same interface.
+ * progress so the real upload UX can be built and shown without a backend.
  */
 export class LocalUploadService implements UploadService {
-  async upload(file: File, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<UploadResult> {
-    const key = `local/${crypto.randomUUID()}`;
+  async upload(file: File, opts: UploadOptions = {}): Promise<UploadResult> {
+    const { projectId, onProgress, signal } = opts;
+    const key = `local/${projectId ? `${projectId}/` : ''}${crypto.randomUUID()}`;
     const steps = 15;
     const mb = file.size / (1024 * 1024);
     const total = Math.min(2500, Math.max(400, mb * 50));

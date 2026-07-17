@@ -6,6 +6,8 @@ import { useCart } from '../store/useCart';
 import { useConfigurator } from '../store/useConfigurator';
 import { flyToCart } from '../lib/flyToCart';
 import { CartButton } from '../components/CartButton';
+import { uploadService } from '../lib/uploads';
+import { dataUrlToFile, downscaleDataUrl } from '../lib/imageDownscale';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -17,14 +19,15 @@ export function MugConfigurator() {
   const [autoRotate, setAutoRotate] = useState(true);
   const [nombre, setNombre] = useState('');
   const [cantidad, setCantidad] = useState(1);
+  const [adding, setAdding] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const price = useConfigurator((s) => s.catalog.mugPrice);
   const addToCart = useCart((s) => s.add);
 
-  const onAddToCart = () => {
-    if (!textureUrl) return;
+  const onAddToCart = async () => {
+    if (!textureUrl || adding) return;
     // Snapshot the rendered 3D mug so the cart shows the actual mug, not the
     // flat print strip. Falls back to the texture if the capture fails.
     const canvas = previewRef.current?.querySelector('canvas');
@@ -36,19 +39,25 @@ export function MugConfigurator() {
       /* tainted/unsupported → keep the texture */
     }
     flyToCart({ el: previewRef.current, imageUrl: snapshot });
-    addToCart({
-      id: crypto.randomUUID(),
-      kind: 'taza',
-      nombre,
-      preview: snapshot,
-      printImage: textureUrl, // flat edited artwork for sublimation
-      cantidad,
-      total: price * cantidad,
-    });
-    setOriginalUrl(null);
-    setTextureUrl(null);
-    setNombre('');
-    setCantidad(1);
+    setAdding(true);
+    try {
+      const id = crypto.randomUUID();
+      // Upload the full-res, print-ready artwork to storage; the order keeps
+      // just the key (keeps it small + under the API body limit). The preview
+      // is a downscaled snapshot for display.
+      const file = await dataUrlToFile(textureUrl, 'taza.png');
+      const { key } = await uploadService.upload(file, { projectId: id });
+      const preview = await downscaleDataUrl(snapshot, 480);
+      addToCart({ id, kind: 'taza', nombre, preview, printImageKey: key, cantidad, total: price * cantidad });
+      setOriginalUrl(null);
+      setTextureUrl(null);
+      setNombre('');
+      setCantidad(1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo añadir la taza. Inténtalo de nuevo.');
+    } finally {
+      setAdding(false);
+    }
   };
 
   const onFile = (file: File | undefined) => {
@@ -132,8 +141,8 @@ export function MugConfigurator() {
               <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
             </label>
             <span className="product-price">{eur(price * cantidad)}</span>
-            <button type="button" className="btn btn-primary" disabled={!textureUrl} onClick={onAddToCart}>
-              Añadir al carrito
+            <button type="button" className="btn btn-primary" disabled={!textureUrl || adding} onClick={onAddToCart}>
+              {adding ? 'Añadiendo…' : 'Añadir al carrito'}
             </button>
           </div>
         </section>

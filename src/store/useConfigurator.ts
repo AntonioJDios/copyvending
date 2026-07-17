@@ -4,10 +4,13 @@ import { normalize } from '../domain/rules';
 import type { Configuracion, DocFile } from '../domain/types';
 import type { CartProject } from './useCart';
 import { uploadService } from '../lib/uploads';
+import { API_BASE, apiSend } from '../lib/api';
 
 const CATALOG_KEY = 'copisteria/catalog/v6';
 
-/** Load the admin-edited catalog from localStorage, or the defaults. */
+/** Load the admin-edited catalog from localStorage, or the defaults. Used as a
+ *  fast local cache; when a backend is wired, fetchCatalog refreshes it from
+ *  the shared settings so every device sees the same prices. */
 export function loadCatalog(): Catalog {
   try {
     const raw = localStorage.getItem(CATALOG_KEY);
@@ -21,8 +24,11 @@ export function loadCatalog(): Catalog {
   return DEFAULT_CATALOG;
 }
 
+/** Persist the catalog locally and, if a backend is wired, to the shared
+ *  settings so the kiosk and backoffice stay in sync. */
 export function saveCatalog(catalog: Catalog): void {
   localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
+  if (API_BASE) void apiSend('PUT', '/catalog', catalog).catch(() => {/* offline cache still valid */});
 }
 
 const DEFAULT_CONFIG: Configuracion = {
@@ -47,6 +53,9 @@ interface ConfiguratorState {
   files: DocFile[];
   copias: number;
   comentario: string;
+  /** UUID that ties this working project's uploads into one R2 folder and, once
+   *  added to the cart, becomes the project/order-item id. */
+  proyectoId: string;
   /** Customer-facing name for this print project. */
   nombreProyecto: string;
   /** Selected ring and back-cover colors (only meaningful for AnillasColores). */
@@ -69,6 +78,8 @@ interface ConfiguratorState {
   clearProject: () => void;
   /** Load a cart project snapshot back into the configurator for editing. */
   loadProject: (project: CartProject) => void;
+  /** Refresh the catalog from the shared backend (if wired). */
+  fetchCatalog: () => Promise<void>;
 }
 
 const initialCatalog = loadCatalog();
@@ -79,6 +90,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   files: [],
   copias: 1,
   comentario: '',
+  proyectoId: crypto.randomUUID(),
   nombreProyecto: '',
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
@@ -117,10 +129,11 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   setCopias: (n) => set({ copias: Math.max(1, Math.floor(n) || 1) }),
   setComentario: (comentario) => set({ comentario }),
   setNombreProyecto: (nombreProyecto) => set({ nombreProyecto }),
-  clearProject: () => set({ files: [], copias: 1, comentario: '', nombreProyecto: '' }),
+  clearProject: () => set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID() }),
   loadProject: (p) => {
     if (p.kind !== 'copias') return;
     set((s) => ({
+      proyectoId: p.id,
       config: normalize({ ...p.config }, s.catalog),
       files: p.docs.map((d) => ({
         id: d.id,
@@ -145,6 +158,18 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
         const file = new File([blob], d.name, { type: blob.type || 'application/octet-stream' });
         set((s) => ({ files: s.files.map((f) => (f.id === d.id ? { ...f, source: file } : f)) }));
       });
+    }
+  },
+  fetchCatalog: async () => {
+    if (!API_BASE) return;
+    try {
+      const remote = (await (await fetch(`${API_BASE}/catalog`)).json()) as Catalog | null;
+      if (remote && remote.version === 6) {
+        localStorage.setItem(CATALOG_KEY, JSON.stringify(remote));
+        set((s) => ({ catalog: remote, config: normalize(s.config, remote) }));
+      }
+    } catch {
+      /* keep the local cache */
     }
   },
 }));
