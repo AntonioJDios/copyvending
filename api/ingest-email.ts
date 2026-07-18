@@ -2,9 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { AwsClient } from 'aws4fetch';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { PDFDocument } from 'pdf-lib';
-import { computePrice } from '../src/domain/priceEngine';
-import { DEFAULT_CATALOG, type Catalog } from '../src/domain/catalog';
-import type { Configuracion } from '../src/domain/types';
+
+// Self-contained (no ../src imports — they break the Vercel runtime). Pricing
+// and the order insert are delegated to /api/orders, which is authoritative.
+const SELF_URL = process.env.SELF_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://copyvending.vercel.app');
 
 /**
  * Email → print order pipeline. This endpoint processes ONE normalised email
@@ -68,18 +69,6 @@ function ensureSchema(): Promise<void> {
     });
   }
   return _ready;
-}
-
-/** Prices always come from the admin-edited catalog persisted in Neon. */
-async function getCatalog(): Promise<Catalog> {
-  try {
-    const rows = (await db()`select value from settings where key = 'catalog'`) as { value: unknown }[];
-    const c = rows[0]?.value as Catalog | undefined;
-    if (c && c.version === 6) return c;
-  } catch {
-    /* settings table may not exist yet → defaults */
-  }
-  return DEFAULT_CATALOG;
 }
 
 // ── AI parsing (Groq by default; provider-agnostic) ──────────────────
@@ -209,13 +198,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(422).json({ error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped });
     }
 
-    // 3) Build the order (source: 'email') and price it with the Neon catalog.
-    const config = { ...DEFAULT_CONFIG, ...changes } as unknown as Configuracion;
-    const catalog = await getCatalog();
-    const total = computePrice(
-      { config, files: docs.map((d) => ({ pages: d.pages, color: d.color as 'no' | 'cover' | 'all' })), copias },
-      catalog
-    ).total;
+    // 3) Build the order (source: 'email') and hand it to /api/orders, which
+    //    prices it authoritatively with the Neon catalog and inserts it.
+    const config = { ...DEFAULT_CONFIG, ...changes };
     const orderId = `P-${crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}`;
     const nombre = (email.fromName || email.from || 'Cliente email').slice(0, 60);
     const comentario = `📧 Pedido por email. IA entendió: ${reply}${skipped.length ? ` · (ignorados: ${skipped.join(', ')})` : ''}`;
@@ -229,7 +214,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       comentario,
       colorAnillas: '',
       colorContraportada: '',
-      total,
+      total: 0,
     };
     const order = {
       id: orderId,
@@ -237,17 +222,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       source: 'email',
       customer: { nombre, apellidos: '', telefono: undefined as string | undefined },
       items: [project],
-      total,
+      total: 0,
       status: 'nuevo',
     };
-    await sql`
-      insert into orders (id, created_at, source, customer, items, total, status)
-      values (${order.id}, ${order.createdAt}, ${order.source},
-              ${JSON.stringify(order.customer)}::jsonb, ${JSON.stringify(order.items)}::jsonb,
-              ${order.total}, ${order.status})`;
+    const orderRes = await fetch(`${SELF_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    });
+    const orderData = (await orderRes.json().catch(() => ({}))) as { total?: number; error?: string };
+    if (!orderRes.ok) {
+      await sql`delete from email_jobs where message_id = ${messageId}`; // release claim so a retry can work
+      return res.status(502).json({ error: `No se pudo crear el pedido: ${orderData.error || orderRes.status}` });
+    }
     await sql`update email_jobs set order_id = ${orderId} where message_id = ${messageId}`;
 
-    return res.status(201).json({ status: 'created', orderId, docs: docs.length, skipped, config, reply });
+    return res.status(201).json({ status: 'created', orderId, total: orderData.total ?? 0, docs: docs.length, skipped, config, reply });
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'error procesando el email' });
   }
