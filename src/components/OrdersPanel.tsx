@@ -107,6 +107,11 @@ function OrderCard({ order }: { order: Order }) {
           <span className="order-id">{order.id}</span>
           <span className={`src-pill src-${order.source}`}>{SOURCE_LABEL[order.source] ?? order.source}</span>
           <span className={`status-pill st-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+          {order.priceMismatch && (
+            <span className="price-flag" title="El precio enviado por el cliente no coincidía con el recalculado en el servidor. Se muestra el del servidor.">
+              ⚠ precio recalculado
+            </span>
+          )}
         </div>
         <div className="order-head-r">
           <span className="muted">{timeAgo(order.createdAt)}</span>

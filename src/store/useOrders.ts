@@ -14,6 +14,8 @@ export interface Order {
   items: CartProject[];
   total: number;
   status: OrderStatus;
+  /** Set by the server when the client-sent total didn't match the recomputed one. */
+  priceMismatch?: boolean;
 }
 
 const KEY = 'copisteria/orders/v1';

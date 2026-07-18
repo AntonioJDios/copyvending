@@ -17,6 +17,7 @@ import {
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
+import { API_BASE } from '../lib/api';
 
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
@@ -328,6 +329,8 @@ export function AdminPanel() {
             );
           })()}
         </section>
+
+        {API_BASE && <EmailTestTool />}
       </div>
 
       <footer className="admin-actions">
@@ -408,6 +411,76 @@ function PresetsEditor({ presets, onChange }: { presets: Preset[]; onChange: (p:
           + Añadir perfil
         </button>
       </div>
+    </section>
+  );
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(bin);
+}
+
+/** Dev tool: builds a fake email with a sample PDF and sends it to the email
+ *  ingestion endpoint, to test the whole pipeline before Gmail is wired. */
+function EmailTestTool() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string>('');
+  const [text, setText] = useState(
+    'Hola, os envío un archivo. Quiero imprimirlo a color, A4, a doble cara y encuadernado en anillas. Gracias, Antonio.'
+  );
+
+  const run = async () => {
+    setBusy(true);
+    setResult('');
+    try {
+      const { PDFDocument, StandardFonts } = await import('pdf-lib');
+      const pdf = await PDFDocument.create();
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      for (let i = 1; i <= 3; i++) {
+        const page = pdf.addPage([595, 842]);
+        page.drawText(`Documento de prueba — página ${i}`, { x: 60, y: 760, size: 22, font });
+      }
+      const b64 = bytesToBase64(await pdf.save());
+      const email = {
+        messageId: `test-${Date.now()}`,
+        from: 'cliente@example.com',
+        fromName: 'Cliente de Prueba',
+        subject: 'Trabajo de impresión',
+        text,
+        attachments: [{ filename: 'documento-de-prueba.pdf', contentType: 'application/pdf', dataBase64: b64 }],
+      };
+      const res = await fetch(`${API_BASE}/ingest-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = (await res.json()) as { orderId?: string; error?: string; docs?: number };
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      setResult(`✅ Pedido creado: ${data.orderId} (${data.docs} doc.). Míralo en #pedidos (origen 📧 Email).`);
+    } catch (e) {
+      setResult(`⚠ ${e instanceof Error ? e.message : 'Error'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Prueba: pedido por email</h2>
+      <p className="muted">
+        Simula un email entrante con un PDF de muestra (3 páginas). Crea un pedido real con origen “Email”, la IA
+        interpreta el texto y el precio se calcula con este catálogo. La lectura del buzón real (Gmail) se conecta después.
+      </p>
+      <label className="field-block">
+        Texto del email (instrucciones del cliente)
+        <textarea className="assistant-instructions" rows={3} value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      <button type="button" className="btn btn-primary" onClick={run} disabled={busy}>
+        {busy ? 'Enviando…' : '🧪 Simular email de prueba'}
+      </button>
+      {result && <p className="muted" style={{ marginTop: 10 }}>{result}</p>}
     </section>
   );
 }

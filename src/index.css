@@ -2572,3 +2572,29 @@ body {
   border: 1px solid rgba(14, 165, 183, 0.45);
 }
 .suggest-ai:hover { background: rgba(14, 165, 183, 0.08); }
+
+/* Aviso de precio recalculado en el backoffice */
+.price-flag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fdecec;
+  color: #b3261e;
+}
+
+/* Recoger pedido por código (kiosko) */
+.recover { max-width: 560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.recover-form { display: flex; gap: 8px; margin-top: 10px; }
+.recover-form input {
+  flex: 1;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 18px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.recover-error { color: #b3261e; margin-top: 10px; }
+.recover-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.recover-ready { margin-top: 12px; color: #1c7a4a; font-weight: 600; }

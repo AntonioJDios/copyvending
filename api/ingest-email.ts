@@ -1,0 +1,254 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { AwsClient } from 'aws4fetch';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { PDFDocument } from 'pdf-lib';
+import { computePrice } from '../src/domain/priceEngine';
+import { DEFAULT_CATALOG, type Catalog } from '../src/domain/catalog';
+import type { Configuracion } from '../src/domain/types';
+
+/**
+ * Email → print order pipeline. This endpoint processes ONE normalised email
+ * (from, subject, text, attachments) into a print order:
+ *   dedupe by messageId → AI-parse the instructions → upload files to R2 →
+ *   create an order (source: 'email') in Neon → return the order code.
+ *
+ * Reading the real inbox (Gmail IMAP / API) is added later; for now the email
+ * is provided in the request body (so the whole pipeline can be tested with a
+ * fake email). The processing is identical regardless of the source, so wiring
+ * the real inbox on top requires no changes here.
+ */
+
+// ── R2 (self-contained, like /api/presign) ──────────────────────────
+const ACCOUNT = process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3';
+const BUCKET = process.env.R2_BUCKET || 'copyvending';
+const R2_BASE = `https://${ACCOUNT}.r2.cloudflarestorage.com/${BUCKET}`;
+const ACCEPTED = ['application/pdf', 'image/'];
+const MAX_MB = 300;
+
+function r2(): AwsClient {
+  return new AwsClient({ accessKeyId: process.env.R2_ACCESS_KEY_ID || '', secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '' });
+}
+function extOf(name: string): string {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(i).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 12) : '';
+}
+async function uploadToR2(projectId: string, name: string, type: string, bytes: Uint8Array): Promise<string> {
+  const key = `jobs/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
+  const signed = await r2().sign(`${R2_BASE}/${key}?X-Amz-Expires=3600`, { method: 'PUT', aws: { signQuery: true } });
+  const put = await fetch(signed.url, { method: 'PUT', body: bytes as BodyInit, headers: type ? { 'Content-Type': type } : undefined });
+  if (!put.ok) throw new Error(`R2 PUT ${put.status}`);
+  return key;
+}
+
+// ── Neon (self-contained) ────────────────────────────────────────────
+let _sql: NeonQueryFunction<false, false> | null = null;
+let _ready: Promise<void> | null = null;
+function db(): NeonQueryFunction<false, false> {
+  if (!_sql) {
+    if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL en el servidor');
+    _sql = neon(process.env.DATABASE_URL);
+  }
+  return _sql;
+}
+function ensureSchema(): Promise<void> {
+  if (!_ready) {
+    _ready = (async () => {
+      await db()`
+        create table if not exists orders (
+          id text primary key, created_at bigint not null, source text not null,
+          customer jsonb not null, items jsonb not null,
+          total double precision not null, status text not null)`;
+      // Dedupe: one row per processed email so re-triggers never duplicate orders.
+      await db()`
+        create table if not exists email_jobs (
+          message_id text primary key, order_id text, created_at bigint not null)`;
+    })().catch((e) => {
+      _ready = null;
+      throw e;
+    });
+  }
+  return _ready;
+}
+
+/** Prices always come from the admin-edited catalog persisted in Neon. */
+async function getCatalog(): Promise<Catalog> {
+  try {
+    const rows = (await db()`select value from settings where key = 'catalog'`) as { value: unknown }[];
+    const c = rows[0]?.value as Catalog | undefined;
+    if (c && c.version === 6) return c;
+  } catch {
+    /* settings table may not exist yet → defaults */
+  }
+  return DEFAULT_CATALOG;
+}
+
+// ── AI parsing (Groq by default; provider-agnostic) ──────────────────
+const LLM_BASE = process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1';
+const LLM_KEY = process.env.LLM_API_KEY || process.env.GROQ_API_KEY || '';
+const LLM_MODEL = process.env.LLM_MODEL || 'llama-3.3-70b-versatile';
+
+const DEFAULT_CONFIG = {
+  size: 'A4', color: 'BN', grosor: 90, dobleCara: '0', orientacion: 'vertical', paginasPorHoja: 1,
+  acabado: 'sinencuadernacion', acabadoFolios: 'normal', juntos: 'agrupados', sinMargenes: false,
+  ladoEncuadernacion: 'largo', foliosDelante: 0, foliosDetras: 0,
+};
+const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
+
+async function parseEmail(subject: string, text: string, instructions?: string): Promise<{ reply: string; changes: Record<string, unknown>; copias: number; docColor?: string }> {
+  if (!LLM_KEY) return { reply: 'Sin IA configurada; configuración por defecto.', changes: {}, copias: 1 };
+  const prompt = [
+    'Eres el recepcionista de una copistería. Un cliente envía un email pidiendo imprimir unos archivos adjuntos.',
+    'Extrae la configuración de impresión de su mensaje. Usa EXACTAMENTE estas claves/valores:',
+    '- size: A4 | A3 | A5 · color: BN | Color · grosor: 80|90|100|120|250',
+    "- dobleCara: '0' (una cara) | '1' (doble cara) · paginasPorHoja: 1|2|4 · orientacion: vertical|horizontal",
+    '- acabado: sinencuadernacion|grapado|AnillasColores|dos_agujeros|cuatro_agujeros|perforado',
+    '- juntos: agrupados|individual · sinMargenes: true|false · acabadoFolios: normal|plastificar|pegatinas',
+    "- docColor: 'no'|'cover'|'all' (color por documento; 'cover' = solo portada en color)",
+    '- copias: número entero',
+    'Solo incluye lo que el cliente indique; lo no mencionado se queda por defecto.',
+    instructions && instructions.trim() ? `Indicaciones del dueño: ${instructions.trim().slice(0, 1000)}` : '',
+    `ASUNTO: ${subject}`,
+    `MENSAJE: ${text.slice(0, 4000)}`,
+    'Responde SOLO con JSON: { "reply": "<resumen breve en español de lo que has entendido>", "changes": { <config> }, "copias": <n>, "docColor": "<no|cover|all opcional>" }',
+  ].join('\n');
+  const r = await fetch(`${LLM_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${LLM_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: LLM_MODEL, temperature: 0.2, max_tokens: 500, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: prompt }] }),
+  });
+  if (!r.ok) return { reply: 'No se pudo interpretar el mensaje; configuración por defecto.', changes: {}, copias: 1 };
+  const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+  let parsed: { reply?: unknown; changes?: unknown; copias?: unknown; docColor?: unknown } = {};
+  try {
+    parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+  } catch {
+    /* keep defaults */
+  }
+  const changesIn = parsed.changes && typeof parsed.changes === 'object' ? (parsed.changes as Record<string, unknown>) : {};
+  const changes: Record<string, unknown> = {};
+  for (const k of CONFIG_KEYS) if (k in changesIn) changes[k] = changesIn[k];
+  return {
+    reply: typeof parsed.reply === 'string' ? parsed.reply : 'Pedido recibido por email.',
+    changes,
+    copias: Math.max(1, Math.floor(Number(parsed.copias)) || 1),
+    docColor: parsed.docColor === 'cover' || parsed.docColor === 'all' ? parsed.docColor : undefined,
+  };
+}
+
+// ── Handler ───────────────────────────────────────────────────────────
+interface Attachment {
+  filename?: string;
+  contentType?: string;
+  dataBase64?: string;
+}
+interface EmailIn {
+  messageId?: string;
+  from?: string;
+  fromName?: string;
+  subject?: string;
+  text?: string;
+  attachments?: Attachment[];
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
+  try {
+    await ensureSchema();
+    const sql = db();
+    const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string };
+    const email = body.email;
+
+    // Real inbox reading (Gmail) comes later; for now require a provided email.
+    if (!email) return res.status(400).json({ error: 'Modo lectura de buzón pendiente (Gmail). Envía un email en el cuerpo para procesar.' });
+
+    const messageId = String(email.messageId || crypto.randomUUID());
+    // Atomic claim → safe against duplicate/concurrent triggers.
+    const claim = (await sql`
+      insert into email_jobs (message_id, order_id, created_at)
+      values (${messageId}, '', ${Date.now()})
+      on conflict (message_id) do nothing returning message_id`) as { message_id: string }[];
+    if (claim.length === 0) {
+      const prev = (await sql`select order_id from email_jobs where message_id = ${messageId}`) as { order_id: string }[];
+      return res.status(200).json({ status: 'duplicate', orderId: prev[0]?.order_id || null });
+    }
+
+    // 1) Parse the instructions with AI.
+    const { reply, changes, copias, docColor } = await parseEmail(email.subject || '', email.text || '', body.instructions);
+
+    // 2) Upload attachments to R2 (PDF/images only).
+    const projectId = crypto.randomUUID();
+    const docColorVal = (docColor === 'cover' || docColor === 'all' ? docColor : 'no') as 'no' | 'cover' | 'all';
+    const docs: { id: string; name: string; pages: number; color: string; storageKey: string }[] = [];
+    const skipped: string[] = [];
+    for (const att of email.attachments || []) {
+      const type = att.contentType || '';
+      const name = att.filename || 'archivo';
+      if (!ACCEPTED.some((p) => type.startsWith(p)) || !att.dataBase64) {
+        skipped.push(name);
+        continue;
+      }
+      const bytes = new Uint8Array(Buffer.from(att.dataBase64, 'base64'));
+      if (bytes.byteLength === 0 || bytes.byteLength > MAX_MB * 1024 * 1024) {
+        skipped.push(name);
+        continue;
+      }
+      let pages = 1;
+      if (type.startsWith('application/pdf')) {
+        try {
+          pages = (await PDFDocument.load(bytes, { updateMetadata: false })).getPageCount();
+        } catch {
+          pages = 0; // encrypted/damaged → unknown
+        }
+      }
+      const storageKey = await uploadToR2(projectId, name, type, bytes);
+      docs.push({ id: crypto.randomUUID(), name, pages, color: docColorVal, storageKey });
+    }
+
+    if (docs.length === 0) {
+      await sql`delete from email_jobs where message_id = ${messageId}`; // release claim; nothing to do
+      return res.status(422).json({ error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped });
+    }
+
+    // 3) Build the order (source: 'email') and price it with the Neon catalog.
+    const config = { ...DEFAULT_CONFIG, ...changes } as unknown as Configuracion;
+    const catalog = await getCatalog();
+    const total = computePrice(
+      { config, files: docs.map((d) => ({ pages: d.pages, color: d.color as 'no' | 'cover' | 'all' })), copias },
+      catalog
+    ).total;
+    const orderId = `P-${crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}`;
+    const nombre = (email.fromName || email.from || 'Cliente email').slice(0, 60);
+    const comentario = `📧 Pedido por email. IA entendió: ${reply}${skipped.length ? ` · (ignorados: ${skipped.join(', ')})` : ''}`;
+    const project = {
+      id: projectId,
+      kind: 'copias',
+      nombre: (email.subject || 'Pedido por email').slice(0, 80),
+      config,
+      docs,
+      copias,
+      comentario,
+      colorAnillas: '',
+      colorContraportada: '',
+      total,
+    };
+    const order = {
+      id: orderId,
+      createdAt: Date.now(),
+      source: 'email',
+      customer: { nombre, apellidos: '', telefono: undefined as string | undefined },
+      items: [project],
+      total,
+      status: 'nuevo',
+    };
+    await sql`
+      insert into orders (id, created_at, source, customer, items, total, status)
+      values (${order.id}, ${order.createdAt}, ${order.source},
+              ${JSON.stringify(order.customer)}::jsonb, ${JSON.stringify(order.items)}::jsonb,
+              ${order.total}, ${order.status})`;
+    await sql`update email_jobs set order_id = ${orderId} where message_id = ${messageId}`;
+
+    return res.status(201).json({ status: 'created', orderId, docs: docs.length, skipped, config, reply });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'error procesando el email' });
+  }
+}

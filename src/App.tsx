@@ -3,6 +3,7 @@ import { useConfigurator } from './store/useConfigurator';
 import { hasBackend } from './lib/api';
 import { AssistantChat } from './components/AssistantChat';
 import { SuggestionBanner } from './components/SuggestionBanner';
+import { RecoverOrder } from './components/RecoverOrder';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
 import { PriceBar } from './components/PriceBar';
@@ -60,6 +61,7 @@ export default function App() {
       </Suspense>
     );
   if (route.startsWith('#carrito')) return <CartPage />;
+  if (route.startsWith('#recoger')) return <RecoverOrder />;
   if (route.startsWith('#pedidos'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
@@ -77,6 +79,9 @@ export default function App() {
           </a>
           <a className="btn" href="#chapas">
             Chapas
+          </a>
+          <a className="btn" href="#recoger">
+            Recoger pedido
           </a>
           <CartButton onClick={() => setCartOpen(true)} />
           <a className="admin-link" href="#admin" title="Administración">
