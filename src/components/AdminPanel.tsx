@@ -427,29 +427,44 @@ function bytesToBase64(bytes: Uint8Array): string {
 function EmailTestTool() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>('');
+  const [files, setFiles] = useState<File[]>([]);
   const [text, setText] = useState(
     'Hola, os envío un archivo. Quiero imprimirlo a color, A4, a doble cara y encuadernado en anillas. Gracias, Antonio.'
   );
+
+  /** Attachments: the files the user picked, or a generated sample PDF. */
+  const buildAttachments = async () => {
+    if (files.length > 0) {
+      return Promise.all(
+        files.map(async (f) => ({
+          filename: f.name,
+          contentType: f.type || 'application/octet-stream',
+          dataBase64: bytesToBase64(new Uint8Array(await f.arrayBuffer())),
+        }))
+      );
+    }
+    const { PDFDocument, StandardFonts } = await import('pdf-lib');
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    for (let i = 1; i <= 3; i++) {
+      const page = pdf.addPage([595, 842]);
+      page.drawText(`Documento de prueba — página ${i}`, { x: 60, y: 760, size: 22, font });
+    }
+    return [{ filename: 'documento-de-prueba.pdf', contentType: 'application/pdf', dataBase64: bytesToBase64(await pdf.save()) }];
+  };
 
   const run = async () => {
     setBusy(true);
     setResult('');
     try {
-      const { PDFDocument, StandardFonts } = await import('pdf-lib');
-      const pdf = await PDFDocument.create();
-      const font = await pdf.embedFont(StandardFonts.Helvetica);
-      for (let i = 1; i <= 3; i++) {
-        const page = pdf.addPage([595, 842]);
-        page.drawText(`Documento de prueba — página ${i}`, { x: 60, y: 760, size: 22, font });
-      }
-      const b64 = bytesToBase64(await pdf.save());
+      const attachments = await buildAttachments();
       const email = {
         messageId: `test-${Date.now()}`,
         from: 'cliente@example.com',
         fromName: 'Cliente de Prueba',
         subject: 'Trabajo de impresión',
         text,
-        attachments: [{ filename: 'documento-de-prueba.pdf', contentType: 'application/pdf', dataBase64: b64 }],
+        attachments,
       };
       const res = await fetch(`${API_BASE}/ingest-email`, {
         method: 'POST',
@@ -470,13 +485,25 @@ function EmailTestTool() {
     <section className="card">
       <h2>Prueba: pedido por email</h2>
       <p className="muted">
-        Simula un email entrante con un PDF de muestra (3 páginas). Crea un pedido real con origen “Email”, la IA
-        interpreta el texto y el precio se calcula con este catálogo. La lectura del buzón real (Gmail) se conecta después.
+        Simula un email entrante. Crea un pedido real con origen “Email”, la IA interpreta el texto y el precio se calcula
+        con este catálogo. La lectura del buzón real (Gmail) se conecta después.
       </p>
       <label className="field-block">
         Texto del email (instrucciones del cliente)
         <textarea className="assistant-instructions" rows={3} value={text} onChange={(e) => setText(e.target.value)} />
       </label>
+      <label className="field-block">
+        Adjuntos (PDF o imágenes) — si no eliges ninguno, se envía un PDF de muestra
+        <input
+          type="file"
+          accept="application/pdf,image/*"
+          multiple
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        />
+      </label>
+      {files.length > 0 && (
+        <p className="muted">{files.length} archivo{files.length !== 1 ? 's' : ''}: {files.map((f) => f.name).join(', ')}</p>
+      )}
       <button type="button" className="btn btn-primary" onClick={run} disabled={busy}>
         {busy ? 'Enviando…' : '🧪 Simular email de prueba'}
       </button>

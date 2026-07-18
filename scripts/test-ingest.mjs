@@ -23,7 +23,7 @@ async function main() {
     from: 'cliente@example.com',
     fromName: 'Cliente de Prueba',
     subject: 'Trabajo de impresion',
-    text: 'Hola, os envio un archivo. Quiero imprimirlo a color, A4, a doble cara y encuadernado en anillas. Gracias.',
+    text: 'Hola, os envio un archivo. Quiero imprimirlo a color, A4, a doble cara y encuadernado en anillas de color Negro con contraportada roja. Gracias.',
     attachments: [{ filename: 'documento-de-prueba.pdf', contentType: 'application/pdf', dataBase64 }],
   };
 
@@ -37,8 +37,18 @@ async function main() {
       const text = await res.text();
       console.log(`[intento ${attempt}] HTTP ${res.status}`);
       console.log(text.slice(0, 800));
-      // 5xx invocation-failed pages during redeploy → retry; otherwise stop.
-      if (res.status < 500 || !/FUNCTION_INVOCATION_FAILED|server error/i.test(text)) return;
+      if (res.status < 500 || !/FUNCTION_INVOCATION_FAILED|server error/i.test(text)) {
+        // On success, fetch the created order and show the ring/cover colours.
+        try {
+          const { orderId } = JSON.parse(text);
+          if (orderId) {
+            const ord = await (await fetch(`${URL.replace('/ingest-email', '/orders')}?id=${orderId}`)).json();
+            const it = ord.items?.[0] || {};
+            console.log(`→ acabado=${it.config?.acabado} colorAnillas="${it.colorAnillas}" colorContraportada="${it.colorContraportada}"`);
+          }
+        } catch { /* ignore */ }
+        return;
+      }
     } catch (e) {
       console.log(`[intento ${attempt}] error de red: ${e.message}`);
     }
