@@ -59,6 +59,9 @@ export interface PriceInput {
   config: Configuracion;
   files: PricedFile[];
   copias: number;
+  /** Selected ring/back-cover colour names (for their per-binding surcharge). */
+  colorAnillas?: string;
+  colorContraportada?: string;
 }
 
 export interface PriceBreakdown {
@@ -72,7 +75,7 @@ export interface PriceBreakdown {
 }
 
 /** Faithful port of CalculoPrecioTotal × copias, driven by the Catalog. */
-export function computePrice({ config, files, copias }: PriceInput, catalog: Catalog): PriceBreakdown {
+export function computePrice({ config, files, copias, colorAnillas, colorContraportada }: PriceInput, catalog: Catalog): PriceBreakdown {
   const { paginasPorHoja, dobleCara } = config;
 
   const totalPrintedSides = files.reduce((s, f) => s + printedSides(f.pages, paginasPorHoja), 0);
@@ -87,7 +90,14 @@ export function computePrice({ config, files, copias }: PriceInput, catalog: Cat
   const bindingCost = (catalog.bindingPrices[config.acabado] + noMargins) * bindings;
   const extraFolios = config.acabado === 'sinencuadernacion' ? 0 : config.foliosDelante + config.foliosDetras;
   const extraFoliosCost = extraFolios * catalog.extraFolioPrice * bindings;
-  const perUnit = docsCost + bindingCost + extraFoliosCost;
+  // Per-binding surcharge for the chosen ring/back-cover colour (only for rings).
+  let colorExtra = 0;
+  if (config.acabado === 'AnillasColores') {
+    const ring = catalog.ringColors.find((c) => c.name === colorAnillas);
+    const cover = catalog.coverColors.find((c) => c.name === colorContraportada);
+    colorExtra = ((ring?.extra ?? 0) + (cover?.extra ?? 0)) * bindings;
+  }
+  const perUnit = docsCost + bindingCost + extraFoliosCost + colorExtra;
 
   return { totalPrintedSides, totalSheets, colorSides, colorCovers, bindings, perUnit, total: perUnit * copias };
 }

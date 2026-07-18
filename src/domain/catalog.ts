@@ -15,6 +15,8 @@ export interface ColorOption {
   img?: string;
   /** Whether it is offered to the customer (admin toggle). Default true. */
   enabled?: boolean;
+  /** Extra price for choosing this colour (per binding). Default 0. */
+  extra?: number;
 }
 
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */

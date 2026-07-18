@@ -23,14 +23,17 @@ const SUGGESTIONS = ['¿Cuánto cuesta?', 'A4 a doble cara', 'Encuadernar en ani
  * always computed by the domain (never by the model).
  */
 export function AssistantChat() {
-  const { catalog, config, copias, files, setField, setCopias, setColorAnillas, setColorContraportada, setFileColor } = useConfigurator();
+  const { catalog, config, copias, files, colorAnillas, colorContraportada, setField, setCopias, setColorAnillas, setColorContraportada, setFileColor } = useConfigurator();
   const { open, seed, openWith, close, consumeSeed } = useAssistant();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const currentPrice = useMemo(() => computePrice({ config, files, copias }, catalog), [config, files, copias, catalog]);
+  const currentPrice = useMemo(
+    () => computePrice({ config, files, copias, colorAnillas, colorContraportada }, catalog),
+    [config, files, copias, catalog, colorAnillas, colorContraportada]
+  );
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -67,7 +70,9 @@ export function AssistantChat() {
     const cfg = normalize({ ...config, ...patch }, catalog);
     const nCopias = 'copias' in changes ? Math.max(1, Math.floor(Number(changes.copias)) || 1) : copias;
     const pricedFiles = 'docColor' in changes ? files.map((f) => ({ ...f, color: docColorOf(changes.docColor) })) : files;
-    return computePrice({ config: cfg, files: pricedFiles, copias: nCopias }, catalog).total;
+    const ca = 'colorAnillas' in changes ? String(changes.colorAnillas) : colorAnillas;
+    const cc = 'colorContraportada' in changes ? String(changes.colorContraportada) : colorContraportada;
+    return computePrice({ config: cfg, files: pricedFiles, copias: nCopias, colorAnillas: ca, colorContraportada: cc }, catalog).total;
   };
 
   const send = async (preset?: string) => {

@@ -5,13 +5,17 @@ import type { Configuracion } from './types';
 import { computePrice, type PricedFile } from './priceEngine';
 
 export type PricedProject =
-  | { kind: 'copias'; config: Configuracion; docs: PricedFile[]; copias: number }
+  | { kind: 'copias'; config: Configuracion; docs: PricedFile[]; copias: number; colorAnillas?: string; colorContraportada?: string }
   | { kind: 'taza'; cantidad: number }
   | { kind: 'chapa'; cantidad: number };
 
 /** Price of one project using the given (Neon-persisted) catalog. */
 export function projectTotal(p: PricedProject, catalog: Catalog): number {
-  if (p.kind === 'copias') return computePrice({ config: p.config, files: p.docs, copias: p.copias }, catalog).total;
+  if (p.kind === 'copias')
+    return computePrice(
+      { config: p.config, files: p.docs, copias: p.copias, colorAnillas: p.colorAnillas, colorContraportada: p.colorContraportada },
+      catalog
+    ).total;
   if (p.kind === 'taza') return catalog.mugPrice * Math.max(1, p.cantidad || 1);
   if (p.kind === 'chapa') return catalog.badgePrice * Math.max(1, p.cantidad || 1);
   return 0;

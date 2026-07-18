@@ -15,7 +15,7 @@ export function PriceBar() {
   const colorContraportada = useConfigurator((s) => s.colorContraportada);
   const addToCart = useCart((s) => s.add);
   const [saving, setSaving] = useState(false);
-  const price = computePrice({ config, files, copias }, catalog);
+  const price = computePrice({ config, files, copias, colorAnillas, colorContraportada }, catalog);
   const warnings = validate(config, files, catalog);
   const hasFiles = files.length > 0;
   const uploading = files.some((f) => f.uploadStatus === 'uploading');

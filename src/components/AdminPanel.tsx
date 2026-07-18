@@ -531,12 +531,22 @@ function ColorEditor({ title, items, onChange }: { title: string; items: ColorOp
               <input type="color" value={c.hex} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, hex: e.target.value } : x)))} />
             )}
             <input type="text" value={c.name} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <label className="color-extra" title="Suplemento por este color (€)">
+              +€
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={c.extra ?? 0}
+                onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, extra: num(e.target.value) } : x)))}
+              />
+            </label>
             <button type="button" className="chip chip-danger" onClick={() => onChange(items.filter((_, j) => j !== i))}>
               ✕
             </button>
           </div>
         ))}
-        <button type="button" className="chip" onClick={() => onChange([...items, { name: 'Nuevo color', hex: '#cccccc', enabled: true }])}>
+        <button type="button" className="chip" onClick={() => onChange([...items, { name: 'Nuevo color', hex: '#cccccc', enabled: true, extra: 0 }])}>
           + Añadir color
         </button>
       </div>

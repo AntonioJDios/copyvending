@@ -2613,3 +2613,15 @@ body {
   font-size: 14px;
 }
 .editing-banner b { font-weight: 700; }
+
+/* Suplemento de color en el editor del admin */
+.color-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.color-extra input {
+  width: 64px;
+}

@@ -9,6 +9,7 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 // ── Fallback pricing values (used only if Neon has no catalog yet) ───
 // Mirror of the pricing-relevant fields of DEFAULT_CATALOG.
+type ColorOpt = { name: string; extra?: number };
 type PriceCatalog = {
   pagePrices: Record<string, number>;
   bindingPrices: Record<string, number>;
@@ -22,6 +23,8 @@ type PriceCatalog = {
   extraFolioPrice: number;
   mugPrice: number;
   badgePrice: number;
+  ringColors?: ColorOpt[];
+  coverColors?: ColorOpt[];
 };
 const FALLBACK: PriceCatalog = {
   pagePrices: {
@@ -78,14 +81,20 @@ function docCost(doc: Doc, c: Cfg, cat: PriceCatalog): number {
   if (c.acabado === 'dos_agujeros' || c.acabado === 'cuatro_agujeros') cost += cat.holesPrice;
   return cost;
 }
-function copiasTotal(c: Cfg, docs: Doc[], copias: number, cat: PriceCatalog): number {
+function copiasTotal(c: Cfg, docs: Doc[], copias: number, cat: PriceCatalog, colorAnillas?: string, colorContraportada?: string): number {
   const bindings = c.juntos === 'agrupados' ? (docs.length > 0 ? 1 : 0) : docs.length;
   const noMargins = c.sinMargenes ? cat.noMarginsPrice : 0;
   const docsCost = docs.reduce((s, d) => s + docCost(d, c, cat), 0);
   const bindingCost = ((cat.bindingPrices[c.acabado] ?? 0) + noMargins) * bindings;
   const extraFolios = c.acabado === 'sinencuadernacion' ? 0 : (c.foliosDelante || 0) + (c.foliosDetras || 0);
   const extraCost = extraFolios * cat.extraFolioPrice * bindings;
-  return (docsCost + bindingCost + extraCost) * Math.max(1, copias || 1);
+  let colorExtra = 0;
+  if (c.acabado === 'AnillasColores') {
+    const ring = cat.ringColors?.find((x) => x.name === colorAnillas);
+    const cover = cat.coverColors?.find((x) => x.name === colorContraportada);
+    colorExtra = ((ring?.extra ?? 0) + (cover?.extra ?? 0)) * bindings;
+  }
+  return (docsCost + bindingCost + extraCost + colorExtra) * Math.max(1, copias || 1);
 }
 function itemTotal(item: Record<string, unknown>, cat: PriceCatalog): number {
   if (item.kind === 'taza') return cat.mugPrice * Math.max(1, Number(item.cantidad) || 1);
@@ -95,7 +104,9 @@ function itemTotal(item: Record<string, unknown>, cat: PriceCatalog): number {
     item.config as Cfg,
     docs.map((d) => ({ pages: Number(d.pages) || 0, color: String(d.color || 'no') })),
     Number(item.copias) || 1,
-    cat
+    cat,
+    typeof item.colorAnillas === 'string' ? item.colorAnillas : undefined,
+    typeof item.colorContraportada === 'string' ? item.colorContraportada : undefined
   );
 }
 
