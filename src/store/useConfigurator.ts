@@ -184,6 +184,10 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
       if (remote && remote.version === 6) {
         localStorage.setItem(CATALOG_KEY, JSON.stringify(remote));
         set((s) => ({ catalog: remote, config: normalize(s.config, remote) }));
+      } else if (!remote) {
+        // Neon has no catalog yet → seed it with the current one so every device
+        // (and the server pricing) shares the same catalog.
+        saveCatalog(useConfigurator.getState().catalog);
       }
     } catch {
       /* keep the local cache */
