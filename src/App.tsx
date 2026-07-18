@@ -36,6 +36,7 @@ export default function App() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Pull the shared admin catalog (prices) so every device shows the same shop.
   useEffect(() => {
@@ -74,19 +75,24 @@ export default function App() {
       <header className="topbar">
         <h1>Copistería</h1>
         <nav className="topnav">
-          <a className="btn" href="#tazas">
-            Tazas
-          </a>
-          <a className="btn" href="#chapas">
-            Chapas
-          </a>
-          <a className="btn" href="#recoger">
-            Recoger pedido
-          </a>
+          <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
+            <a className="btn" href="#tazas" onClick={() => setMenuOpen(false)}>
+              Tazas
+            </a>
+            <a className="btn" href="#chapas" onClick={() => setMenuOpen(false)}>
+              Chapas
+            </a>
+            <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
+              Recoger pedido
+            </a>
+            <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
+              ⚙
+            </a>
+          </div>
           <CartButton onClick={() => setCartOpen(true)} />
-          <a className="admin-link" href="#admin" title="Administración">
-            ⚙
-          </a>
+          <button type="button" className="burger" aria-label="Menú" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+            ☰
+          </button>
         </nav>
       </header>
       <div className="hero">
