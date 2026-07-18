@@ -93,6 +93,13 @@ function matchColor(value: unknown, options: string[]): string | undefined {
   });
 }
 
+/** Fallback: read the colour word that follows a keyword in the free text,
+ *  e.g. "contraportada amarilla" → "amarilla" → catalog colour. */
+function colorAfter(text: string, keyword: string, options: string[]): string | undefined {
+  const m = norm(text).match(new RegExp(`${keyword}\\s+(?:de\\s+)?(?:color\\s+)?([a-z]+)`));
+  return m ? matchColor(m[1], options) : undefined;
+}
+
 /** Ring/back-cover colour names offered by the shop (from the Neon catalog). */
 async function getColorOptions(): Promise<{ ring: string[]; cover: string[] }> {
   const fallback = {
@@ -166,9 +173,11 @@ async function parseEmail(
   const changesIn = p.changes && typeof p.changes === 'object' ? (p.changes as Record<string, unknown>) : {};
   const changes: Record<string, unknown> = {};
   for (const k of CONFIG_KEYS) if (k in changesIn) changes[k] = changesIn[k];
-  // Map loose colour words to catalog names (tolerant of accents/plurals).
-  const ca = matchColor(p.colorAnillas, colors.ring);
-  const cc = matchColor(p.colorContraportada, colors.cover);
+  // Map loose colour words to catalog names; if the model didn't fill the field,
+  // fall back to reading the colour straight from the message text.
+  const fullText = `${subject} ${text}`;
+  const ca = matchColor(p.colorAnillas, colors.ring) ?? colorAfter(fullText, 'anillas', colors.ring);
+  const cc = matchColor(p.colorContraportada, colors.cover) ?? colorAfter(fullText, 'contraportada', colors.cover);
   return {
     reply: typeof p.reply === 'string' ? p.reply : 'Pedido recibido por email.',
     changes,
