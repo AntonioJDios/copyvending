@@ -82,7 +82,14 @@ interface Props {
 
 export function MugScene({ textureUrl, autoRotate }: Props) {
   return (
-    <Canvas shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, alpha: true }} camera={{ position: [0, 0.2, 5.4], fov: 30 }}>
+    <Canvas
+      className="scene3d"
+      style={{ width: '100%', height: 'min(60vh, 520px)' }}
+      shadows
+      dpr={[1, 2]}
+      gl={{ preserveDrawingBuffer: true, alpha: true }}
+      camera={{ position: [0, 0.2, 5.4], fov: 30 }}
+    >
       <ambientLight intensity={0.55} />
       <directionalLight position={[4, 6, 5]} intensity={1.15} castShadow shadow-mapSize={[1024, 1024]} />
       <directionalLight position={[-5, 2, -4]} intensity={0.4} />

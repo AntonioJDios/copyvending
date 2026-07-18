@@ -1992,10 +1992,10 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.mug-preview > :global(canvas),
-.mug-preview canvas {
-  width: 100% !important;
-  height: min(60vh, 520px) !important;
+/* 3D scene container (react-three-fiber sizes its buffer to THIS box, so the
+   aspect ratio is correct and circles stay round). Size comes from the Canvas
+   inline style; here we only add the frame + studio backdrop. */
+.scene3d {
   border-radius: 12px;
   border: 1px solid var(--border);
   touch-action: none;
