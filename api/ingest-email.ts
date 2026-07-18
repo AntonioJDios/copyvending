@@ -71,6 +71,26 @@ function ensureSchema(): Promise<void> {
   return _ready;
 }
 
+/** Ring/back-cover colour names offered by the shop (from the Neon catalog). */
+async function getColorOptions(): Promise<{ ring: string[]; cover: string[] }> {
+  const fallback = {
+    ring: ['Transparente', 'Negro', 'Verde Menta', 'Amarillo Golden', 'Turquesa', 'Rosa Pastel', 'Azul Pastel', 'Lila', 'Azul Purpurina'],
+    cover: ['Plástico Negro', 'Plástico Rojo', 'Plástico Transparente', 'Plástico Verde Pastel', 'Plástico Azul Pastel'],
+  };
+  try {
+    const rows = (await db()`select value from settings where key = 'catalog'`) as { value: { ringColors?: { name: string; enabled?: boolean }[]; coverColors?: { name: string; enabled?: boolean }[] } }[];
+    const c = rows[0]?.value;
+    if (c) {
+      const ring = (c.ringColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
+      const cover = (c.coverColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
+      if (ring.length) return { ring, cover: cover.length ? cover : fallback.cover };
+    }
+  } catch {
+    /* settings missing → fallback */
+  }
+  return fallback;
+}
+
 // ── AI parsing (Groq by default; provider-agnostic) ──────────────────
 const LLM_BASE = process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1';
 const LLM_KEY = process.env.LLM_API_KEY || process.env.GROQ_API_KEY || '';
@@ -83,7 +103,12 @@ const DEFAULT_CONFIG = {
 };
 const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
 
-async function parseEmail(subject: string, text: string, instructions?: string): Promise<{ reply: string; changes: Record<string, unknown>; copias: number; docColor?: string }> {
+async function parseEmail(
+  subject: string,
+  text: string,
+  colors: { ring: string[]; cover: string[] },
+  instructions?: string
+): Promise<{ reply: string; changes: Record<string, unknown>; copias: number; docColor?: string; colorAnillas?: string; colorContraportada?: string }> {
   if (!LLM_KEY) return { reply: 'Sin IA configurada; configuración por defecto.', changes: {}, copias: 1 };
   const prompt = [
     'Eres el recepcionista de una copistería. Un cliente envía un email pidiendo imprimir unos archivos adjuntos.',
@@ -94,11 +119,13 @@ async function parseEmail(subject: string, text: string, instructions?: string):
     '- juntos: agrupados|individual · sinMargenes: true|false · acabadoFolios: normal|plastificar|pegatinas',
     "- docColor: 'no'|'cover'|'all' (color por documento; 'cover' = solo portada en color)",
     '- copias: número entero',
+    `- colorAnillas (SOLO si acabado=AnillasColores y el cliente menciona un color de anillas): uno de [${colors.ring.join(', ')}]`,
+    `- colorContraportada (SOLO si acabado=AnillasColores y menciona color de contraportada): uno de [${colors.cover.join(', ')}]`,
     'Solo incluye lo que el cliente indique; lo no mencionado se queda por defecto.',
     instructions && instructions.trim() ? `Indicaciones del dueño: ${instructions.trim().slice(0, 1000)}` : '',
     `ASUNTO: ${subject}`,
     `MENSAJE: ${text.slice(0, 4000)}`,
-    'Responde SOLO con JSON: { "reply": "<resumen breve en español de lo que has entendido>", "changes": { <config> }, "copias": <n>, "docColor": "<no|cover|all opcional>" }',
+    'Responde SOLO con JSON: { "reply": "<resumen breve en español>", "changes": { <config> }, "copias": <n>, "docColor": "<no|cover|all opcional>", "colorAnillas": "<opcional>", "colorContraportada": "<opcional>" }',
   ].join('\n');
   const r = await fetch(`${LLM_BASE}/chat/completions`, {
     method: 'POST',
@@ -113,14 +140,20 @@ async function parseEmail(subject: string, text: string, instructions?: string):
   } catch {
     /* keep defaults */
   }
-  const changesIn = parsed.changes && typeof parsed.changes === 'object' ? (parsed.changes as Record<string, unknown>) : {};
+  const p = parsed as { reply?: unknown; changes?: unknown; copias?: unknown; docColor?: unknown; colorAnillas?: unknown; colorContraportada?: unknown };
+  const changesIn = p.changes && typeof p.changes === 'object' ? (p.changes as Record<string, unknown>) : {};
   const changes: Record<string, unknown> = {};
   for (const k of CONFIG_KEYS) if (k in changesIn) changes[k] = changesIn[k];
+  // Only accept ring/cover colours that exist in the catalog.
+  const ca = typeof p.colorAnillas === 'string' && colors.ring.includes(p.colorAnillas) ? p.colorAnillas : undefined;
+  const cc = typeof p.colorContraportada === 'string' && colors.cover.includes(p.colorContraportada) ? p.colorContraportada : undefined;
   return {
-    reply: typeof parsed.reply === 'string' ? parsed.reply : 'Pedido recibido por email.',
+    reply: typeof p.reply === 'string' ? p.reply : 'Pedido recibido por email.',
     changes,
-    copias: Math.max(1, Math.floor(Number(parsed.copias)) || 1),
-    docColor: parsed.docColor === 'cover' || parsed.docColor === 'all' ? parsed.docColor : undefined,
+    copias: Math.max(1, Math.floor(Number(p.copias)) || 1),
+    docColor: p.docColor === 'cover' || p.docColor === 'all' ? p.docColor : undefined,
+    colorAnillas: ca,
+    colorContraportada: cc,
   };
 }
 
@@ -161,8 +194,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ status: 'duplicate', orderId: prev[0]?.order_id || null });
     }
 
-    // 1) Parse the instructions with AI.
-    const { reply, changes, copias, docColor } = await parseEmail(email.subject || '', email.text || '', body.instructions);
+    // 1) Parse the instructions with AI (offering the catalog's ring/cover colours).
+    const colorOpts = await getColorOptions();
+    const { reply, changes, copias, docColor, colorAnillas, colorContraportada } = await parseEmail(
+      email.subject || '',
+      email.text || '',
+      colorOpts,
+      body.instructions
+    );
 
     // 2) Upload attachments to R2 (PDF/images only).
     const projectId = crypto.randomUUID();
@@ -212,8 +251,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       docs,
       copias,
       comentario,
-      colorAnillas: '',
-      colorContraportada: '',
+      colorAnillas: colorAnillas ?? '',
+      colorContraportada: colorContraportada ?? '',
       total: 0,
     };
     const order = {

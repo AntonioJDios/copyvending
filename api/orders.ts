@@ -188,7 +188,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return { ...it, total: t };
       });
       serverTotal = Math.round(serverTotal * 100) / 100;
-      const mismatch = Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
+      // Email orders intentionally arrive with total 0 (priced here), so a
+      // difference there isn't a client mismatch — only flag client sources.
+      const mismatch =
+        o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       await sql`
         insert into orders (id, created_at, source, customer, items, total, status, price_mismatch)
