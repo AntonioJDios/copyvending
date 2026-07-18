@@ -20,6 +20,11 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   listo: 'Listo',
   entregado: 'Entregado',
 };
+const SOURCE_LABEL: Record<string, string> = {
+  mostrador: '📟 Tablet',
+  online: '🌐 Web',
+  email: '📧 Email',
+};
 
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -100,7 +105,7 @@ function OrderCard({ order }: { order: Order }) {
       <header className="order-head" onClick={() => setOpen((o) => !o)}>
         <div className="order-head-l">
           <span className="order-id">{order.id}</span>
-          <span className={`src-pill src-${order.source}`}>{order.source === 'mostrador' ? '🏬 Mostrador' : '🌐 Online'}</span>
+          <span className={`src-pill src-${order.source}`}>{SOURCE_LABEL[order.source] ?? order.source}</span>
           <span className={`status-pill st-${order.status}`}>{STATUS_LABEL[order.status]}</span>
         </div>
         <div className="order-head-r">

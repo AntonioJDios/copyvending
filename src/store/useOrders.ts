@@ -3,7 +3,8 @@ import type { CartProject } from './useCart';
 import { API_BASE, apiGet, apiSend } from '../lib/api';
 
 export type OrderStatus = 'nuevo' | 'en_proceso' | 'listo' | 'entregado';
-export type OrderSource = 'mostrador' | 'online';
+/** Where the order came from: kiosk tablet, online web, or email inbox. */
+export type OrderSource = 'mostrador' | 'online' | 'email';
 
 export interface Order {
   id: string;
