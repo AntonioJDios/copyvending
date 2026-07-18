@@ -71,6 +71,28 @@ function ensureSchema(): Promise<void> {
   return _ready;
 }
 
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** Map a loose colour word ("amarilla", "azul") to a catalog colour name
+ *  ("Plástico Amarillo Pastel", "Azul Pastel"). Tolerant of accents/plurals. */
+function matchColor(value: unknown, options: string[]): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const nv = norm(value.trim());
+  let hit = options.find((o) => norm(o) === nv);
+  if (hit) return hit;
+  hit = options.find((o) => norm(o).includes(nv) || nv.includes(norm(o)));
+  if (hit) return hit;
+  // Match on colour-word roots (amarilla→amari, azules→azul, roja→roj).
+  const roots = nv
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !['plastico', 'color', 'pastel'].includes(w))
+    .map((w) => w.replace(/(es|as|os|a|o|s)$/, '').slice(0, 5));
+  return options.find((o) => {
+    const no = norm(o);
+    return roots.some((r) => r.length >= 3 && no.includes(r));
+  });
+}
+
 /** Ring/back-cover colour names offered by the shop (from the Neon catalog). */
 async function getColorOptions(): Promise<{ ring: string[]; cover: string[] }> {
   const fallback = {
@@ -144,9 +166,9 @@ async function parseEmail(
   const changesIn = p.changes && typeof p.changes === 'object' ? (p.changes as Record<string, unknown>) : {};
   const changes: Record<string, unknown> = {};
   for (const k of CONFIG_KEYS) if (k in changesIn) changes[k] = changesIn[k];
-  // Only accept ring/cover colours that exist in the catalog.
-  const ca = typeof p.colorAnillas === 'string' && colors.ring.includes(p.colorAnillas) ? p.colorAnillas : undefined;
-  const cc = typeof p.colorContraportada === 'string' && colors.cover.includes(p.colorContraportada) ? p.colorContraportada : undefined;
+  // Map loose colour words to catalog names (tolerant of accents/plurals).
+  const ca = matchColor(p.colorAnillas, colors.ring);
+  const cc = matchColor(p.colorContraportada, colors.cover);
   return {
     reply: typeof p.reply === 'string' ? p.reply : 'Pedido recibido por email.',
     changes,
