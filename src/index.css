@@ -964,6 +964,36 @@ body {
   font-size: 13px;
 }
 
+/* Mobile: stack the price bar so Comentario and the button fit the screen. */
+@media (max-width: 640px) {
+  .pricebar {
+    padding: 12px 14px;
+  }
+  .pricebar-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .pricebar-row .field {
+    flex: 1 1 100%;
+  }
+  .pricebar-row .field input[type='number'] {
+    width: 100%;
+  }
+  .pricebar-row .summary {
+    flex: 1 1 auto;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  .pricebar-row > button {
+    flex: 1 1 100%;
+  }
+  /* The stacked bar is taller → leave room so it doesn't cover the files. */
+  .layout {
+    padding-bottom: 250px;
+  }
+}
+
 .btn {
   font: inherit;
   font-size: 14px;
