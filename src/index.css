@@ -2598,3 +2598,18 @@ body {
 .recover-error { color: #b3261e; margin-top: 10px; }
 .recover-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .recover-ready { margin-top: 12px; color: #1c7a4a; font-weight: 600; }
+
+/* Banner "estás modificando el pedido X" en la pricebar */
+.editing-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fff7e6;
+  border: 1px solid #f0c98a;
+  color: #8a5b12;
+  font-size: 14px;
+}
+.editing-banner b { font-weight: 700; }

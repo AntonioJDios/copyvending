@@ -210,6 +210,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
+    // Modify an order's items — ONLY while it is still in the initial state.
+    if (req.method === 'PUT') {
+      const id = queryId(req);
+      const body = req.body as { items?: Record<string, unknown>[] };
+      if (!id || !Array.isArray(body.items)) return res.status(400).json({ error: 'faltan datos' });
+      const cur = (await sql`select status from orders where id = ${id}`) as { status: string }[];
+      if (cur.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
+      if (cur[0].status !== 'nuevo') {
+        return res.status(409).json({ error: 'El pedido ya está en proceso y no se puede modificar.' });
+      }
+      const catalog = await getCatalog();
+      let serverTotal = 0;
+      const priced = body.items.map((it) => {
+        const t = itemTotal(it, catalog);
+        serverTotal += t;
+        return { ...it, total: t };
+      });
+      serverTotal = Math.round(serverTotal * 100) / 100;
+      await sql`update orders set items = ${JSON.stringify(priced)}::jsonb, total = ${serverTotal} where id = ${id} and status = 'nuevo'`;
+      return res.status(200).json({ ok: true, total: serverTotal });
+    }
+
     if (req.method === 'DELETE') {
       const id = queryId(req);
       if (!id) return res.status(400).json({ error: 'falta id' });

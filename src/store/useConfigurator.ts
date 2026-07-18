@@ -62,6 +62,8 @@ interface ConfiguratorState {
   suggestion: { reply: string; changes: Record<string, unknown> } | null;
   /** True while the uploaded files are being analysed for a suggestion. */
   analyzing: boolean;
+  /** When set, the configurator is editing an existing order (not a new project). */
+  editingOrderId: string | null;
   /** Selected ring and back-cover colors (only meaningful for AnillasColores). */
   colorAnillas: string;
   colorContraportada: string;
@@ -89,6 +91,7 @@ interface ConfiguratorState {
   /** Apply the current AI suggestion to the config and clear it. */
   applySuggestion: () => void;
   dismissSuggestion: () => void;
+  setEditingOrderId: (id: string | null) => void;
 }
 
 const initialCatalog = loadCatalog();
@@ -103,6 +106,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   nombreProyecto: '',
   suggestion: null,
   analyzing: false,
+  editingOrderId: null,
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
 
@@ -141,7 +145,8 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   setComentario: (comentario) => set({ comentario }),
   setNombreProyecto: (nombreProyecto) => set({ nombreProyecto }),
   clearProject: () =>
-    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false }),
+    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false, editingOrderId: null }),
+  setEditingOrderId: (editingOrderId) => set({ editingOrderId }),
   loadProject: (p) => {
     if (p.kind !== 'copias') return;
     set((s) => ({

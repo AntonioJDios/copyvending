@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { API_BASE } from '../lib/api';
+import { useConfigurator } from '../store/useConfigurator';
 import type { Order, OrderStatus } from '../store/useOrders';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -16,6 +17,20 @@ export function RecoverOrder() {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const loadProject = useConfigurator((s) => s.loadProject);
+  const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
+
+  // Only orders still in the initial state, with a single copies project, can be
+  // self-edited here (products/multi-item → shop handles it).
+  const editable =
+    order != null && order.status === 'nuevo' && order.items.length === 1 && order.items[0]?.kind === 'copias';
+
+  const modify = () => {
+    if (!order || !editable) return;
+    loadProject(order.items[0]);
+    setEditingOrderId(order.id);
+    window.location.hash = '';
+  };
 
   const lookup = async () => {
     const c = code.trim();
@@ -83,6 +98,17 @@ export function RecoverOrder() {
               <strong>{eur(order.total)}</strong>
             </div>
             {order.status === 'listo' && <p className="recover-ready">🎉 ¡Tu pedido está listo! Pasa a recogerlo.</p>}
+            {editable ? (
+              <button type="button" className="btn btn-primary" style={{ marginTop: 12 }} onClick={modify}>
+                ✏️ Modificar pedido
+              </button>
+            ) : (
+              order.status !== 'nuevo' && (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Este pedido ya está en proceso y no se puede modificar. Contacta con la copistería.
+                </p>
+              )
+            )}
           </section>
         )}
       </div>
