@@ -104,7 +104,10 @@ function colorAfter(text: string, keyword: string, options: string[]): string | 
 async function getColorOptions(): Promise<{ ring: string[]; cover: string[] }> {
   const fallback = {
     ring: ['Transparente', 'Negro', 'Verde Menta', 'Amarillo Golden', 'Turquesa', 'Rosa Pastel', 'Azul Pastel', 'Lila', 'Azul Purpurina'],
-    cover: ['Plástico Negro', 'Plástico Rojo', 'Plástico Transparente', 'Plástico Verde Pastel', 'Plástico Azul Pastel'],
+    cover: [
+      'Plástico Negro', 'Plástico Rojo', 'Plástico Transparente', 'Plástico Verde Pastel', 'Plástico Amarillo Pastel',
+      'Plástico Azul Pastel', 'Plástico Naranja Pastel', 'Plástico Rosa Pastel', 'Plástico Lila Pastel',
+    ],
   };
   try {
     const rows = (await db()`select value from settings where key = 'catalog'`) as { value: { ringColors?: { name: string; enabled?: boolean }[]; coverColors?: { name: string; enabled?: boolean }[] } }[];
