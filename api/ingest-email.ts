@@ -139,6 +139,7 @@ async function parseEmail(
   subject: string,
   text: string,
   colors: { ring: string[]; cover: string[] },
+  orientation?: 'vertical' | 'horizontal',
   instructions?: string
 ): Promise<{ reply: string; changes: Record<string, unknown>; copias: number; docColor?: string; colorAnillas?: string; colorContraportada?: string }> {
   if (!LLM_KEY) return { reply: 'Sin IA configurada; configuración por defecto.', changes: {}, copias: 1 };
@@ -148,12 +149,15 @@ async function parseEmail(
     '- size: A4 | A3 | A5 · color: BN | Color · grosor: 80|90|100|120|250',
     "- dobleCara: '0' (una cara) | '1' (doble cara) · paginasPorHoja: 1|2|4 · orientacion: vertical|horizontal",
     '- acabado: sinencuadernacion|grapado|AnillasColores|dos_agujeros|cuatro_agujeros|perforado',
-    '- juntos: agrupados|individual · sinMargenes: true|false · acabadoFolios: normal|plastificar|pegatinas',
+    '- juntos: agrupados|individual · sinMargenes: true|false · acabadoFolios: normal|plastificar|pegatinas · ladoEncuadernacion: largo|corto',
     "- docColor: 'no'|'cover'|'all' (color por documento; 'cover' = solo portada en color)",
     '- copias: número entero',
     `- colorAnillas (SOLO si acabado=AnillasColores y el cliente menciona un color de anillas): uno de [${colors.ring.join(', ')}]`,
     `- colorContraportada (SOLO si acabado=AnillasColores y menciona color de contraportada): uno de [${colors.cover.join(', ')}]`,
     'Solo incluye lo que el cliente indique; lo no mencionado se queda por defecto.',
+    orientation
+      ? `El PDF está en orientación ${orientation.toUpperCase()}. Fija "orientacion" a "${orientation}". Para la encuadernación, lo habitual: si es vertical, ladoEncuadernacion="largo"; si es horizontal, ladoEncuadernacion="corto" (ajústalo solo si el cliente lo pide).`
+      : '',
     instructions && instructions.trim() ? `Indicaciones del dueño: ${instructions.trim().slice(0, 1000)}` : '',
     `ASUNTO: ${subject}`,
     `MENSAJE: ${text.slice(0, 4000)}`,
@@ -228,20 +232,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ status: 'duplicate', orderId: prev[0]?.order_id || null });
     }
 
-    // 1) Parse the instructions with AI (offering the catalog's ring/cover colours).
-    const colorOpts = await getColorOptions();
-    const { reply, changes, copias, docColor, colorAnillas, colorContraportada } = await parseEmail(
-      email.subject || '',
-      email.text || '',
-      colorOpts,
-      body.instructions
-    );
-
-    // 2) Upload attachments to R2 (PDF/images only).
+    // 1) Upload attachments to R2 (PDF/images only) and detect page count +
+    //    orientation of the first PDF (to inform the AI).
     const projectId = crypto.randomUUID();
-    const docColorVal = (docColor === 'cover' || docColor === 'all' ? docColor : 'no') as 'no' | 'cover' | 'all';
-    const docs: { id: string; name: string; pages: number; color: string; storageKey: string }[] = [];
+    const uploaded: { id: string; name: string; pages: number; storageKey: string }[] = [];
     const skipped: string[] = [];
+    let detectedOri: 'vertical' | 'horizontal' | undefined;
     for (const att of email.attachments || []) {
       const type = att.contentType || '';
       const name = att.filename || 'archivo';
@@ -257,22 +253,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let pages = 1;
       if (type.startsWith('application/pdf')) {
         try {
-          pages = (await PDFDocument.load(bytes, { updateMetadata: false })).getPageCount();
+          const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+          pages = doc.getPageCount();
+          if (!detectedOri && doc.getPageCount() > 0) {
+            const { width, height } = doc.getPage(0).getSize();
+            detectedOri = width > height ? 'horizontal' : 'vertical';
+          }
         } catch {
           pages = 0; // encrypted/damaged → unknown
         }
       }
       const storageKey = await uploadToR2(projectId, name, type, bytes);
-      docs.push({ id: crypto.randomUUID(), name, pages, color: docColorVal, storageKey });
+      uploaded.push({ id: crypto.randomUUID(), name, pages, storageKey });
     }
 
-    if (docs.length === 0) {
+    if (uploaded.length === 0) {
       await sql`delete from email_jobs where message_id = ${messageId}`; // release claim; nothing to do
       return res.status(422).json({ error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped });
     }
 
+    // 2) Parse the instructions with AI (with detected orientation + colours).
+    const colorOpts = await getColorOptions();
+    const { reply, changes, copias, docColor, colorAnillas, colorContraportada } = await parseEmail(
+      email.subject || '',
+      email.text || '',
+      colorOpts,
+      detectedOri,
+      body.instructions
+    );
+
     // 3) Build the order (source: 'email') and hand it to /api/orders, which
     //    prices it authoritatively with the Neon catalog and inserts it.
+    const docColorVal = (docColor === 'cover' || docColor === 'all' ? docColor : 'no') as 'no' | 'cover' | 'all';
+    const docs = uploaded.map((d) => ({ ...d, color: docColorVal }));
     const config = { ...DEFAULT_CONFIG, ...changes };
     const orderId = `P-${crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}`;
     const nombre = (email.fromName || email.from || 'Cliente email').slice(0, 60);
