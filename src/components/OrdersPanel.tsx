@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useOrders, type Order, type OrderStatus } from '../store/useOrders';
+import { useConfigurator } from '../store/useConfigurator';
 import type { CartProject } from '../store/useCart';
 import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain/orderSpec';
 import { deleteProjectFiles } from '../lib/projectFiles';
@@ -81,8 +82,18 @@ function OrderItem({ item }: { item: CartProject }) {
 function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const remove = useOrders((s) => s.remove);
+  const loadProject = useConfigurator((s) => s.loadProject);
+  const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
   const [open, setOpen] = useState(order.status === 'nuevo');
   const [zipping, setZipping] = useState(false);
+
+  // The shop can edit an order while it's still new and it's a single copies project.
+  const editable = order.status === 'nuevo' && order.items.length === 1 && order.items[0]?.kind === 'copias';
+  const onEdit = () => {
+    loadProject(order.items[0]);
+    setEditingOrderId(order.id);
+    window.location.hash = '';
+  };
 
   const onDownload = async () => {
     setZipping(true);
@@ -152,6 +163,11 @@ function OrderCard({ order }: { order: Order }) {
               <button type="button" className="btn btn-small btn-primary" onClick={onDownload} disabled={zipping}>
                 {zipping ? 'Preparando…' : '⬇ Descargar archivos (ZIP)'}
               </button>
+              {editable && (
+                <button type="button" className="btn btn-small" onClick={onEdit}>
+                  ✏️ Editar
+                </button>
+              )}
               <button type="button" className="chip chip-danger" onClick={onDelete}>
                 Eliminar
               </button>

@@ -28,6 +28,7 @@ interface Ctx {
     folios?: { key: string; label: string }[];
     ringColors?: string[];
     coverColors?: string[];
+    presets?: { label: string; config: Record<string, unknown> }[];
   };
 }
 
@@ -36,6 +37,7 @@ function systemPrompt(ctx: Ctx): string {
   const sizes = (o.sizes || []).map((s) => `${s.key} (${s.label})`).join(', ');
   const finishes = (o.finishes || []).map((f) => `${f.key} (${f.label})`).join(', ');
   const folios = (o.folios || []).map((f) => `${f.key} (${f.label})`).join(', ');
+  const presets = o.presets || [];
   return [
     'Eres el asistente de una copistería de autoservicio. Hablas español, claro y breve, tono cercano.',
     'Ayudas al cliente con DOS cosas: (1) explicar qué es cada opción de impresión, (2) configurar el pedido según lo que pida.',
@@ -62,6 +64,9 @@ function systemPrompt(ctx: Ctx): string {
     ctx.price?.hasFiles
       ? `PRECIO ACTUAL del pedido: ${(ctx.price.total ?? 0).toFixed(2)} € (${ctx.price.pages ?? 0} páginas, ${ctx.price.sheets ?? 0} folios).`
       : 'El cliente AÚN NO ha subido documentos, así que no hay precio todavía.',
+    presets.length
+      ? `\nPERFILES RÁPIDOS del negocio (si lo que pide el cliente encaja con uno —p.ej. "es mi TFM" → perfil "TFM"—, aplica su configuración y menciónalo): ${JSON.stringify(presets)}`
+      : '',
     '',
     'REGLAS:',
     '- Cambia SOLO lo que el cliente pida o lo que sea necesario; no toques el resto.',

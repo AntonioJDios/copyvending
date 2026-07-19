@@ -2716,3 +2716,24 @@ body {
 .color-extra input {
   width: 64px;
 }
+
+/* Pre-vuelo de calidad (avisos deterministas antes de imprimir) */
+.preflight {
+  width: min(100% - 56px, 1400px);
+  margin: 10px auto 0;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: #fff7e6;
+  border: 1px solid #f0c98a;
+  color: #8a5b12;
+  animation: suggest-in 0.25s ease;
+}
+.preflight-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.preflight-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.preflight-list li { font-size: 13px; line-height: 1.4; }
+@media (max-width: 640px) {
+  .preflight { width: calc(100% - 28px); }
+}
+
+/* Botón secundario pequeño (Editar en backoffice) ya usa .btn.btn-small */

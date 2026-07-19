@@ -5,10 +5,11 @@ import { readFileInfo, renderPdfPage } from '../lib/pdf';
 import { bindingExtraCost, documentCost } from '../domain/pricing';
 import { FINISH_LABEL } from '../domain/catalog';
 import { MAX_FILE_MB, uploadService, validateFile } from '../lib/uploads';
-import { analyzeFile } from '../lib/analyzePdf';
+import { analyzeFile, preflightWarnings } from '../lib/analyzePdf';
 import { suggestConfig } from '../lib/suggest';
 import { hasBackend } from '../lib/api';
-import type { DocFile } from '../domain/types';
+import type { Configuracion, DocFile } from '../domain/types';
+import type { Catalog } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
 import { SpiralBinding } from './SpiralBinding';
 
@@ -21,8 +22,16 @@ const COLOR_LABEL: Record<DocFile['color'], string> = {
 };
 const COLOR_CYCLE: DocFile['color'][] = ['no', 'cover', 'all'];
 
+/** Extra price for the chosen ring/back-cover colours (per binding). */
+function colorExtra(config: Configuracion, catalog: Catalog, colorAnillas: string, colorContraportada: string): number {
+  if (config.acabado !== 'AnillasColores') return 0;
+  const r = catalog.ringColors.find((c) => c.name === colorAnillas)?.extra ?? 0;
+  const c = catalog.coverColors.find((c) => c.name === colorContraportada)?.extra ?? 0;
+  return r + c;
+}
+
 function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
-  const { catalog, config, copias, colorAnillas, files, removeFile, setFileColor } = useConfigurator();
+  const { catalog, config, copias, colorAnillas, colorContraportada, files, removeFile, setFileColor } = useConfigurator();
   const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({ id: file.id });
   const { setNodeRef: dropRef, isOver } = useDroppable({ id: file.id });
 
@@ -53,7 +62,7 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
   const individual = config.juntos === 'individual' || files.length <= 1;
   // When bound individually (or single file), this document carries its own
   // finishing + per-binding surcharges; show them alongside the print price.
-  const finishingCost = individual ? bindingExtraCost(config, catalog) * copias : 0;
+  const finishingCost = individual ? (bindingExtraCost(config, catalog) + colorExtra(config, catalog, colorAnillas, colorContraportada)) * copias : 0;
   const cost = printCost + finishingCost;
   const showHoles = holeCount > 0 && individual;
   const sparseHoles = config.acabado === 'dos_agujeros' || config.acabado === 'cuatro_agujeros';
@@ -196,12 +205,12 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
 /** When bound "all together", the whole set is one block: total thickness,
  *  the first document as the cover, and a single binding on it. */
 function GroupedBinding() {
-  const { catalog, config, colorAnillas, files, copias } = useConfigurator();
+  const { catalog, config, colorAnillas, colorContraportada, files, copias } = useConfigurator();
   // With a single file, grouped == individual, so no separate block.
   if (config.juntos !== 'agrupados' || config.acabado === 'sinencuadernacion' || files.length < 2) return null;
 
   const totalPages = files.reduce((s, f) => s + f.pages, 0);
-  const finishingCost = bindingExtraCost(config, catalog) * copias;
+  const finishingCost = (bindingExtraCost(config, catalog) + colorExtra(config, catalog, colorAnillas, colorContraportada)) * copias;
   const cover = files.find((f) => f.thumb);
   const long = config.ladoEncuadernacion === 'largo';
 
@@ -251,26 +260,31 @@ function GroupedBinding() {
 }
 
 export function FileGrid() {
-  const { files, addFiles, patchFile, reorder, proyectoId, setAnalyzing, setSuggestion } = useConfigurator();
+  const { files, addFiles, patchFile, reorder, proyectoId, setAnalyzing, setPreflight, setSuggestion } = useConfigurator();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Analyse the uploaded files (deterministic, in-browser) and ask the assistant
-  // to propose the best/cheapest configuration. Best-effort: a nicety, never blocks.
-  const runSuggestion = async (fileList: File[]) => {
-    if (!hasBackend || fileList.length === 0) return;
-    const { catalog } = useConfigurator.getState();
-    if (catalog.assistant?.suggestEnabled === false) return; // owner turned it off
+  // Analyse the uploaded files in-browser (deterministic): pre-flight quality
+  // checks + auto project name. If a backend is wired, also ask the assistant
+  // for a configuration suggestion. Best-effort; never blocks the upload.
+  const runAnalysis = async (fileList: File[]) => {
+    if (fileList.length === 0) return;
     setAnalyzing(true);
     try {
       const analyses = await Promise.all(fileList.map((f) => analyzeFile(f)));
-      const s = await suggestConfig(analyses, catalog);
-      if (s.changes && Object.keys(s.changes).length) setSuggestion(s);
+      setPreflight(preflightWarnings(analyses));
+      // Auto project name from the first document's detected title, if unset.
+      const st = useConfigurator.getState();
+      if (!st.nombreProyecto.trim() && analyses[0]?.title) st.setNombreProyecto(analyses[0].title);
+      if (hasBackend && st.catalog.assistant?.suggestEnabled !== false) {
+        const s = await suggestConfig(analyses, st.catalog);
+        if (s.changes && Object.keys(s.changes).length) setSuggestion(s);
+      }
     } catch {
-      /* suggestion is optional — stay silent on failure */
+      /* analysis is a nicety — stay silent on failure */
     } finally {
       setAnalyzing(false);
     }
@@ -328,8 +342,8 @@ export function FileGrid() {
           .catch((e: unknown) => patchFile(doc.id, { uploadStatus: 'error', uploadError: e instanceof Error ? e.message : 'Error' }));
       }
 
-      // Analyse + propose configuration in the background (doesn't block the UI).
-      void runSuggestion(accepted);
+      // Analyse (pre-flight + name + suggestion) in the background.
+      void runAnalysis(accepted);
     } finally {
       setBusy(false);
       if (fileInput.current) fileInput.current.value = '';

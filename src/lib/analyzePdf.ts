@@ -14,21 +14,29 @@ export interface FileAnalysis {
   colorPages: number;
   colorApprox: boolean;
   hasColor: boolean;
-  /** ~30% of page 1's text (bounded) so the model can guess the document type.
-   *  Only page 1 — never the whole doc, so token cost stays tiny. */
+  /** ~30% of page 1's text (bounded) so the model can guess the document type. */
   textExcerpt: string;
+  /** Best-guess document title (biggest text on page 1). */
+  title: string;
   likelyPhoto: boolean;
+  // --- Pre-flight quality signals ---
+  /** Blank pages detected (approx. if sampled). */
+  blankPages: number;
+  /** True if page sizes are mixed (e.g. A4 + A3). */
+  mixedSizes: boolean;
+  /** For image uploads: low-resolution for large printing. */
+  lowRes?: { w: number; h: number };
 }
 
-// Standard sizes in PostScript points (1/72"), portrait.
 const SIZES: { size: Size; w: number; h: number }[] = [
   { size: 'A4', w: 595, h: 842 },
   { size: 'A3', w: 842, h: 1191 },
   { size: 'A5', w: 420, h: 595 },
 ];
-const MAX_SCAN = 140; // cap colour-scan work; sample beyond this
-const COLOR_SPREAD = 26; // channel spread above which a pixel counts as colour
-const COLOR_PAGE_FRACTION = 0.004; // ≥0.4% coloured pixels ⇒ page has colour
+const MAX_SCAN = 140;
+const COLOR_SPREAD = 26;
+const COLOR_PAGE_FRACTION = 0.004;
+const INK_BLANK_FRACTION = 0.002; // below this a page is considered blank
 
 function nearestSize(wPt: number, hPt: number): Size | 'desconocido' {
   const w = Math.min(wPt, hPt);
@@ -45,12 +53,12 @@ function nearestSize(wPt: number, hPt: number): Size | 'desconocido' {
   return best;
 }
 
-/** True if the rendered page/image has a meaningful amount of colour. */
-function canvasHasColor(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+/** Colour + ink coverage of a rendered page (sampled pixels). */
+function canvasStats(ctx: CanvasRenderingContext2D, w: number, h: number): { colored: boolean; blank: boolean } {
   const { data } = ctx.getImageData(0, 0, w, h);
   let colored = 0;
+  let ink = 0;
   let total = 0;
-  // Sample every 4th pixel (stride 16 bytes).
   for (let i = 0; i < data.length; i += 16) {
     const r = data[i];
     const g = data[i + 1];
@@ -58,10 +66,10 @@ function canvasHasColor(ctx: CanvasRenderingContext2D, w: number, h: number): bo
     const a = data[i + 3];
     if (a < 16) continue;
     total++;
-    const spread = Math.max(r, g, b) - Math.min(r, g, b);
-    if (spread > COLOR_SPREAD) colored++;
+    if (Math.max(r, g, b) - Math.min(r, g, b) > COLOR_SPREAD) colored++;
+    if ((r + g + b) / 3 < 245) ink++;
   }
-  return total > 0 && colored / total > COLOR_PAGE_FRACTION;
+  return { colored: total > 0 && colored / total > COLOR_PAGE_FRACTION, blank: total > 0 && ink / total < INK_BLANK_FRACTION };
 }
 
 async function analyzeImage(file: File): Promise<FileAnalysis> {
@@ -75,26 +83,43 @@ async function analyzeImage(file: File): Promise<FileAnalysis> {
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(bitmap, 0, 0, w, h);
-  const hasColor = canvasHasColor(ctx, w, h);
+  const { colored } = canvasStats(ctx, w, h);
   const orientation = bitmap.width >= bitmap.height ? 'horizontal' : 'vertical';
+  // Low-res if the long edge is under ~A4 at 150 dpi (≈1400 px).
+  const longEdge = Math.max(bitmap.width, bitmap.height);
+  const lowRes = longEdge < 1400 ? { w: bitmap.width, h: bitmap.height } : undefined;
   bitmap.close();
   return {
     name: file.name,
     pages: 1,
     size: 'desconocido',
     orientation,
-    colorPages: hasColor ? 1 : 0,
+    colorPages: colored ? 1 : 0,
     colorApprox: false,
-    hasColor,
+    hasColor: colored,
     textExcerpt: '',
+    title: file.name.replace(/\.[a-z0-9]+$/i, ''),
     likelyPhoto: true,
+    blankPages: 0,
+    mixedSizes: false,
+    lowRes,
   };
 }
 
-/**
- * Deterministic, in-browser analysis. NO tokens: page count, paper size,
- * orientation, colour per page (sampled) and a short page-1 text excerpt.
- */
+/** Biggest text on page 1 → best-guess title. */
+function guessTitle(items: { str: string; height: number }[]): string {
+  const words = items.filter((i) => i.str.trim());
+  if (words.length === 0) return '';
+  const maxH = Math.max(...words.map((i) => i.height || 0));
+  const pick = maxH > 0 ? words.filter((i) => (i.height || 0) >= maxH * 0.9) : words.slice(0, 6);
+  return pick
+    .map((i) => i.str)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 70);
+}
+
 export async function analyzeFile(file: File, onProgress?: (done: number, total: number) => void): Promise<FileAnalysis> {
   if (file.type.startsWith('image/')) return analyzeImage(file);
 
@@ -102,45 +127,51 @@ export async function analyzeFile(file: File, onProgress?: (done: number, total:
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   const pages = pdf.numPages;
 
-  // Page 1: size + orientation + text excerpt.
   const p1 = await pdf.getPage(1);
   const base = p1.getViewport({ scale: 1 });
   const size = nearestSize(base.width, base.height);
   const orientation = base.width > base.height ? 'horizontal' : 'vertical';
+
   let textExcerpt = '';
+  let title = '';
   try {
     const tc = await p1.getTextContent();
-    const full = tc.items
-      .map((it) => ('str' in it ? it.str : ''))
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    // ~30% of page 1 (from the start, where titles live), min 600, hard cap 2000
-    // chars so the token cost stays tiny (one page, never the whole doc).
+    const items = tc.items.map((it) => ('str' in it ? { str: it.str, height: (it as { height?: number }).height ?? 0 } : { str: '', height: 0 }));
+    const full = items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim();
     const take = Math.min(2000, Math.max(600, Math.round(full.length * 0.3)));
     textExcerpt = full.slice(0, take);
+    title = guessTitle(items);
   } catch {
     /* scanned PDF w/o text layer */
   }
+  if (!title) title = file.name.replace(/\.[a-z0-9]+$/i, '');
 
-  // Colour scan (sampled for big docs).
+  // Colour + blank + size scan (sampled for big docs).
   const step = Math.max(1, Math.ceil(pages / MAX_SCAN));
   const scanned: number[] = [];
   for (let n = 1; n <= pages; n += step) scanned.push(n);
+  if (scanned[scanned.length - 1] !== pages) scanned.push(pages); // always check the last page
   let coloredScanned = 0;
+  let blankScanned = 0;
+  const sizeKeys = new Set<string>();
   for (let idx = 0; idx < scanned.length; idx++) {
     const n = scanned[idx];
     try {
       const page = n === 1 ? p1 : await pdf.getPage(n);
       const vp0 = page.getViewport({ scale: 1 });
-      const scale = 96 / vp0.width; // ~96px wide, enough to detect colour
+      const lo = Math.round(Math.min(vp0.width, vp0.height) / 10);
+      const hi = Math.round(Math.max(vp0.width, vp0.height) / 10);
+      sizeKeys.add(`${lo}x${hi}`);
+      const scale = 96 / vp0.width;
       const vp = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
       canvas.width = Math.ceil(vp.width);
       canvas.height = Math.ceil(vp.height);
       const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
       await page.render({ canvas, canvasContext: ctx, viewport: vp }).promise;
-      if (canvasHasColor(ctx, canvas.width, canvas.height)) coloredScanned++;
+      const stats = canvasStats(ctx, canvas.width, canvas.height);
+      if (stats.colored) coloredScanned++;
+      if (stats.blank) blankScanned++;
     } catch {
       /* skip unrenderable page */
     }
@@ -149,8 +180,9 @@ export async function analyzeFile(file: File, onProgress?: (done: number, total:
   void pdf.cleanup();
 
   const colorApprox = step > 1;
-  const colorPages = colorApprox ? Math.round((coloredScanned / scanned.length) * pages) : coloredScanned;
-  const likelyPhoto = pages <= 2 && textExcerpt.length < 20;
+  const factor = pages / scanned.length;
+  const colorPages = colorApprox ? Math.round(coloredScanned * factor) : coloredScanned;
+  const blankPages = colorApprox ? Math.round(blankScanned * factor) : blankScanned;
 
   return {
     name: file.name,
@@ -161,6 +193,26 @@ export async function analyzeFile(file: File, onProgress?: (done: number, total:
     colorApprox,
     hasColor: coloredScanned > 0,
     textExcerpt,
-    likelyPhoto,
+    title,
+    likelyPhoto: pages <= 2 && textExcerpt.length < 20,
+    blankPages,
+    mixedSizes: sizeKeys.size > 1,
   };
+}
+
+/** Human, deterministic pre-flight warnings for the uploaded files. */
+export function preflightWarnings(analyses: FileAnalysis[]): string[] {
+  const w: string[] = [];
+  for (const a of analyses) {
+    if (a.lowRes) {
+      w.push(`«${a.name}»: imagen de baja resolución (${a.lowRes.w}×${a.lowRes.h} px); a tamaño grande puede verse pixelada.`);
+    }
+    if (a.mixedSizes) {
+      w.push(`«${a.name}»: mezcla tamaños de página (p.ej. A4 y A3); revisa cómo quieres imprimirlo.`);
+    }
+    if (a.blankPages > 0) {
+      w.push(`«${a.name}»: ${a.blankPages} página${a.blankPages !== 1 ? 's' : ''} en blanco detectada${a.blankPages !== 1 ? 's' : ''}${a.colorApprox ? ' (aprox.)' : ''}.`);
+    }
+  }
+  return w;
 }

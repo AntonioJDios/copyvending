@@ -3,6 +3,7 @@ import { useConfigurator } from './store/useConfigurator';
 import { hasBackend } from './lib/api';
 import { AssistantChat } from './components/AssistantChat';
 import { SuggestionBanner } from './components/SuggestionBanner';
+import { PreflightNotice } from './components/PreflightNotice';
 import { RecoverOrder } from './components/RecoverOrder';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
@@ -104,6 +105,7 @@ export default function App() {
         ⚙ Opciones de impresión
       </button>
       {hasBackend && <SuggestionBanner />}
+      <PreflightNotice />
       <div className={`layout${optionsCollapsed ? ' focus' : ''}`}>
         <OptionsPanel
           open={optionsOpen}

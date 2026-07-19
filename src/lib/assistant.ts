@@ -22,6 +22,8 @@ export function buildOptions(catalog: Catalog) {
     folios: catalog.enabledFolios.map((f) => ({ key: f, label: FOLIO_LABEL[f] })),
     ringColors: catalog.ringColors.filter((c) => c.enabled !== false).map((c) => c.name),
     coverColors: catalog.coverColors.filter((c) => c.enabled !== false).map((c) => c.name),
+    // Shop's quick-start profiles so the assistant can apply a matching one.
+    presets: catalog.presets.filter((p) => p.enabled !== false).map((p) => ({ label: p.label, config: p.config })),
   };
 }
 

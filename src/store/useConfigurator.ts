@@ -62,6 +62,8 @@ interface ConfiguratorState {
   suggestion: { reply: string; changes: Record<string, unknown> } | null;
   /** True while the uploaded files are being analysed for a suggestion. */
   analyzing: boolean;
+  /** Deterministic pre-flight quality warnings for the uploaded files. */
+  preflight: string[];
   /** When set, the configurator is editing an existing order (not a new project). */
   editingOrderId: string | null;
   /** Selected ring and back-cover colors (only meaningful for AnillasColores). */
@@ -87,6 +89,7 @@ interface ConfiguratorState {
   /** Refresh the catalog from the shared backend (if wired). */
   fetchCatalog: () => Promise<void>;
   setAnalyzing: (b: boolean) => void;
+  setPreflight: (w: string[]) => void;
   setSuggestion: (s: { reply: string; changes: Record<string, unknown> } | null) => void;
   /** Apply the current AI suggestion to the config and clear it. */
   applySuggestion: () => void;
@@ -106,6 +109,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   nombreProyecto: '',
   suggestion: null,
   analyzing: false,
+  preflight: [],
   editingOrderId: null,
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
@@ -145,7 +149,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   setComentario: (comentario) => set({ comentario }),
   setNombreProyecto: (nombreProyecto) => set({ nombreProyecto }),
   clearProject: () =>
-    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false, editingOrderId: null }),
+    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false, preflight: [], editingOrderId: null }),
   setEditingOrderId: (editingOrderId) => set({ editingOrderId }),
   loadProject: (p) => {
     if (p.kind !== 'copias') return;
@@ -195,6 +199,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   },
 
   setAnalyzing: (analyzing) => set({ analyzing }),
+  setPreflight: (preflight) => set({ preflight }),
   setSuggestion: (suggestion) => set({ suggestion }),
   dismissSuggestion: () => set({ suggestion: null }),
   applySuggestion: () =>

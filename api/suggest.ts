@@ -26,6 +26,7 @@ interface Analysis {
 function systemPrompt(analyses: Analysis[], options: Record<string, unknown>, instructions?: string): string {
   const sizes = (options.sizes as { key: string; label: string }[] | undefined)?.map((s) => `${s.key} (${s.label})`).join(', ');
   const finishes = (options.finishes as { key: string; label: string }[] | undefined)?.map((f) => `${f.key} (${f.label})`).join(', ');
+  const presets = (options.presets as { label: string; config: Record<string, unknown> }[] | undefined) || [];
   return [
     'Eres un experto de imprenta. Te doy el análisis (determinista) de los documentos que un cliente acaba de subir.',
     'Cada documento incluye "textExcerpt" (parte del texto de su primera página). ÚSALO para adivinar qué es (TFM, apuntes, CV, contrato, póster, presentación, foto…) y menciónalo en tu explicación.',
@@ -33,6 +34,10 @@ function systemPrompt(analyses: Analysis[], options: Record<string, unknown>, in
     '',
     'Documentos analizados:',
     JSON.stringify(analyses),
+    '',
+    presets.length
+      ? `PERFILES RÁPIDOS del negocio (si el documento encaja claramente con uno —p.ej. un TFM con el perfil "TFM", apuntes con "Apuntes"—, APLÍCALO usando su configuración como base y menciónalo en tu respuesta): ${JSON.stringify(presets)}`
+      : '',
     '',
     'Opciones válidas (usa EXACTAMENTE estas claves/valores):',
     `- size: ${sizes || 'A4, A3, A5'}`,
