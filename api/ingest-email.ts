@@ -2,6 +2,11 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { AwsClient } from 'aws4fetch';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { PDFDocument } from 'pdf-lib';
+import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
+
+// Give the function headroom to read the inbox + upload attachments.
+export const maxDuration = 60;
 
 // Self-contained (no ../src imports — they break the Vercel runtime). Pricing
 // and the order insert are delegated to /api/orders, which is authoritative.
@@ -100,22 +105,31 @@ function colorAfter(text: string, keyword: string, options: string[]): string | 
   return m ? matchColor(m[1], options) : undefined;
 }
 
-/** Ring/back-cover colour names offered by the shop (from the Neon catalog). */
-async function getColorOptions(): Promise<{ ring: string[]; cover: string[] }> {
+/** Shop settings from the Neon catalog: ring/cover colour names + the owner's
+ *  free-text assistant instructions. */
+async function getShopSettings(): Promise<{ ring: string[]; cover: string[]; instructions: string }> {
   const fallback = {
     ring: ['Transparente', 'Negro', 'Verde Menta', 'Amarillo Golden', 'Turquesa', 'Rosa Pastel', 'Azul Pastel', 'Lila', 'Azul Purpurina'],
     cover: [
       'Plástico Negro', 'Plástico Rojo', 'Plástico Transparente', 'Plástico Verde Pastel', 'Plástico Amarillo Pastel',
       'Plástico Azul Pastel', 'Plástico Naranja Pastel', 'Plástico Rosa Pastel', 'Plástico Lila Pastel',
     ],
+    instructions: '',
   };
   try {
-    const rows = (await db()`select value from settings where key = 'catalog'`) as { value: { ringColors?: { name: string; enabled?: boolean }[]; coverColors?: { name: string; enabled?: boolean }[] } }[];
+    const rows = (await db()`select value from settings where key = 'catalog'`) as {
+      value: {
+        ringColors?: { name: string; enabled?: boolean }[];
+        coverColors?: { name: string; enabled?: boolean }[];
+        assistant?: { instructions?: string };
+      };
+    }[];
     const c = rows[0]?.value;
     if (c) {
       const ring = (c.ringColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
       const cover = (c.coverColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
-      if (ring.length) return { ring, cover: cover.length ? cover : fallback.cover };
+      const instructions = c.assistant?.instructions || '';
+      if (ring.length) return { ring, cover: cover.length ? cover : fallback.cover, instructions };
     }
   } catch {
     /* settings missing → fallback */
@@ -262,17 +276,16 @@ interface EmailIn {
   attachments?: Attachment[];
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
-  try {
-    await ensureSchema();
-    const sql = db();
-    const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string };
-    const email = body.email;
-
-    // Real inbox reading (Gmail) comes later; for now require a provided email.
-    if (!email) return res.status(400).json({ error: 'Modo lectura de buzón pendiente (Gmail). Envía un email en el cuerpo para procesar.' });
-
+/** Process ONE normalised email into an order (dedupe → group → upload → create).
+ *  Returns an { http, body } result instead of writing the response, so it can be
+ *  reused both for the test endpoint and the Gmail loop. */
+async function processEmail(
+  email: EmailIn,
+  settings: { ring: string[]; cover: string[]; instructions: string },
+  instructions: string
+): Promise<{ http: number; body: Record<string, unknown> }> {
+  const sql = db();
+  {
     const messageId = String(email.messageId || crypto.randomUUID());
     // Atomic claim → safe against duplicate/concurrent triggers.
     const claim = (await sql`
@@ -281,7 +294,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       on conflict (message_id) do nothing returning message_id`) as { message_id: string }[];
     if (claim.length === 0) {
       const prev = (await sql`select order_id from email_jobs where message_id = ${messageId}`) as { order_id: string }[];
-      return res.status(200).json({ status: 'duplicate', orderId: prev[0]?.order_id || null });
+      return { http: 200, body: { status: 'duplicate', orderId: prev[0]?.order_id || null } };
     }
 
     // 1) Decode attachments + read metadata (pages, orientation). No upload yet —
@@ -320,17 +333,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (decoded.length === 0) {
       await sql`delete from email_jobs where message_id = ${messageId}`; // release claim; nothing to do
-      return res.status(422).json({ error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped });
+      return { http: 422, body: { error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped } };
     }
 
     // 2) Group the files into one or more projects with the AI.
-    const colorOpts = await getColorOptions();
     const { reply, projects } = await parseEmail(
       email.subject || '',
       email.text || '',
       decoded.map((d) => ({ name: d.name, pages: d.pages, orientation: d.orientation })),
-      colorOpts,
-      body.instructions
+      { ring: settings.ring, cover: settings.cover },
+      instructions
     );
 
     // 3) Upload each project's files to its own R2 folder and build the items.
@@ -367,7 +379,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (items.length === 0) {
       await sql`delete from email_jobs where message_id = ${messageId}`;
-      return res.status(422).json({ error: 'No se pudo asignar ningún archivo a un proyecto.', skipped });
+      return { http: 422, body: { error: 'No se pudo asignar ningún archivo a un proyecto.', skipped } };
     }
 
     // Note the AI summary (and any skipped files) on the first project.
@@ -393,19 +405,93 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const orderData = (await orderRes.json().catch(() => ({}))) as { total?: number; error?: string };
     if (!orderRes.ok) {
       await sql`delete from email_jobs where message_id = ${messageId}`; // release claim so a retry can work
-      return res.status(502).json({ error: `No se pudo crear el pedido: ${orderData.error || orderRes.status}` });
+      return { http: 502, body: { error: `No se pudo crear el pedido: ${orderData.error || orderRes.status}` } };
     }
     await sql`update email_jobs set order_id = ${orderId} where message_id = ${messageId}`;
 
-    return res.status(201).json({
-      status: 'created',
-      orderId,
-      total: orderData.total ?? 0,
-      projects: items.length,
-      docs: items.reduce((s, it) => s + ((it.docs as unknown[])?.length ?? 0), 0),
-      skipped,
-      reply,
-    });
+    return {
+      http: 201,
+      body: {
+        status: 'created',
+        orderId,
+        total: orderData.total ?? 0,
+        projects: items.length,
+        docs: items.reduce((s, it) => s + ((it.docs as unknown[])?.length ?? 0), 0),
+        skipped,
+        reply,
+      },
+    };
+  }
+}
+
+/** Read the Gmail inbox (IMAP) and process new (unseen) messages. */
+async function readGmailAndProcess(
+  settings: { ring: string[]; cover: string[]; instructions: string }
+): Promise<Record<string, unknown>> {
+  const client = new ImapFlow({
+    host: 'imap.gmail.com',
+    port: 993,
+    secure: true,
+    auth: { user: process.env.GMAIL_USER || '', pass: process.env.GMAIL_APP_PASSWORD || '' },
+    logger: false,
+  });
+  const results: unknown[] = [];
+  await client.connect();
+  const lock = await client.getMailboxLock('INBOX');
+  try {
+    const found = await client.search({ seen: false }, { uid: true });
+    const uids = Array.isArray(found) ? found.slice(0, 5) : []; // cap per run (kiosk polls)
+    for (const uid of uids) {
+      try {
+        const msg = await client.fetchOne(uid, { source: true }, { uid: true });
+        if (!msg || !msg.source) continue;
+        const parsed = await simpleParser(msg.source);
+        const email: EmailIn = {
+          messageId: parsed.messageId || `gmail-${uid}`,
+          from: parsed.from?.value?.[0]?.address,
+          fromName: parsed.from?.value?.[0]?.name,
+          subject: parsed.subject || '',
+          text: parsed.text || '',
+          attachments: (parsed.attachments || []).map((a) => ({
+            filename: a.filename || 'archivo',
+            contentType: a.contentType || 'application/octet-stream',
+            dataBase64: a.content.toString('base64'),
+          })),
+        };
+        const r = await processEmail(email, settings, settings.instructions);
+        results.push({ uid, status: r.body.status ?? 'ok', orderId: r.body.orderId ?? null, error: r.body.error });
+      } catch (e) {
+        results.push({ uid, error: e instanceof Error ? e.message : 'error' });
+      }
+      // Mark as read so it isn't processed again (dedupe also guards by messageId).
+      await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true }).catch(() => {});
+    }
+  } finally {
+    lock.release();
+    await client.logout().catch(() => {});
+  }
+  return { status: 'gmail', processed: results.length, results };
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
+  try {
+    await ensureSchema();
+    const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string };
+    const settings = await getShopSettings();
+
+    // Test / single mode: an email supplied in the body.
+    if (body.email) {
+      const r = await processEmail(body.email, settings, body.instructions ?? settings.instructions);
+      return res.status(r.http).json(r.body);
+    }
+
+    // Gmail mode: read the inbox and process new messages.
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      return res.status(400).json({ error: 'Falta GMAIL_USER / GMAIL_APP_PASSWORD (o envía un email en el cuerpo para probar).' });
+    }
+    const summary = await readGmailAndProcess(settings);
+    return res.status(200).json(summary);
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'error procesando el email' });
   }

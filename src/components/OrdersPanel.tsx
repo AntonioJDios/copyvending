@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useOrders, type Order, type OrderStatus } from '../store/useOrders';
 import { useConfigurator } from '../store/useConfigurator';
+import { API_BASE } from '../lib/api';
 import type { CartProject } from '../store/useCart';
 import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain/orderSpec';
 import { deleteProjectFiles } from '../lib/projectFiles';
@@ -182,13 +183,29 @@ export function OrdersPanel() {
   const fetchOrders = useOrders((s) => s.fetchOrders);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
 
-  // Load from the shared backend on open and poll so orders placed on other
-  // devices/browsers show up here without a manual reload.
-  useEffect(() => {
-    void fetchOrders();
-    const t = setInterval(() => void fetchOrders(), 15000);
-    return () => clearInterval(t);
+  // Pull the Gmail inbox (process new email orders), then refresh the list.
+  const pullInbox = useCallback(async () => {
+    if (API_BASE) {
+      try {
+        await fetch(`${API_BASE}/ingest-email`, { method: 'POST' });
+      } catch {
+        /* no backend / no Gmail configured → ignore */
+      }
+    }
+    await fetchOrders();
   }, [fetchOrders]);
+
+  // On open: pull the inbox + load orders. Then poll the list every 15s and
+  // pull the inbox every 90s (email orders appear without a manual reload).
+  useEffect(() => {
+    void pullInbox();
+    const list = setInterval(() => void fetchOrders(), 15000);
+    const inbox = setInterval(() => void pullInbox(), 90000);
+    return () => {
+      clearInterval(list);
+      clearInterval(inbox);
+    };
+  }, [pullInbox, fetchOrders]);
 
   const counts = {
     todos: orders.length,
@@ -204,7 +221,7 @@ export function OrdersPanel() {
       <header className="topbar">
         <h1>Pedidos</h1>
         <nav className="topnav">
-          <button type="button" className="btn" onClick={() => void fetchOrders()} disabled={loading}>
+          <button type="button" className="btn" onClick={() => void pullInbox()} disabled={loading}>
             {loading ? 'Actualizando…' : '↻ Actualizar'}
           </button>
           <a className="btn" href="#admin">
