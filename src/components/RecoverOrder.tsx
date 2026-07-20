@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { API_BASE } from '../lib/api';
 import { useConfigurator } from '../store/useConfigurator';
 import type { Order, OrderStatus } from '../store/useOrders';
@@ -32,8 +32,8 @@ export function RecoverOrder() {
     window.location.hash = '';
   };
 
-  const lookup = async () => {
-    const c = code.trim();
+  const lookup = async (codeArg?: string) => {
+    const c = (codeArg ?? code).trim();
     if (!c || loading) return;
     setLoading(true);
     setError('');
@@ -48,6 +48,17 @@ export function RecoverOrder() {
       setLoading(false);
     }
   };
+
+  // If arrived via a link like #recoger/P-XXXXXX, prefill and search automatically.
+  useEffect(() => {
+    const m = window.location.hash.match(/#recoger\/(.+)$/);
+    if (m) {
+      const c = decodeURIComponent(m[1]).trim().toUpperCase();
+      setCode(c);
+      void lookup(c);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="app">

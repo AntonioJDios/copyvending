@@ -4,9 +4,13 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { PDFDocument } from 'pdf-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
+import nodemailer from 'nodemailer';
 
 // Give the function headroom to read the inbox + upload attachments.
 export const maxDuration = 60;
+
+// Stable public URL for customer-facing links (not the per-deploy VERCEL_URL).
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
 
 // Self-contained (no ../src imports — they break the Vercel runtime). Pricing
 // and the order insert are delegated to /api/orders, which is authoritative.
@@ -276,13 +280,64 @@ interface EmailIn {
   attachments?: Attachment[];
 }
 
+/** Reply to the customer confirming their order (code + tracking link). */
+async function sendOrderReply(opts: {
+  to: string;
+  fromName?: string;
+  orderId: string;
+  total: number;
+  items: Record<string, unknown>[];
+  subject?: string;
+  messageId?: string;
+}): Promise<void> {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
+  const transport = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+  });
+  const link = `${PUBLIC_URL}/#recoger/${opts.orderId}`;
+  const lines = opts.items.map((it) => {
+    const c = (it.config || {}) as Record<string, unknown>;
+    const parts = [String(c.size || ''), c.color === 'BN' ? 'B/N' : 'Color', c.dobleCara === '1' ? 'doble cara' : 'una cara'];
+    if (c.acabado && c.acabado !== 'sinencuadernacion') parts.push(String(c.acabado));
+    const cop = Number(it.copias) || 1;
+    return `• ${String(it.nombre || 'Proyecto')} — ${parts.filter(Boolean).join(' · ')}${cop > 1 ? ` ×${cop}` : ''}`;
+  });
+  const text = [
+    opts.fromName ? `Hola ${opts.fromName},` : 'Hola,',
+    '',
+    'Hemos recibido tu email y preparado tu pedido:',
+    `Nº de pedido: ${opts.orderId}`,
+    '',
+    'Proyectos:',
+    ...lines,
+    '',
+    `Total estimado: ${opts.total.toFixed(2).replace('.', ',')} € (se confirma en la copistería).`,
+    '',
+    `Sigue tu pedido aquí: ${link}`,
+    '',
+    'Gracias.',
+  ].join('\n');
+  await transport.sendMail({
+    from: process.env.GMAIL_USER,
+    to: opts.to,
+    subject: opts.subject ? `Re: ${opts.subject}` : `Tu pedido ${opts.orderId}`,
+    text,
+    inReplyTo: opts.messageId,
+    references: opts.messageId,
+  });
+}
+
 /** Process ONE normalised email into an order (dedupe → group → upload → create).
  *  Returns an { http, body } result instead of writing the response, so it can be
  *  reused both for the test endpoint and the Gmail loop. */
 async function processEmail(
   email: EmailIn,
   settings: { ring: string[]; cover: string[]; instructions: string },
-  instructions: string
+  instructions: string,
+  notify = false
 ): Promise<{ http: number; body: Record<string, unknown> }> {
   const sql = db();
   {
@@ -409,6 +464,23 @@ async function processEmail(
     }
     await sql`update email_jobs set order_id = ${orderId} where message_id = ${messageId}`;
 
+    // Reply to the customer with the order code + tracking link (best-effort).
+    if (notify && email.from) {
+      try {
+        await sendOrderReply({
+          to: email.from,
+          fromName: email.fromName,
+          orderId,
+          total: orderData.total ?? 0,
+          items,
+          subject: email.subject,
+          messageId: email.messageId,
+        });
+      } catch {
+        /* the reply is a nicety — never fail the order because of it */
+      }
+    }
+
     return {
       http: 201,
       body: {
@@ -469,7 +541,7 @@ async function readGmailAndProcess(
             dataBase64: a.content.toString('base64'),
           })),
         };
-        const r = await processEmail(email, settings, settings.instructions);
+        const r = await processEmail(email, settings, settings.instructions, true); // notify sender
         if (r.body.status === 'created') created++;
         results.push({ uid, status: r.body.status ?? 'ok', orderId: r.body.orderId ?? null, error: r.body.error });
       } catch (e) {
