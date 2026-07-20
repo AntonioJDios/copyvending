@@ -40,8 +40,15 @@ function timeAgo(ts: number): string {
 
 function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: string; editable: boolean }) {
   const isCopias = item.kind === 'copias';
+  const catalog = useConfigurator((s) => s.catalog);
   const loadProject = useConfigurator((s) => s.loadProject);
   const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
+  // Colour swatch for ring/back-cover specs (their value is a colour name).
+  const swatchFor = (label: string, value: string): string | undefined => {
+    if (label === 'Anillas') return catalog.ringColors.find((c) => c.name === value)?.hex;
+    if (label === 'Contraportada') return catalog.coverColors.find((c) => c.name === value)?.hex;
+    return undefined;
+  };
   const onEdit = () => {
     loadProject(item);
     setEditingOrderId(orderId);
@@ -64,12 +71,22 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
           <span className="ord-item-price">{eur(item.total)}</span>
         </div>
         <dl className="ord-specs">
-          {projectSpecLines(item).map(([k, v]) => (
-            <div className="spec" key={k}>
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
+          {projectSpecLines(item).map(([k, v]) => {
+            const hex = swatchFor(k, v);
+            return (
+              <div className="spec" key={k}>
+                <dt>{k}</dt>
+                {hex ? (
+                  <dd className="spec-color">
+                    <span className="spec-swatch" style={{ background: hex }} />
+                    {v}
+                  </dd>
+                ) : (
+                  <dd>{v}</dd>
+                )}
+              </div>
+            );
+          })}
         </dl>
         {isCopias && (
           <ol className="ord-docs">
@@ -95,7 +112,7 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
 function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const remove = useOrders((s) => s.remove);
-  const [open, setOpen] = useState(order.status === 'nuevo');
+  const [open, setOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
 
   const onDownload = async () => {
