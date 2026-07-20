@@ -37,8 +37,15 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function OrderItem({ item }: { item: CartProject }) {
+function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: string; editable: boolean }) {
   const isCopias = item.kind === 'copias';
+  const loadProject = useConfigurator((s) => s.loadProject);
+  const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
+  const onEdit = () => {
+    loadProject(item);
+    setEditingOrderId(orderId);
+    window.location.hash = '';
+  };
   return (
     <div className="ord-item">
       <div className="ord-item-pic">
@@ -74,6 +81,11 @@ function OrderItem({ item }: { item: CartProject }) {
           </ol>
         )}
         {isCopias && item.comentario.trim() && <span className="ord-note">“{item.comentario.trim()}”</span>}
+        {isCopias && editable && (
+          <button type="button" className="btn btn-small ord-edit" onClick={onEdit}>
+            ✏️ Editar este proyecto
+          </button>
+        )}
       </div>
     </div>
   );
@@ -82,18 +94,8 @@ function OrderItem({ item }: { item: CartProject }) {
 function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const remove = useOrders((s) => s.remove);
-  const loadProject = useConfigurator((s) => s.loadProject);
-  const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
   const [open, setOpen] = useState(order.status === 'nuevo');
   const [zipping, setZipping] = useState(false);
-
-  // The shop can edit an order while it's still new and it's a single copies project.
-  const editable = order.status === 'nuevo' && order.items.length === 1 && order.items[0]?.kind === 'copias';
-  const onEdit = () => {
-    loadProject(order.items[0]);
-    setEditingOrderId(order.id);
-    window.location.hash = '';
-  };
 
   const onDownload = async () => {
     setZipping(true);
@@ -141,7 +143,7 @@ function OrderCard({ order }: { order: Order }) {
         <>
           <div className="order-items">
             {order.items.map((it) => (
-              <OrderItem key={it.id} item={it} />
+              <OrderItem key={it.id} item={it} orderId={order.id} editable={order.status === 'nuevo'} />
             ))}
           </div>
 
@@ -163,11 +165,6 @@ function OrderCard({ order }: { order: Order }) {
               <button type="button" className="btn btn-small btn-primary" onClick={onDownload} disabled={zipping}>
                 {zipping ? 'Preparando…' : '⬇ Descargar archivos (ZIP)'}
               </button>
-              {editable && (
-                <button type="button" className="btn btn-small" onClick={onEdit}>
-                  ✏️ Editar
-                </button>
-              )}
               <button type="button" className="chip chip-danger" onClick={onDelete}>
                 Eliminar
               </button>

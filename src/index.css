@@ -2737,3 +2737,6 @@ body {
 }
 
 /* Botón secundario pequeño (Editar en backoffice) ya usa .btn.btn-small */
+
+/* Botón "Editar este proyecto" en cada proyecto del backoffice */
+.ord-edit { align-self: flex-start; margin-top: 8px; }

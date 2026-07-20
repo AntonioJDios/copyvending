@@ -221,19 +221,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
-    // Modify an order's items — ONLY while it is still in the initial state.
+    // Modify an order — ONLY while it is still in the initial state. Accepts
+    // either { items } (replace all) or { item } (replace one project by id,
+    // keeping the rest — used to edit a single project of a multi-project order).
     if (req.method === 'PUT') {
       const id = queryId(req);
-      const body = req.body as { items?: Record<string, unknown>[] };
-      if (!id || !Array.isArray(body.items)) return res.status(400).json({ error: 'faltan datos' });
-      const cur = (await sql`select status from orders where id = ${id}`) as { status: string }[];
+      const body = req.body as { items?: Record<string, unknown>[]; item?: Record<string, unknown> };
+      if (!id || (!Array.isArray(body.items) && !body.item)) return res.status(400).json({ error: 'faltan datos' });
+      const cur = (await sql`select status, items from orders where id = ${id}`) as { status: string; items: Record<string, unknown>[] }[];
       if (cur.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
       if (cur[0].status !== 'nuevo') {
         return res.status(409).json({ error: 'El pedido ya está en proceso y no se puede modificar.' });
       }
+
+      let items: Record<string, unknown>[];
+      if (body.item) {
+        const existing = Array.isArray(cur[0].items) ? cur[0].items : [];
+        let found = false;
+        items = existing.map((x) => {
+          if (x && (x as { id?: unknown }).id === (body.item as { id?: unknown }).id) {
+            found = true;
+            return body.item as Record<string, unknown>;
+          }
+          return x;
+        });
+        if (!found) items.push(body.item);
+      } else {
+        items = body.items as Record<string, unknown>[];
+      }
+
       const catalog = await getCatalog();
       let serverTotal = 0;
-      const priced = body.items.map((it) => {
+      const priced = items.map((it) => {
         const t = itemTotal(it, catalog);
         serverTotal += t;
         return { ...it, total: t };

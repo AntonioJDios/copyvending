@@ -50,7 +50,8 @@ export function PriceBar() {
       const res = await fetch(`${API_BASE ?? ''}/orders?id=${encodeURIComponent(editingOrderId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: [buildProject()] }),
+        // Replace only THIS project (by id); other projects of the order stay.
+        body: JSON.stringify({ item: buildProject() }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
