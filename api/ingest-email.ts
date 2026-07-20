@@ -135,64 +135,116 @@ const DEFAULT_CONFIG = {
 };
 const CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
 
+interface ProjectPlan {
+  files: string[]; // attachment filenames belonging to this project
+  nombre?: string;
+  changes: Record<string, unknown>;
+  copias: number;
+  docColor: 'no' | 'cover' | 'all';
+  colorAnillas?: string;
+  colorContraportada?: string;
+}
+
+interface FileInfo {
+  name: string;
+  pages: number;
+  orientation: 'vertical' | 'horizontal' | 'desconocida';
+}
+
+/** Ask the AI to group the attachments into one or more print PROJECTS (files
+ *  that go together in the same project; files with a different configuration or
+ *  that shouldn't be bound together in separate projects) and give each its
+ *  configuration. Falls back to a single project with all files. */
 async function parseEmail(
   subject: string,
   text: string,
+  fileInfos: FileInfo[],
   colors: { ring: string[]; cover: string[] },
-  orientation?: 'vertical' | 'horizontal',
   instructions?: string
-): Promise<{ reply: string; changes: Record<string, unknown>; copias: number; docColor?: string; colorAnillas?: string; colorContraportada?: string }> {
-  if (!LLM_KEY) return { reply: 'Sin IA configurada; configuración por defecto.', changes: {}, copias: 1 };
+): Promise<{ reply: string; projects: ProjectPlan[] }> {
+  const allNames = fileInfos.map((f) => f.name);
+  const single = (): ProjectPlan[] => [{ files: allNames, changes: {}, copias: 1, docColor: 'no' }];
+  if (!LLM_KEY) return { reply: 'Sin IA configurada; configuración por defecto.', projects: single() };
+
   const prompt = [
-    'Eres el recepcionista de una copistería. Un cliente envía un email pidiendo imprimir unos archivos adjuntos.',
-    'Extrae la configuración de impresión de su mensaje. Usa EXACTAMENTE estas claves/valores:',
+    'Eres el recepcionista de una copistería. Un cliente envía un email con archivos adjuntos para imprimir.',
+    'Agrupa los archivos en uno o VARIOS PROYECTOS y da a cada uno su configuración:',
+    '- Archivos que van JUNTOS (misma configuración y/o encuadernados juntos) → el MISMO proyecto.',
+    '- Archivos con configuración distinta o que NO se encuadernan juntos → proyectos SEPARADOS.',
+    'Si no está claro, agrupa todo en un único proyecto.',
+    '',
+    'Cada proyecto usa EXACTAMENTE estas claves/valores en "config":',
     '- size: A4 | A3 | A5 · color: BN | Color · grosor: 80|90|100|120|250',
     "- dobleCara: '0' (una cara) | '1' (doble cara) · paginasPorHoja: 1|2|4 · orientacion: vertical|horizontal",
     '- acabado: sinencuadernacion|grapado|AnillasColores|dos_agujeros|cuatro_agujeros|perforado',
     '- juntos: agrupados|individual · sinMargenes: true|false · acabadoFolios: normal|plastificar|pegatinas · ladoEncuadernacion: largo|corto',
-    "- docColor: 'no'|'cover'|'all' (color por documento; 'cover' = solo portada en color)",
-    '- copias: número entero',
-    `- colorAnillas (SOLO si acabado=AnillasColores y el cliente menciona un color de anillas): uno de [${colors.ring.join(', ')}]`,
-    `- colorContraportada (SOLO si acabado=AnillasColores y menciona color de contraportada): uno de [${colors.cover.join(', ')}]`,
-    'Solo incluye lo que el cliente indique; lo no mencionado se queda por defecto.',
-    orientation
-      ? `El PDF está en orientación ${orientation.toUpperCase()}. Fija "orientacion" a "${orientation}". Para la encuadernación, lo habitual: si es vertical, ladoEncuadernacion="largo"; si es horizontal, ladoEncuadernacion="corto" (ajústalo solo si el cliente lo pide).`
-      : '',
+    "- docColor: 'no'|'cover'|'all' ('cover' = solo la portada en color)",
+    '- copias: entero',
+    `- colorAnillas (solo si acabado=AnillasColores): uno de [${colors.ring.join(', ')}]`,
+    `- colorContraportada (solo si acabado=AnillasColores): uno de [${colors.cover.join(', ')}]`,
+    'Solo incluye lo que el cliente indique; el resto se queda por defecto.',
+    'ORIENTACIÓN: fija "orientacion" según la orientación detectada de cada archivo. Encuadernación: vertical→ladoEncuadernacion="largo", horizontal→"corto".',
     instructions && instructions.trim() ? `Indicaciones del dueño: ${instructions.trim().slice(0, 1000)}` : '',
+    '',
+    `ARCHIVOS (usa los nombres EXACTOS): ${JSON.stringify(fileInfos)}`,
     `ASUNTO: ${subject}`,
     `MENSAJE: ${text.slice(0, 4000)}`,
-    'Responde SOLO con JSON: { "reply": "<resumen breve en español>", "changes": { <config> }, "copias": <n>, "docColor": "<no|cover|all opcional>", "colorAnillas": "<opcional>", "colorContraportada": "<opcional>" }',
+    '',
+    'Responde SOLO con JSON:',
+    '{ "reply": "<resumen breve en español>", "projects": [ { "files": ["nombre1.pdf"], "nombre": "<opcional>", "config": { <config> }, "copias": <n>, "docColor": "<no|cover|all>", "colorAnillas": "<opcional>", "colorContraportada": "<opcional>" } ] }',
   ].join('\n');
-  const r = await fetch(`${LLM_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${LLM_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: LLM_MODEL, temperature: 0.2, max_tokens: 500, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: prompt }] }),
-  });
-  if (!r.ok) return { reply: 'No se pudo interpretar el mensaje; configuración por defecto.', changes: {}, copias: 1 };
-  const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
-  let parsed: { reply?: unknown; changes?: unknown; copias?: unknown; docColor?: unknown } = {};
+
+  let projects: ProjectPlan[] = [];
+  let reply = 'Pedido recibido por email.';
   try {
-    parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+    const r = await fetch(`${LLM_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${LLM_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: LLM_MODEL, temperature: 0.2, max_tokens: 900, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: prompt }] }),
+    });
+    if (r.ok) {
+      const data = (await r.json()) as { choices?: { message?: { content?: string } }[] };
+      const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') as {
+        reply?: unknown;
+        projects?: unknown;
+      };
+      if (typeof parsed.reply === 'string') reply = parsed.reply;
+      const raw = Array.isArray(parsed.projects) ? (parsed.projects as Record<string, unknown>[]) : [];
+      projects = raw.map((pr) => {
+        const cfgIn = pr.config && typeof pr.config === 'object' ? (pr.config as Record<string, unknown>) : {};
+        const changes: Record<string, unknown> = {};
+        for (const k of CONFIG_KEYS) if (k in cfgIn) changes[k] = cfgIn[k];
+        const filesIn = Array.isArray(pr.files) ? (pr.files as unknown[]).map(String) : [];
+        return {
+          files: filesIn.filter((n) => allNames.includes(n)),
+          nombre: typeof pr.nombre === 'string' ? pr.nombre : undefined,
+          changes,
+          copias: Math.max(1, Math.floor(Number(pr.copias)) || 1),
+          docColor: pr.docColor === 'cover' || pr.docColor === 'all' ? pr.docColor : 'no',
+          colorAnillas: matchColor(pr.colorAnillas, colors.ring),
+          colorContraportada: matchColor(pr.colorContraportada, colors.cover),
+        } as ProjectPlan;
+      });
+    }
   } catch {
-    /* keep defaults */
+    /* fall through to fallback */
   }
-  const p = parsed as { reply?: unknown; changes?: unknown; copias?: unknown; docColor?: unknown; colorAnillas?: unknown; colorContraportada?: unknown };
-  const changesIn = p.changes && typeof p.changes === 'object' ? (p.changes as Record<string, unknown>) : {};
-  const changes: Record<string, unknown> = {};
-  for (const k of CONFIG_KEYS) if (k in changesIn) changes[k] = changesIn[k];
-  // Map loose colour words to catalog names; if the model didn't fill the field,
-  // fall back to reading the colour straight from the message text.
-  const fullText = `${subject} ${text}`;
-  const ca = matchColor(p.colorAnillas, colors.ring) ?? colorAfter(fullText, 'anillas', colors.ring);
-  const cc = matchColor(p.colorContraportada, colors.cover) ?? colorAfter(fullText, 'contraportada', colors.cover);
-  return {
-    reply: typeof p.reply === 'string' ? p.reply : 'Pedido recibido por email.',
-    changes,
-    copias: Math.max(1, Math.floor(Number(p.copias)) || 1),
-    docColor: p.docColor === 'cover' || p.docColor === 'all' ? p.docColor : undefined,
-    colorAnillas: ca,
-    colorContraportada: cc,
-  };
+
+  // Drop empty projects; ensure every file is assigned exactly once.
+  projects = projects.filter((p) => p.files.length > 0);
+  const assigned = new Set(projects.flatMap((p) => p.files));
+  const leftover = allNames.filter((n) => !assigned.has(n));
+  if (projects.length === 0) return { reply, projects: single() };
+  if (leftover.length) projects.push({ files: leftover, changes: {}, copias: 1, docColor: 'no' });
+
+  // Single project → also try reading the colour from the free text.
+  if (projects.length === 1) {
+    const fullText = `${subject} ${text}`;
+    projects[0].colorAnillas = projects[0].colorAnillas ?? colorAfter(fullText, 'anillas', colors.ring);
+    projects[0].colorContraportada = projects[0].colorContraportada ?? colorAfter(fullText, 'contraportada', colors.cover);
+  }
+
+  return { reply, projects };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────
@@ -232,12 +284,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ status: 'duplicate', orderId: prev[0]?.order_id || null });
     }
 
-    // 1) Upload attachments to R2 (PDF/images only) and detect page count +
-    //    orientation of the first PDF (to inform the AI).
-    const projectId = crypto.randomUUID();
-    const uploaded: { id: string; name: string; pages: number; storageKey: string }[] = [];
+    // 1) Decode attachments + read metadata (pages, orientation). No upload yet —
+    //    we upload per project once the AI has grouped them.
+    type Decoded = { name: string; type: string; bytes: Uint8Array; pages: number; orientation: 'vertical' | 'horizontal' | 'desconocida' };
+    const decoded: Decoded[] = [];
     const skipped: string[] = [];
-    let detectedOri: 'vertical' | 'horizontal' | undefined;
     for (const att of email.attachments || []) {
       const type = att.contentType || '';
       const name = att.filename || 'archivo';
@@ -251,63 +302,86 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         continue;
       }
       let pages = 1;
+      let orientation: 'vertical' | 'horizontal' | 'desconocida' = 'desconocida';
       if (type.startsWith('application/pdf')) {
         try {
           const doc = await PDFDocument.load(bytes, { updateMetadata: false });
           pages = doc.getPageCount();
-          if (!detectedOri && doc.getPageCount() > 0) {
+          if (pages > 0) {
             const { width, height } = doc.getPage(0).getSize();
-            detectedOri = width > height ? 'horizontal' : 'vertical';
+            orientation = width > height ? 'horizontal' : 'vertical';
           }
         } catch {
           pages = 0; // encrypted/damaged → unknown
         }
       }
-      const storageKey = await uploadToR2(projectId, name, type, bytes);
-      uploaded.push({ id: crypto.randomUUID(), name, pages, storageKey });
+      decoded.push({ name, type, bytes, pages, orientation });
     }
 
-    if (uploaded.length === 0) {
+    if (decoded.length === 0) {
       await sql`delete from email_jobs where message_id = ${messageId}`; // release claim; nothing to do
       return res.status(422).json({ error: 'El email no traía archivos imprimibles (PDF o imagen).', skipped });
     }
 
-    // 2) Parse the instructions with AI (with detected orientation + colours).
+    // 2) Group the files into one or more projects with the AI.
     const colorOpts = await getColorOptions();
-    const { reply, changes, copias, docColor, colorAnillas, colorContraportada } = await parseEmail(
+    const { reply, projects } = await parseEmail(
       email.subject || '',
       email.text || '',
+      decoded.map((d) => ({ name: d.name, pages: d.pages, orientation: d.orientation })),
       colorOpts,
-      detectedOri,
       body.instructions
     );
 
-    // 3) Build the order (source: 'email') and hand it to /api/orders, which
-    //    prices it authoritatively with the Neon catalog and inserts it.
-    const docColorVal = (docColor === 'cover' || docColor === 'all' ? docColor : 'no') as 'no' | 'cover' | 'all';
-    const docs = uploaded.map((d) => ({ ...d, color: docColorVal }));
-    const config = { ...DEFAULT_CONFIG, ...changes };
+    // 3) Upload each project's files to its own R2 folder and build the items.
+    const byName = new Map(decoded.map((d) => [d.name, d]));
+    const items: Record<string, unknown>[] = [];
+    for (const plan of projects) {
+      const projId = crypto.randomUUID();
+      const planFiles = plan.files.map((n) => byName.get(n)).filter((f): f is Decoded => !!f);
+      if (planFiles.length === 0) continue;
+      const docs: { id: string; name: string; pages: number; color: string; storageKey: string }[] = [];
+      for (const f of planFiles) {
+        const storageKey = await uploadToR2(projId, f.name, f.type, f.bytes);
+        docs.push({ id: crypto.randomUUID(), name: f.name, pages: f.pages, color: plan.docColor, storageKey });
+      }
+      // Orientation fallback: if the model didn't set it, use the first file's.
+      const firstOri = planFiles.find((f) => f.orientation !== 'desconocida')?.orientation;
+      const oriBase =
+        !('orientacion' in plan.changes) && firstOri
+          ? { orientacion: firstOri, ladoEncuadernacion: firstOri === 'horizontal' ? 'corto' : 'largo' }
+          : {};
+      items.push({
+        id: projId,
+        kind: 'copias',
+        nombre: (plan.nombre || plan.files[0] || 'Proyecto').slice(0, 80),
+        config: { ...DEFAULT_CONFIG, ...oriBase, ...plan.changes },
+        docs,
+        copias: plan.copias,
+        comentario: '',
+        colorAnillas: plan.colorAnillas ?? '',
+        colorContraportada: plan.colorContraportada ?? '',
+        total: 0,
+      });
+    }
+
+    if (items.length === 0) {
+      await sql`delete from email_jobs where message_id = ${messageId}`;
+      return res.status(422).json({ error: 'No se pudo asignar ningún archivo a un proyecto.', skipped });
+    }
+
+    // Note the AI summary (and any skipped files) on the first project.
+    (items[0] as { comentario: string }).comentario = `📧 Pedido por email. IA entendió: ${reply}${skipped.length ? ` · (ignorados: ${skipped.join(', ')})` : ''}`;
+
+    // 4) Create the order (source: 'email') via /api/orders (authoritative price).
     const orderId = `P-${crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}`;
     const nombre = (email.fromName || email.from || 'Cliente email').slice(0, 60);
-    const comentario = `📧 Pedido por email. IA entendió: ${reply}${skipped.length ? ` · (ignorados: ${skipped.join(', ')})` : ''}`;
-    const project = {
-      id: projectId,
-      kind: 'copias',
-      nombre: (email.subject || 'Pedido por email').slice(0, 80),
-      config,
-      docs,
-      copias,
-      comentario,
-      colorAnillas: colorAnillas ?? '',
-      colorContraportada: colorContraportada ?? '',
-      total: 0,
-    };
     const order = {
       id: orderId,
       createdAt: Date.now(),
       source: 'email',
       customer: { nombre, apellidos: '', telefono: undefined as string | undefined },
-      items: [project],
+      items,
       total: 0,
       status: 'nuevo',
     };
@@ -323,7 +397,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     await sql`update email_jobs set order_id = ${orderId} where message_id = ${messageId}`;
 
-    return res.status(201).json({ status: 'created', orderId, total: orderData.total ?? 0, docs: docs.length, skipped, config, reply });
+    return res.status(201).json({
+      status: 'created',
+      orderId,
+      total: orderData.total ?? 0,
+      projects: items.length,
+      docs: items.reduce((s, it) => s + ((it.docs as unknown[])?.length ?? 0), 0),
+      skipped,
+      reply,
+    });
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'error procesando el email' });
   }
