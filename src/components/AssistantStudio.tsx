@@ -5,12 +5,32 @@ import { analyzeFile, type FileAnalysis } from '../lib/analyzePdf';
 import { planProjects, type PlanMsg, type PlanProject } from '../lib/plan';
 import { computePrice } from '../domain/pricing';
 import { normalize } from '../domain/rules';
-import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
+import { FINISH_LABEL, FOLIO_LABEL, SIZE_LABEL } from '../domain/catalog';
+import type { Configuracion } from '../domain/types';
 import { DEFAULT_CONFIG, useConfigurator } from '../store/useConfigurator';
 import { useCart } from '../store/useCart';
 import { CartButton } from './CartButton';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+
+/** Full, human spec of a proposed project so the customer can verify it. */
+function specOf(config: Configuracion, p: PlanProject): string {
+  const parts: string[] = [
+    SIZE_LABEL[config.size],
+    `${config.grosor} g`,
+    config.color === 'BN' ? 'B/N' : 'Color',
+    config.dobleCara === '1' ? 'doble cara' : 'una cara',
+  ];
+  if (config.paginasPorHoja > 1) parts.push(`${config.paginasPorHoja} pág/cara`);
+  if (config.acabado !== 'sinencuadernacion') parts.push(FINISH_LABEL[config.acabado]);
+  if (config.acabado === 'AnillasColores' && p.colorAnillas) parts.push(`anillas ${p.colorAnillas}`);
+  if (config.acabado === 'AnillasColores' && p.colorContraportada) parts.push(`contra. ${p.colorContraportada}`);
+  if (config.acabadoFolios !== 'normal') parts.push(FOLIO_LABEL[config.acabadoFolios]);
+  if (config.sinMargenes) parts.push('sin márgenes');
+  if (p.docColor === 'cover') parts.push('portada en color');
+  if (p.copias > 1) parts.push(`×${p.copias} copias`);
+  return parts.join(' · ');
+}
 
 interface StudioFile {
   id: string;
@@ -209,11 +229,7 @@ export function AssistantStudio() {
                       <strong>{pc.p.nombre || pc.docs[0].name}</strong>
                       <span>{eur(pc.total)}</span>
                     </div>
-                    <div className="studio-project-meta">
-                      {SIZE_LABEL[pc.config.size]} · {pc.config.color === 'BN' ? 'B/N' : 'Color'} ·{' '}
-                      {pc.config.dobleCara === '1' ? 'doble cara' : 'una cara'} · {FINISH_LABEL[pc.config.acabado]}
-                      {pc.p.copias > 1 ? ` · ×${pc.p.copias}` : ''}
-                    </div>
+                    <div className="studio-project-meta">{specOf(pc.config, pc.p)}</div>
                     <div className="studio-project-files">{pc.docs.map((d) => d.name).join(', ')}</div>
                   </div>
                 ))}
