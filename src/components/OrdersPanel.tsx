@@ -196,25 +196,33 @@ function OrderCard({ order }: { order: Order }) {
 
 export function OrdersPanel() {
   const orders = useOrders((s) => s.orders);
-  const loading = useOrders((s) => s.loading);
   const fetchOrders = useOrders((s) => s.fetchOrders);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [visible, setVisible] = useState(20);
 
-  // Pull the Gmail inbox (process new email orders), then refresh the list.
+  // Pull the Gmail inbox (slow IMAP) in the background, then refresh the list.
   const pullInbox = useCallback(async () => {
-    if (API_BASE) {
-      try {
-        await fetch(`${API_BASE}/ingest-email`, { method: 'POST' });
-      } catch {
-        /* no backend / no Gmail configured → ignore */
+    setRefreshing(true);
+    try {
+      if (API_BASE) {
+        try {
+          await fetch(`${API_BASE}/ingest-email`, { method: 'POST' });
+        } catch {
+          /* no backend / no Gmail configured → ignore */
+        }
       }
+      await fetchOrders();
+    } finally {
+      setRefreshing(false);
     }
-    await fetchOrders();
   }, [fetchOrders]);
 
-  // On open: pull the inbox + load orders. Then poll the list every 15s and
-  // pull the inbox every 90s (email orders appear without a manual reload).
+  // On open: load the list first (fast) and read the inbox in the background so
+  // Gmail never blocks the orders. Then poll the list (15s) and inbox (90s).
   useEffect(() => {
+    void fetchOrders().finally(() => setInitialLoading(false));
     void pullInbox();
     const list = setInterval(() => void fetchOrders(), 15000);
     const inbox = setInterval(() => void pullInbox(), 90000);
@@ -238,8 +246,8 @@ export function OrdersPanel() {
       <header className="topbar">
         <h1>Pedidos</h1>
         <nav className="topnav">
-          <button type="button" className="btn" onClick={() => void pullInbox()} disabled={loading}>
-            {loading ? 'Actualizando…' : '↻ Actualizar'}
+          <button type="button" className="btn" onClick={() => void pullInbox()} disabled={refreshing}>
+            {refreshing ? 'Actualizando…' : '↻ Actualizar'}
           </button>
           <a className="btn" href="#admin">
             Catálogo
@@ -253,23 +261,40 @@ export function OrdersPanel() {
       <div className="orders-body">
         <div className="orders-filters">
           {(['todos', 'nuevo', 'en_proceso', 'listo', 'entregado'] as const).map((f) => (
-            <button key={f} type="button" className={`filter-tab${filter === f ? ' filter-on' : ''}`} onClick={() => setFilter(f)}>
+            <button
+              key={f}
+              type="button"
+              className={`filter-tab${filter === f ? ' filter-on' : ''}`}
+              onClick={() => {
+                setFilter(f);
+                setVisible(20);
+              }}
+            >
               {f === 'todos' ? 'Todos' : STATUS_LABEL[f]}
               <span className="filter-count">{counts[f]}</span>
             </button>
           ))}
         </div>
 
-        {shown.length === 0 ? (
+        {initialLoading && orders.length === 0 ? (
+          <p className="orders-empty">Cargando pedidos…</p>
+        ) : shown.length === 0 ? (
           <p className="orders-empty">
             {orders.length === 0 ? 'Aún no hay pedidos. Los que se confirmen en la tienda aparecerán aquí.' : 'No hay pedidos en este estado.'}
           </p>
         ) : (
-          <div className="orders-list">
-            {shown.map((o) => (
-              <OrderCard key={o.id} order={o} />
-            ))}
-          </div>
+          <>
+            <div className="orders-list">
+              {shown.slice(0, visible).map((o) => (
+                <OrderCard key={o.id} order={o} />
+              ))}
+            </div>
+            {shown.length > visible && (
+              <button type="button" className="btn orders-more" onClick={() => setVisible((v) => v + 20)}>
+                Ver más ({shown.length - visible})
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

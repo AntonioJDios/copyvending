@@ -2799,3 +2799,6 @@ body {
 .studio-project-files { font-size: 11px; color: var(--muted); margin-top: 4px; word-break: break-word; }
 .studio-add { margin-top: 4px; }
 .studio .assistant-input { border-top: 1px solid var(--border); }
+
+/* "Ver más" pedidos (paginación) */
+.orders-more { display: block; margin: 14px auto 0; }
