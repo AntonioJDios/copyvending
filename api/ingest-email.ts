@@ -424,7 +424,9 @@ async function processEmail(
   }
 }
 
-/** Read the Gmail inbox (IMAP) and process new (unseen) messages. */
+/** Read the Gmail inbox (IMAP) and process recent messages. Robust to the
+ *  read/unread state: it looks at recent mail and skips ones already processed
+ *  (by Message-ID in email_jobs), so opening the inbox never loses an order. */
 async function readGmailAndProcess(
   settings: { ring: string[]; cover: string[]; instructions: string }
 ): Promise<Record<string, unknown>> {
@@ -435,19 +437,28 @@ async function readGmailAndProcess(
     auth: { user: process.env.GMAIL_USER || '', pass: process.env.GMAIL_APP_PASSWORD || '' },
     logger: false,
   });
+  const sql = db();
   const results: unknown[] = [];
+  let created = 0;
   await client.connect();
   const lock = await client.getMailboxLock('INBOX');
   try {
-    const found = await client.search({ seen: false }, { uid: true });
-    const uids = Array.isArray(found) ? found.slice(0, 5) : []; // cap per run (kiosk polls)
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000); // last 14 days
+    const found = await client.search({ since }, { uid: true });
+    const uids = (Array.isArray(found) ? found : []).slice(-25); // most recent 25
     for (const uid of uids) {
       try {
+        // Cheap check first: envelope → Message-ID → skip if already processed.
+        const env = await client.fetchOne(uid, { envelope: true }, { uid: true });
+        const mid = env && env.envelope && env.envelope.messageId ? env.envelope.messageId : `gmail-${uid}`;
+        const done = (await sql`select 1 from email_jobs where message_id = ${mid}`) as unknown[];
+        if (done.length) continue; // already handled
+
         const msg = await client.fetchOne(uid, { source: true }, { uid: true });
         if (!msg || !msg.source) continue;
         const parsed = await simpleParser(msg.source);
         const email: EmailIn = {
-          messageId: parsed.messageId || `gmail-${uid}`,
+          messageId: mid,
           from: parsed.from?.value?.[0]?.address,
           fromName: parsed.from?.value?.[0]?.name,
           subject: parsed.subject || '',
@@ -459,18 +470,17 @@ async function readGmailAndProcess(
           })),
         };
         const r = await processEmail(email, settings, settings.instructions);
+        if (r.body.status === 'created') created++;
         results.push({ uid, status: r.body.status ?? 'ok', orderId: r.body.orderId ?? null, error: r.body.error });
       } catch (e) {
         results.push({ uid, error: e instanceof Error ? e.message : 'error' });
       }
-      // Mark as read so it isn't processed again (dedupe also guards by messageId).
-      await client.messageFlagsAdd(uid, ['\\Seen'], { uid: true }).catch(() => {});
     }
   } finally {
     lock.release();
     await client.logout().catch(() => {});
   }
-  return { status: 'gmail', processed: results.length, results };
+  return { status: 'gmail', scanned: results.length, created, results };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

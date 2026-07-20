@@ -1789,7 +1789,7 @@ body {
   gap: 7px;
   font: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -1797,10 +1797,15 @@ body {
   color: var(--muted);
   cursor: pointer;
 }
+.filter-tab:hover {
+  border-color: var(--brand);
+}
+/* Selected filter: solid brand fill so it's unmistakable. */
 .filter-on {
   border-color: var(--brand);
-  color: var(--brand-dark);
-  background: var(--brand-soft);
+  color: #fff;
+  background: var(--brand);
+  font-weight: 700;
 }
 .filter-count {
   display: inline-flex;
@@ -1815,7 +1820,7 @@ body {
   font-size: 11px;
 }
 .filter-on .filter-count {
-  background: var(--brand);
+  background: rgba(255, 255, 255, 0.28);
   color: #fff;
 }
 .orders-empty {
