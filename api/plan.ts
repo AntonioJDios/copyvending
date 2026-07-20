@@ -113,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch {
       /* keep empty */
     }
-    const reply = typeof parsed.reply === 'string' ? parsed.reply : 'Te propongo esta configuración.';
+    const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply : 'Te propongo esta configuración 👇';
     const raw = Array.isArray(parsed.projects) ? (parsed.projects as Record<string, unknown>[]) : [];
     let projects: ProjectPlan[] = raw.map((pr) => {
       const cfgIn = pr.config && typeof pr.config === 'object' ? (pr.config as Record<string, unknown>) : {};
