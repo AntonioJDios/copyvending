@@ -31,7 +31,7 @@ export function saveCatalog(catalog: Catalog): void {
   if (API_BASE) void apiSend('PUT', '/catalog', catalog).catch(() => {/* offline cache still valid */});
 }
 
-const DEFAULT_CONFIG: Configuracion = {
+export const DEFAULT_CONFIG: Configuracion = {
   size: 'A4',
   color: 'BN',
   grosor: 90,

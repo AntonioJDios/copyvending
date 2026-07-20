@@ -486,18 +486,7 @@ async function readGmailAndProcess(
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
-    const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string; debug?: boolean };
-    // Diagnostics: report which env vars the function can see (no secrets).
-    if (body.debug) {
-      return res.status(200).json({
-        hasGmailUser: !!process.env.GMAIL_USER,
-        gmailUserPreview: process.env.GMAIL_USER ? process.env.GMAIL_USER.replace(/(.{2}).*(@.*)/, '$1***$2') : null,
-        hasGmailPass: !!process.env.GMAIL_APP_PASSWORD,
-        gmailPassLen: process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.length : 0,
-        hasGroq: !!process.env.GROQ_API_KEY,
-        hasDb: !!process.env.DATABASE_URL,
-      });
-    }
+    const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string };
     await ensureSchema();
     const settings = await getShopSettings();
 

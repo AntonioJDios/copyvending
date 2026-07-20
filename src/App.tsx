@@ -19,6 +19,7 @@ const AdminPanel = lazy(() => import('./components/AdminPanel').then((m) => ({ d
 const OrdersPanel = lazy(() => import('./components/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
 const MugConfigurator = lazy(() => import('./mug/MugConfigurator').then((m) => ({ default: m.MugConfigurator })));
 const ChapaConfigurator = lazy(() => import('./chapa/ChapaConfigurator').then((m) => ({ default: m.ChapaConfigurator })));
+const AssistantStudio = lazy(() => import('./components/AssistantStudio').then((m) => ({ default: m.AssistantStudio })));
 
 /** Minimal hash routing: #admin shows the (future) admin panel, else the shop. */
 function useHashRoute(): string {
@@ -64,6 +65,12 @@ export default function App() {
     );
   if (route.startsWith('#carrito')) return <CartPage />;
   if (route.startsWith('#recoger')) return <RecoverOrder />;
+  if (route.startsWith('#asistente'))
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+        <AssistantStudio />
+      </Suspense>
+    );
   if (route.startsWith('#pedidos'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
@@ -77,6 +84,11 @@ export default function App() {
         <h1>Copistería</h1>
         <nav className="topnav">
           <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
+            {hasBackend && (
+              <a className="btn" href="#asistente" onClick={() => setMenuOpen(false)}>
+                ✨ Asistente
+              </a>
+            )}
             <a className="btn" href="#tazas" onClick={() => setMenuOpen(false)}>
               Tazas
             </a>
