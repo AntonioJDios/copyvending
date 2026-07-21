@@ -719,6 +719,22 @@ body {
   object-fit: cover;
   display: block;
 }
+/* A blank sheet shown when flipping onto one of the added folios en blanco. */
+.doc-blank {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doc-blank::after {
+  content: 'en blanco';
+  color: #cfd4db;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 /* Layers around the document (see DocPeeks.tsx). Offsets are inline (they depend
    on the page thickness); here we only set placement and appearance. */
 .peek-behind {

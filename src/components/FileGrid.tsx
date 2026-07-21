@@ -77,26 +77,44 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
     Array.from({ length: depth }, (_, i) => `${i + 1}px ${i + 1}px 0 ${(i + 1) % 2 ? '#c9ced5' : '#ffffff'}`).join(', ') +
     ', 4px 7px 12px rgba(0,0,0,0.18)';
 
-  // Page flipping (PDF only, more than one page).
-  const [page, setPage] = useState(1);
+  // Flip-through: the blank sheets become extra "pages" so you can see each one.
+  // Order: folios delante (blank) → páginas del PDF → folios detrás (blank). The
+  // view starts on the first front folio, so it covers the cover by default, but
+  // you can flip past it to reach the PDF.
+  const nFront = individual ? config.foliosDelante : 0;
+  const nBack = individual ? config.foliosDetras : 0;
+  const isPdf = !!file.source && file.source.type === 'application/pdf';
+  const total = nFront + file.pages + nBack;
+
+  const [view, setView] = useState(1);
   const [thumb, setThumb] = useState(file.thumb);
   const [flipping, setFlipping] = useState(false);
-  const canFlip = file.pages > 1 && !!file.source && file.source.type === 'application/pdf';
+  const cur = Math.min(view, total); // stay in range if folio counts change
+  const pdfPage = cur > nFront && cur <= nFront + file.pages ? cur - nFront : null;
+  const onFolio = pdfPage == null;
+  const folioLabel = cur <= nFront ? 'blanco · delante' : 'blanco · detrás';
+  const canFlip = total > 1;
 
   // The preview mirrors how the page will print: colour only when the job is
   // colour, the whole doc is marked colour, or it's the cover of a colour-cover doc.
   const pageInColor =
-    config.color === 'Color' || file.color === 'all' || (file.color === 'cover' && page === 1);
+    config.color === 'Color' || file.color === 'all' || (file.color === 'cover' && pdfPage === 1);
 
-  const goToPage = async (target: number) => {
-    const p = Math.max(1, Math.min(target, file.pages));
-    if (p === page || flipping || !file.source) return;
-    setFlipping(true);
-    try {
-      setThumb(await renderPdfPage(file.source, p));
-      setPage(p);
-    } finally {
-      setFlipping(false);
+  const goToView = async (target: number) => {
+    const v = Math.max(1, Math.min(target, total));
+    if (v === cur || flipping) return;
+    const pg = v > nFront && v <= nFront + file.pages ? v - nFront : null;
+    if (pg != null && pg !== 1 && file.source && isPdf) {
+      setFlipping(true);
+      try {
+        setThumb(await renderPdfPage(file.source, pg));
+        setView(v);
+      } finally {
+        setFlipping(false);
+      }
+    } else {
+      if (pg === 1) setThumb(file.thumb); // PDF page 1 render is already the base thumb
+      setView(v);
     }
   };
   const cycleColor = () => {
@@ -117,7 +135,9 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
         <div className="doc-page">
           {individual && <PeekBehind acabado={config.acabado} coverHex={coverHex} foliosDetras={config.foliosDetras} depth={depth} />}
           <div className="doc-clip" style={{ boxShadow: stackShadow }}>
-            {thumb ? (
+            {onFolio ? (
+              <div className="doc-blank" aria-label="Hoja en blanco" />
+            ) : thumb ? (
               <img
                 src={thumb}
                 alt={file.name}
@@ -128,7 +148,6 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
               <div className="file-noimg" />
             )}
           </div>
-          {individual && <PeekFront foliosDelante={config.foliosDelante} />}
           {showHoles && (
             <div className={`holes holes-${config.ladoEncuadernacion}${sparseHoles ? ' holes-sparse' : ''}`} aria-hidden>
               {Array.from({ length: holeCount }).map((_, i) => (
@@ -153,13 +172,11 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
           )}
           {canFlip && (
             <div className="pageflip" onPointerDown={(e) => e.stopPropagation()}>
-              <button type="button" onClick={() => goToPage(page - 1)} disabled={page <= 1 || flipping} aria-label="Página anterior">
+              <button type="button" onClick={() => goToView(cur - 1)} disabled={cur <= 1 || flipping} aria-label="Anterior">
                 ‹
               </button>
-              <span>
-                {page}/{file.pages}
-              </span>
-              <button type="button" onClick={() => goToPage(page + 1)} disabled={page >= file.pages || flipping} aria-label="Página siguiente">
+              <span>{onFolio ? folioLabel : `${pdfPage}/${file.pages}`}</span>
+              <button type="button" onClick={() => goToView(cur + 1)} disabled={cur >= total || flipping} aria-label="Siguiente">
                 ›
               </button>
             </div>
