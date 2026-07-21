@@ -22,23 +22,36 @@ export function PriceBar() {
   const failed = files.some((f) => f.uploadStatus === 'error');
   const notReady = uploading || failed;
 
-  const buildProject = () => ({
-    id: proyectoId, // same id as the R2 folder jobs/<proyectoId>/…
+  const buildProjectFrom = (fileList: typeof files, id: string, nombre: string) => ({
+    id,
     kind: 'copias' as const,
-    nombre: nombreProyecto,
+    nombre,
     config: { ...config },
-    docs: files.map((f) => ({ id: f.id, name: f.name, pages: f.pages, thumb: f.thumb, color: f.color, storageKey: f.storageKey })),
+    docs: fileList.map((f) => ({ id: f.id, name: f.name, pages: f.pages, thumb: f.thumb, color: f.color, storageKey: f.storageKey })),
     copias,
     comentario,
     colorAnillas,
     colorContraportada,
-    total: price.total,
+    total: computePrice({ config, files: fileList.map((f) => ({ pages: f.pages, color: f.color })), copias, colorAnillas, colorContraportada }, catalog).total,
   });
+
+  const buildProject = () => buildProjectFrom(files, proyectoId, nombreProyecto);
 
   const onAddToCart = () => {
     if (!hasFiles || notReady) return;
     flyToCart();
-    addToCart(buildProject());
+    // "Por separado" only makes sense with a binding → each file becomes its own
+    // project (one binding each), same configuration.
+    const splitIndividual = config.juntos === 'individual' && config.acabado !== 'sinencuadernacion' && files.length > 1;
+    if (splitIndividual) {
+      for (const f of files) {
+        const base = f.name.replace(/\.[a-z0-9]+$/i, '');
+        const nombre = nombreProyecto.trim() ? `${nombreProyecto.trim()} · ${base}` : base;
+        addToCart(buildProjectFrom([f], crypto.randomUUID(), nombre));
+      }
+    } else {
+      addToCart(buildProject());
+    }
     // Let the fly animation read the current thumbnails before we clear them.
     window.setTimeout(() => clearProject(), 750);
   };
