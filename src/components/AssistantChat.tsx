@@ -4,6 +4,7 @@ import { useAssistant } from '../store/useAssistant';
 import { askAssistant, type ChatMsg } from '../lib/assistant';
 import { computePrice } from '../domain/pricing';
 import { normalize } from '../domain/rules';
+import { MicButton } from './MicButton';
 import type { Configuracion } from '../domain/types';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -149,10 +150,11 @@ export function AssistantChat() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void send();
               }}
-              placeholder="Escribe qué quieres imprimir…"
+              placeholder="Escribe o dicta qué quieres imprimir…"
               disabled={busy}
               autoFocus
             />
+            <MicButton disabled={busy} onText={(t) => setInput((v) => (v.trim() ? `${v.trim()} ${t}` : t))} />
             <button type="button" onClick={() => void send()} disabled={busy || !input.trim()}>
               Enviar
             </button>

@@ -10,6 +10,7 @@ import type { Configuracion } from '../domain/types';
 import { DEFAULT_CONFIG, useConfigurator } from '../store/useConfigurator';
 import { useCart } from '../store/useCart';
 import { CartButton } from './CartButton';
+import { MicButton } from './MicButton';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -246,8 +247,12 @@ export function AssistantStudio() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
-              placeholder={readyFiles.length ? 'Dime cómo quieres cada archivo…' : 'Sube archivos primero…'}
+              placeholder={readyFiles.length ? 'Dime o dicta cómo quieres cada archivo…' : 'Sube archivos primero…'}
               disabled={busy || readyFiles.length === 0}
+            />
+            <MicButton
+              disabled={busy || readyFiles.length === 0}
+              onText={(t) => setInput((v) => (v.trim() ? `${v.trim()} ${t}` : t))}
             />
             <button type="button" onClick={send} disabled={busy || !input.trim()}>Enviar</button>
           </div>
