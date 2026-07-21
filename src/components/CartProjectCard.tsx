@@ -4,6 +4,7 @@ import { useCart, type CartDoc, type CartProject, type CopiasProject } from '../
 import { useConfigurator } from '../store/useConfigurator';
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { SpiralBinding } from './SpiralBinding';
+import { PeekBehind, PeekFront } from './DocPeeks';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -27,6 +28,7 @@ function MiniDoc({
   doc,
   config,
   ringHex,
+  coverHex,
   showBinding,
   pages,
   grouped = false,
@@ -34,6 +36,7 @@ function MiniDoc({
   doc?: CartDoc;
   config: Configuracion;
   ringHex: string;
+  coverHex?: string;
   showBinding: boolean;
   pages: number;
   grouped?: boolean;
@@ -64,6 +67,7 @@ function MiniDoc({
   return (
     <div className="cart-doc">
       <div className="doc-page">
+        {showBinding && <PeekBehind acabado={config.acabado} coverHex={coverHex} foliosDetras={config.foliosDetras} depth={depth} />}
         <div className="doc-clip" style={{ boxShadow: stackShadow }}>
           {doc?.thumb ? (
             <img src={doc.thumb} alt="" draggable={false} style={{ filter: pageInColor ? 'none' : 'grayscale(1)' }} />
@@ -71,6 +75,7 @@ function MiniDoc({
             <div className="file-noimg" />
           )}
         </div>
+        {showBinding && <PeekFront foliosDelante={config.foliosDelante} />}
         {holeCount > 0 && (
           <div className={`holes holes-${config.ladoEncuadernacion}${sparseHoles ? ' holes-sparse' : ''}`} aria-hidden>
             {Array.from({ length: holeCount }).map((_, i) => (
@@ -89,6 +94,7 @@ function MiniDoc({
 export function CartDocsPreview({ project }: { project: CopiasProject }) {
   const catalog = useConfigurator((s) => s.catalog);
   const ringHex = catalog.ringColors.find((c) => c.name === project.colorAnillas)?.hex ?? '#333';
+  const coverHex = catalog.coverColors.find((c) => c.name === project.colorContraportada)?.hex;
 
   const { config, docs } = project;
   const totalPages = docs.reduce((s, d) => s + d.pages, 0);
@@ -100,7 +106,7 @@ export function CartDocsPreview({ project }: { project: CopiasProject }) {
   return (
     <div className={`cart-docs${stacked ? ' stacked' : ''}`}>
       {combined ? (
-        <MiniDoc doc={docs.find((d) => d.thumb) ?? docs[0]} config={config} ringHex={ringHex} showBinding pages={totalPages} grouped />
+        <MiniDoc doc={docs.find((d) => d.thumb) ?? docs[0]} config={config} ringHex={ringHex} coverHex={coverHex} showBinding pages={totalPages} grouped />
       ) : (
         docs.slice(0, MAX_VISIBLE).map((d, i) => (
           <div
@@ -108,7 +114,7 @@ export function CartDocsPreview({ project }: { project: CopiasProject }) {
             className="cart-doc-slot"
             style={stacked ? { marginLeft: i ? -42 : 0, marginTop: i * 9, zIndex: i } : undefined}
           >
-            <MiniDoc doc={d} config={config} ringHex={ringHex} showBinding={bound} pages={d.pages} />
+            <MiniDoc doc={d} config={config} ringHex={ringHex} coverHex={coverHex} showBinding={bound} pages={d.pages} />
           </div>
         ))
       )}

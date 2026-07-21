@@ -12,6 +12,7 @@ import type { Configuracion, DocFile } from '../domain/types';
 import type { Catalog } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
 import { SpiralBinding } from './SpiralBinding';
+import { PeekBehind, PeekFront } from './DocPeeks';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -28,20 +29,6 @@ function colorExtra(config: Configuracion, catalog: Catalog, colorAnillas: strin
   const r = catalog.ringColors.find((c) => c.name === colorAnillas)?.extra ?? 0;
   const c = catalog.coverColors.find((c) => c.name === colorContraportada)?.extra ?? 0;
   return r + c;
-}
-
-/** Decorative layers behind the document: the coloured back cover (rings) and
- *  the blank sheets added in front/behind the binding, peeking at the edges. */
-function PeekLayers({ acabado, coverHex, foliosDelante, foliosDetras }: { acabado: string; coverHex?: string; foliosDelante: number; foliosDetras: number }) {
-  return (
-    <>
-      {acabado === 'AnillasColores' && coverHex && <span className="cover-peek" style={{ background: coverHex }} aria-hidden />}
-      {foliosDetras > 0 && <span className="peek peek-back" aria-hidden />}
-      {foliosDetras > 1 && <span className="peek peek-back peek-2" aria-hidden />}
-      {foliosDelante > 0 && <span className="peek peek-front" aria-hidden />}
-      {foliosDelante > 1 && <span className="peek peek-front peek-2" aria-hidden />}
-    </>
-  );
 }
 
 function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
@@ -128,9 +115,7 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
     >
       <div className="file-thumb" {...listeners} {...attributes}>
         <div className="doc-page">
-          {individual && (
-            <PeekLayers acabado={config.acabado} coverHex={coverHex} foliosDelante={config.foliosDelante} foliosDetras={config.foliosDetras} />
-          )}
+          {individual && <PeekBehind acabado={config.acabado} coverHex={coverHex} foliosDetras={config.foliosDetras} depth={depth} />}
           <div className="doc-clip" style={{ boxShadow: stackShadow }}>
             {thumb ? (
               <img
@@ -143,6 +128,7 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
               <div className="file-noimg" />
             )}
           </div>
+          {individual && <PeekFront foliosDelante={config.foliosDelante} />}
           {showHoles && (
             <div className={`holes holes-${config.ladoEncuadernacion}${sparseHoles ? ' holes-sparse' : ''}`} aria-hidden>
               {Array.from({ length: holeCount }).map((_, i) => (
@@ -248,10 +234,11 @@ function GroupedBinding() {
     <div className="grouped">
       <div className="file-thumb grouped-thumb">
         <div className="doc-page">
-          <PeekLayers acabado={config.acabado} coverHex={coverHex} foliosDelante={config.foliosDelante} foliosDetras={config.foliosDetras} />
+          <PeekBehind acabado={config.acabado} coverHex={coverHex} foliosDetras={config.foliosDetras} depth={depth} />
           <div className="doc-clip" style={{ boxShadow: stackShadow }}>
             {cover?.thumb ? <img src={cover.thumb} alt="" draggable={false} /> : <div className="file-noimg" />}
           </div>
+          <PeekFront foliosDelante={config.foliosDelante} />
           {holeCount > 0 && (
             <div className={`holes holes-${config.ladoEncuadernacion}${sparseHoles ? ' holes-sparse' : ''}`} aria-hidden>
               {Array.from({ length: holeCount }).map((_, i) => (
