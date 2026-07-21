@@ -2652,13 +2652,25 @@ body {
   padding: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   background: #fff;
+  align-items: flex-end; /* botones abajo cuando el textarea crece hacia arriba */
 }
-.assistant-input input {
+.assistant-input input,
+.assistant-input .chat-textarea {
   flex: 1;
+  min-width: 0;
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
+}
+/* Textarea que crece hacia arriba en vez de hacer scroll horizontal. */
+.assistant-input .chat-textarea {
+  font-family: inherit;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: hidden; /* JS activa el scroll solo al pasar de maxRows */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .assistant-input button {
   border: none;
@@ -2666,6 +2678,7 @@ body {
   color: #fff;
   border-radius: 10px;
   padding: 0 16px;
+  height: 42px;
   font-size: 14px;
   cursor: pointer;
 }

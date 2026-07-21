@@ -5,6 +5,7 @@ import { askAssistant, type ChatMsg } from '../lib/assistant';
 import { computePrice } from '../domain/pricing';
 import { normalize } from '../domain/rules';
 import { MicButton } from './MicButton';
+import { GrowTextarea } from './GrowTextarea';
 import type { Configuracion } from '../domain/types';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -143,13 +144,10 @@ export function AssistantChat() {
             {busy && <div className="assistant-msg assistant assistant-typing">···</div>}
           </div>
           <div className="assistant-input">
-            <input
-              type="text"
+            <GrowTextarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void send();
-              }}
+              onChange={setInput}
+              onEnter={() => void send()}
               placeholder="Escribe o dicta qué quieres imprimir…"
               disabled={busy}
               autoFocus

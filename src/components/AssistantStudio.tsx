@@ -11,6 +11,7 @@ import { DEFAULT_CONFIG, useConfigurator } from '../store/useConfigurator';
 import { useCart } from '../store/useCart';
 import { CartButton } from './CartButton';
 import { MicButton } from './MicButton';
+import { GrowTextarea } from './GrowTextarea';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -242,11 +243,10 @@ export function AssistantStudio() {
           </div>
 
           <div className="assistant-input">
-            <input
-              type="text"
+            <GrowTextarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+              onChange={setInput}
+              onEnter={send}
               placeholder={readyFiles.length ? 'Dime o dicta cómo quieres cada archivo…' : 'Sube archivos primero…'}
               disabled={busy || readyFiles.length === 0}
             />
