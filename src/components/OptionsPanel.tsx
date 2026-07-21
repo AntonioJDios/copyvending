@@ -318,12 +318,6 @@ export function OptionsPanel({
             }
           />
           <Seg
-            label="Impresión"
-            value={config.color}
-            options={COLORS.map((c) => ({ value: c, label: c === 'BN' ? 'Blanco y negro' : 'Color' }))}
-            onChange={(v) => setField('color', v)}
-          />
-          <Seg
             label="Gramaje"
             value={config.grosor}
             options={allowedGrosores(catalog, config.size).map((g) => ({ value: g, label: `${g} gr` }))}
@@ -334,6 +328,12 @@ export function OptionsPanel({
                 cartulina (una cara).
               </InfoHint>
             }
+          />
+          <Seg
+            label="Impresión"
+            value={config.color}
+            options={COLORS.map((c) => ({ value: c, label: c === 'BN' ? 'Blanco y negro' : 'Color' }))}
+            onChange={(v) => setField('color', v)}
           />
           <Seg
             label="Caras"
