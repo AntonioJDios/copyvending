@@ -702,6 +702,9 @@ body {
   position: relative;
   width: 82%;
   height: 92%;
+  /* Own stacking context so the peeking sheets (z-index:-1) sit just behind the
+     document, not behind the whole card. */
+  isolation: isolate;
 }
 .doc-clip {
   width: 100%;
@@ -715,6 +718,38 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* Layers peeking behind the document: coloured back cover + blank sheets. */
+.cover-peek,
+.peek {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.peek {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.cover-peek {
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.22);
+}
+.peek-front {
+  transform: translate(-5px, -6px);
+}
+.peek-front.peek-2 {
+  transform: translate(-9px, -11px);
+}
+.peek-back {
+  transform: translate(5px, 6px);
+}
+.peek-back.peek-2 {
+  transform: translate(9px, 11px);
+}
+/* Coloured cover sits furthest back, peeking a bit more (bottom-right). */
+.cover-peek {
+  transform: translate(8px, 10px);
 }
 
 /* Combined "all together" bound block. */

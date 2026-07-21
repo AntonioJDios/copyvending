@@ -30,6 +30,20 @@ function colorExtra(config: Configuracion, catalog: Catalog, colorAnillas: strin
   return r + c;
 }
 
+/** Decorative layers behind the document: the coloured back cover (rings) and
+ *  the blank sheets added in front/behind the binding, peeking at the edges. */
+function PeekLayers({ acabado, coverHex, foliosDelante, foliosDetras }: { acabado: string; coverHex?: string; foliosDelante: number; foliosDetras: number }) {
+  return (
+    <>
+      {acabado === 'AnillasColores' && coverHex && <span className="cover-peek" style={{ background: coverHex }} aria-hidden />}
+      {foliosDetras > 0 && <span className="peek peek-back" aria-hidden />}
+      {foliosDetras > 1 && <span className="peek peek-back peek-2" aria-hidden />}
+      {foliosDelante > 0 && <span className="peek peek-front" aria-hidden />}
+      {foliosDelante > 1 && <span className="peek peek-front peek-2" aria-hidden />}
+    </>
+  );
+}
+
 function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
   const { catalog, config, copias, colorAnillas, colorContraportada, files, removeFile, setFileColor } = useConfigurator();
   const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({ id: file.id });
@@ -42,6 +56,8 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
 
   // Colored ring binding + punched holes on the chosen edge.
   const ringHex = catalog.ringColors.find((c) => c.name === colorAnillas)?.hex ?? '#333';
+  // Back-cover colour (peeks out behind the document when rings are selected).
+  const coverHex = catalog.coverColors.find((c) => c.name === colorContraportada)?.hex;
   const long = config.ladoEncuadernacion === 'largo';
 
   // Black punch holes (for rings the hole is drawn inside each coil): a dense
@@ -112,6 +128,9 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
     >
       <div className="file-thumb" {...listeners} {...attributes}>
         <div className="doc-page">
+          {individual && (
+            <PeekLayers acabado={config.acabado} coverHex={coverHex} foliosDelante={config.foliosDelante} foliosDetras={config.foliosDetras} />
+          )}
           <div className="doc-clip" style={{ boxShadow: stackShadow }}>
             {thumb ? (
               <img
@@ -220,6 +239,7 @@ function GroupedBinding() {
     ', 5px 9px 16px rgba(0,0,0,0.22)';
 
   const ringHex = catalog.ringColors.find((c) => c.name === colorAnillas)?.hex ?? '#333';
+  const coverHex = catalog.coverColors.find((c) => c.name === colorContraportada)?.hex;
   const holeCount =
     config.acabado === 'perforado' ? (long ? 16 : 12) : config.acabado === 'dos_agujeros' ? 2 : config.acabado === 'cuatro_agujeros' ? 4 : 0;
   const sparseHoles = config.acabado === 'dos_agujeros' || config.acabado === 'cuatro_agujeros';
@@ -228,6 +248,7 @@ function GroupedBinding() {
     <div className="grouped">
       <div className="file-thumb grouped-thumb">
         <div className="doc-page">
+          <PeekLayers acabado={config.acabado} coverHex={coverHex} foliosDelante={config.foliosDelante} foliosDetras={config.foliosDetras} />
           <div className="doc-clip" style={{ boxShadow: stackShadow }}>
             {cover?.thumb ? <img src={cover.thumb} alt="" draggable={false} /> : <div className="file-noimg" />}
           </div>
