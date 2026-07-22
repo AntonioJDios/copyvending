@@ -100,9 +100,11 @@ export function StatsPanel() {
     return ['all', ...keys.sort().reverse()];
   }, [orders, source, gran]);
 
-  // Keep the selected period valid when granularity/source change.
+  // Keep the selected period valid when granularity/source change. Only act once
+  // there are real periods (length > 1, since 'all' is always present) so the
+  // initial empty-orders render doesn't leave us stuck on "Todo el histórico".
   useEffect(() => {
-    if (!periodOptions.includes(period)) setPeriod(periodOptions[1] ?? 'all');
+    if (periodOptions.length > 1 && !periodOptions.includes(period)) setPeriod(periodOptions[1]);
   }, [periodOptions, period]);
 
   const range = useMemo(() => rangeOf(period), [period]);
