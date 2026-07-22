@@ -17,6 +17,7 @@ import { CartButton } from './components/CartButton';
 // main configurator bundle).
 const AdminPanel = lazy(() => import('./components/AdminPanel').then((m) => ({ default: m.AdminPanel })));
 const OrdersPanel = lazy(() => import('./components/OrdersPanel').then((m) => ({ default: m.OrdersPanel })));
+const StatsPanel = lazy(() => import('./components/StatsPanel').then((m) => ({ default: m.StatsPanel })));
 const MugConfigurator = lazy(() => import('./mug/MugConfigurator').then((m) => ({ default: m.MugConfigurator })));
 const ChapaConfigurator = lazy(() => import('./chapa/ChapaConfigurator').then((m) => ({ default: m.ChapaConfigurator })));
 const AssistantStudio = lazy(() => import('./components/AssistantStudio').then((m) => ({ default: m.AssistantStudio })));
@@ -75,6 +76,12 @@ export default function App() {
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <OrdersPanel />
+      </Suspense>
+    );
+  if (route.startsWith('#estadisticas'))
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+        <StatsPanel />
       </Suspense>
     );
 

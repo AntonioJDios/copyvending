@@ -2726,6 +2726,180 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 2;
 }
+
+/* ── Estadísticas ──────────────────────────────────────────────── */
+.stats-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg-toggle button {
+  border: none;
+  background: #fff;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  color: #333;
+}
+.seg-toggle button.on {
+  background: var(--brand, #0ea5b7);
+  color: #fff;
+  font-weight: 600;
+}
+.stats-period {
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 10px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.stats-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.stats-kpi {
+  background: #fff;
+  border: 1px solid var(--border, #e6e9ee);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stats-kpi-val {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2933;
+}
+.stats-kpi-label {
+  font-size: 12px;
+  color: #67707a;
+}
+.stats-kpi.strong {
+  background: var(--brand, #0ea5b7);
+  border-color: transparent;
+}
+.stats-kpi.strong .stats-kpi-val,
+.stats-kpi.strong .stats-kpi-label {
+  color: #fff;
+}
+.stats-kpi.accent .stats-kpi-val {
+  color: var(--brand, #0ea5b7);
+}
+
+/* Tendencia (barras verticales, con scroll horizontal si hay muchas). */
+.trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 200px;
+  overflow-x: auto;
+  padding-top: 20px;
+}
+.trend-col {
+  border: none;
+  background: none;
+  cursor: pointer;
+  flex: 1 0 30px;
+  min-width: 30px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+}
+.trend-val {
+  font-size: 11px;
+  color: #1f2933;
+  font-weight: 600;
+  height: 14px;
+  white-space: nowrap;
+}
+.trend-bar {
+  width: 60%;
+  max-width: 34px;
+  background: #cbd5db;
+  border-radius: 4px 4px 0 0;
+  transition: background 0.15s;
+}
+.trend-col:hover .trend-bar {
+  background: #9fb0bb;
+}
+.trend-col.on .trend-bar {
+  background: var(--brand, #0ea5b7);
+}
+.trend-tick {
+  font-size: 11px;
+  color: #67707a;
+}
+
+/* Desgloses (barras horizontales). */
+.stats-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px 28px;
+}
+.stats-break h3 {
+  font-size: 13px;
+  margin: 0 0 10px;
+  color: #1f2933;
+}
+.statbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  align-items: baseline;
+  margin-bottom: 11px;
+}
+.statbar-label {
+  grid-column: 1;
+  font-size: 13px;
+  color: #333;
+}
+.statbar-val {
+  grid-column: 2;
+  text-align: right;
+  font-size: 12px;
+  color: #67707a;
+  white-space: nowrap;
+}
+.statbar-val em {
+  font-style: normal;
+  color: #9aa4ad;
+  margin-left: 4px;
+}
+.statbar-track {
+  grid-column: 1 / -1;
+  display: block;
+  height: 8px;
+  background: #eef1f4;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.statbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--brand, #0ea5b7);
+  border-radius: 4px;
+  min-width: 4px;
+}
+.stats-note {
+  margin-top: 18px;
+  font-size: 12px;
+}
 .assistant-input button:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Banner de sugerencia (auto-configurador IA) ─────────────────── */

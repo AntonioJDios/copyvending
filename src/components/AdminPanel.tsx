@@ -58,6 +58,9 @@ export function AdminPanel() {
           <a className="btn" href="#pedidos">
             Pedidos
           </a>
+          <a className="btn" href="#estadisticas">
+            📊 Estadísticas
+          </a>
           <a className="btn" href="#">
             ← Volver a la tienda
           </a>
