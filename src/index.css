@@ -3013,6 +3013,39 @@ body {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
+.dayline-line.prev {
+  stroke: #64748b;
+  stroke-dasharray: 5 4;
+}
+.dayline-ctls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dayline-legend {
+  display: inline-flex;
+  gap: 14px;
+}
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #67707a;
+}
+.sw {
+  width: 16px;
+  height: 0;
+  border-top: 2px solid;
+  display: inline-block;
+}
+.sw.cur {
+  border-color: var(--brand, #0ea5b7);
+}
+.sw.prev {
+  border-color: #64748b;
+  border-top-style: dashed;
+}
 .dayline-axis {
   display: flex;
   justify-content: space-between;

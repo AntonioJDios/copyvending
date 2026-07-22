@@ -31,21 +31,6 @@ function rangeOf(period: string): { from: number; to: number } {
   return { from: new Date(y, m - 1, 1).getTime(), to: new Date(y, m, 1).getTime() - 1 };
 }
 
-/** The immediately previous month/quarter (for period-over-period comparison). */
-function prevPeriod(period: string): string | null {
-  if (period === 'all') return null;
-  if (period.includes('Q')) {
-    let [y, q] = period.split('-Q').map(Number);
-    q -= 1;
-    if (q < 1) { q = 4; y -= 1; }
-    return `${y}-Q${q}`;
-  }
-  let [y, m] = period.split('-').map(Number);
-  m -= 1;
-  if (m < 1) { m = 12; y -= 1; }
-  return `${y}-${String(m).padStart(2, '0')}`;
-}
-
 function periodLabel(period: string): string {
   if (period === 'all') return 'Todo el histórico';
   if (period.includes('Q')) {
@@ -59,11 +44,6 @@ function tick(period: string, unit: Unit): string {
   if (unit === 'day') return String(Number(period.split('-')[2]));
   const [, m] = period.split('-').map(Number);
   return MONTHS[m - 1];
-}
-
-function pctDelta(cur: number, prev: number): number | null {
-  if (!prev) return null;
-  return ((cur - prev) / prev) * 100;
 }
 
 const SOURCE_LABEL: Record<string, string> = { mostrador: 'Mostrador', online: 'Online', email: 'Email' };
@@ -110,21 +90,9 @@ export function StatsPanel() {
   const range = useMemo(() => rangeOf(period), [period]);
   const data = useMemo(() => aggregate(orders, range.from, range.to, source), [orders, range.from, range.to, source]);
 
-  const compareOn = compare && period !== 'all';
-  const prevKey = compareOn ? prevPeriod(period) : null;
-  const prevRange = prevKey ? rangeOf(prevKey) : null;
-  const prevData = useMemo(
-    () => (prevRange ? aggregate(orders, prevRange.from, prevRange.to, source) : null),
-    [orders, prevRange, source]
-  );
-
   // Trend unit: a month shows daily bars; a quarter or "todo" shows monthly bars.
   const unit: Unit = period !== 'all' && gran === 'month' ? 'day' : 'month';
   const curSeries = useMemo(() => seriesBy(orders, range.from, range.to, unit, source), [orders, range, unit, source]);
-  const prevSeries = useMemo(
-    () => (prevRange ? seriesBy(orders, prevRange.from, prevRange.to, unit, source) : null),
-    [orders, prevRange, unit, source]
-  );
 
   // Dedicated daily-evolution window (independent of the fiscal period).
   const dailyRange = useMemo(() => {
@@ -136,15 +104,19 @@ export function StatsPanel() {
     () => seriesBy(orders, dailyRange.from, dailyRange.to, 'day', source),
     [orders, dailyRange, source]
   );
+  // Previous window of the same length, for the daily-chart overlay.
+  const dailyPrevSeries = useMemo(() => {
+    if (!compare) return null;
+    const len = dailyDays * 86400000;
+    return seriesBy(orders, dailyRange.from - len, dailyRange.from - 1, 'day', source);
+  }, [compare, orders, dailyRange, dailyDays, source]);
 
   const mv = (p: { revenue: number; orders: number }) => (metric === 'revenue' ? p.revenue : p.orders);
   const mfmt = (n: number) => (metric === 'revenue' ? eur0(n) : int(n));
-  const maxSeries = Math.max(1, ...curSeries.map(mv), ...(prevSeries ?? []).map(mv));
+  const maxSeries = Math.max(1, ...curSeries.map(mv));
 
   const { base, vat } = splitVat(data.totals.revenue);
   const ticket = data.totals.orders > 0 ? data.totals.revenue / data.totals.orders : 0;
-  const dRevenue = prevData ? pctDelta(data.totals.revenue, prevData.totals.revenue) : null;
-  const dOrders = prevData ? pctDelta(data.totals.orders, prevData.totals.orders) : null;
 
   const combos = useMemo(
     () => [...data.byCombo].sort((a, b) => (metric === 'revenue' ? b.revenue - a.revenue : b.count - a.count)).slice(0, 10),
@@ -190,11 +162,6 @@ export function StatsPanel() {
             <button type="button" className={metric === 'revenue' ? 'on' : ''} onClick={() => setMetric('revenue')}>Ventas €</button>
             <button type="button" className={metric === 'orders' ? 'on' : ''} onClick={() => setMetric('orders')}>Pedidos</button>
           </div>
-
-          <label className={`stats-cmp${period === 'all' ? ' disabled' : ''}`}>
-            <input type="checkbox" checked={compareOn} disabled={period === 'all'} onChange={(e) => setCompare(e.target.checked)} />
-            Comparar con periodo anterior
-          </label>
         </div>
 
         {orders.length === 0 ? (
@@ -203,40 +170,36 @@ export function StatsPanel() {
           <>
             {/* KPIs */}
             <div className="stats-kpis">
-              <Kpi label="Facturación (IVA incl.)" value={eur(data.totals.revenue)} delta={dRevenue} strong />
+              <Kpi label="Facturación (IVA incl.)" value={eur(data.totals.revenue)} strong />
               <Kpi label="Base imponible" value={eur(base)} />
               <Kpi label={`IVA (${Math.round(VAT_RATE * 100)}%)`} value={eur(vat)} accent />
-              <Kpi label="Pedidos" value={int(data.totals.orders)} delta={dOrders} />
+              <Kpi label="Pedidos" value={int(data.totals.orders)} />
               <Kpi label="Ticket medio" value={eur(ticket)} />
             </div>
-            {compareOn && prevKey && (
-              <p className="muted stats-cmp-note">Comparando <b>{periodLabel(period)}</b> con <b>{periodLabel(prevKey)}</b>.</p>
-            )}
 
-            {/* Tendencia */}
+            {/* Tendencia del periodo */}
             <section className="card">
               <h2>Evolución · {metric === 'revenue' ? 'ventas' : 'pedidos'} {unit === 'day' ? 'por día' : 'por mes'}</h2>
-              {compareOn && prevSeries ? (
-                <div className="trend-compare">
-                  <TrendChart title={periodLabel(period)} total={mfmt(curSeries.reduce((s, p) => s + mv(p), 0))} points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
-                  <TrendChart title={periodLabel(prevKey!)} total={mfmt(prevSeries.reduce((s, p) => s + mv(p), 0))} points={prevSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} muted />
-                </div>
-              ) : (
-                <TrendChart points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
-              )}
+              <TrendChart points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
             </section>
 
             {/* Evolución diaria (ventana propia) */}
             <section className="card">
               <div className="stats-card-head">
                 <h2>Evolución diaria · {metric === 'revenue' ? 'ventas' : 'pedidos'}</h2>
-                <div className="seg-toggle sm">
-                  {[30, 90, 180, 365].map((d) => (
-                    <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
-                  ))}
+                <div className="dayline-ctls">
+                  <label className="stats-cmp sm">
+                    <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+                    Comparar periodo anterior
+                  </label>
+                  <div className="seg-toggle sm">
+                    {[30, 90, 180, 365].map((d) => (
+                      <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <DailyLine points={dailySeries} value={mv} fmt={mfmt} />
+              <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
             </section>
 
             {/* Combinaciones más frecuentes */}
@@ -330,24 +293,39 @@ function TrendChart({
   );
 }
 
-/** Daily line/area chart (single series, brand hue). Only paths + hover rects live
- *  in the SVG (stretched with preserveAspectRatio=none, non-scaling stroke); the
- *  axis and figures are HTML so they never distort. */
-function DailyLine({ points, value, fmt }: { points: SeriesPoint[]; value: (p: SeriesPoint) => number; fmt: (n: number) => string }) {
+/** Daily line/area chart. Current window = solid brand line + area; the optional
+ *  previous window (same length) overlays as a dashed grey line, aligned by day
+ *  index. Only paths + hover rects live in the SVG (stretched, non-scaling
+ *  stroke); axis, legend and figures are HTML so they never distort. */
+function DailyLine({
+  points, prevPoints, value, fmt,
+}: {
+  points: SeriesPoint[];
+  prevPoints?: SeriesPoint[] | null;
+  value: (p: SeriesPoint) => number;
+  fmt: (n: number) => string;
+}) {
   const W = 760;
   const H = 200;
   const padT = 12;
   const padB = 8;
   const n = points.length;
-  const max = Math.max(1, ...points.map(value));
-  const total = points.reduce((s, p) => s + value(p), 0);
   const innerH = H - padT - padB;
-  const x = (i: number) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
-  const y = (v: number) => padT + innerH - (v / max) * innerH;
-  const pts = points.map((p, i) => [x(i), y(value(p))] as const);
-  const line = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join(' ');
   const baseline = padT + innerH;
-  const area = pts.length ? `M${pts[0][0].toFixed(1)},${baseline} ${pts.map(([px, py]) => `L${px.toFixed(1)},${py.toFixed(1)}`).join(' ')} L${pts[n - 1][0].toFixed(1)},${baseline} Z` : '';
+  const all = prevPoints ? [...points, ...prevPoints] : points;
+  const max = Math.max(1, ...all.map(value));
+  const y = (v: number) => padT + innerH - (v / max) * innerH;
+  const xOf = (i: number, len: number) => (len <= 1 ? W / 2 : (i / (len - 1)) * W);
+
+  const linePath = (pp: SeriesPoint[]) =>
+    pp.map((p, i) => `${i ? 'L' : 'M'}${xOf(i, pp.length).toFixed(1)},${y(value(p)).toFixed(1)}`).join(' ');
+  const areaPath = (pp: SeriesPoint[]) =>
+    pp.length
+      ? `M${xOf(0, pp.length).toFixed(1)},${baseline} ${pp.map((p, i) => `L${xOf(i, pp.length).toFixed(1)},${y(value(p)).toFixed(1)}`).join(' ')} L${xOf(pp.length - 1, pp.length).toFixed(1)},${baseline} Z`
+      : '';
+
+  const total = points.reduce((s, p) => s + value(p), 0);
+  const prevTotal = prevPoints ? prevPoints.reduce((s, p) => s + value(p), 0) : 0;
   const bw = n > 0 ? W / n : W;
   const dayLbl = (p: string) => {
     const [, m, d] = p.split('-');
@@ -358,14 +336,24 @@ function DailyLine({ points, value, fmt }: { points: SeriesPoint[]; value: (p: S
     <div className="dayline">
       <div className="dayline-head">
         <span>máx {fmt(max)}</span>
-        <span>Total {fmt(total)}</span>
+        {prevPoints ? (
+          <span className="dayline-legend">
+            <span className="lg"><i className="sw cur" /> Actual {fmt(total)}</span>
+            <span className="lg"><i className="sw prev" /> Anterior {fmt(prevTotal)}</span>
+          </span>
+        ) : (
+          <span>Total {fmt(total)}</span>
+        )}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="dayline-svg" role="img" aria-label="Evolución diaria">
-        {area && <path d={area} className="dayline-area" />}
-        {line && <path d={line} className="dayline-line" fill="none" vectorEffect="non-scaling-stroke" />}
+        {areaPath(points) && <path d={areaPath(points)} className="dayline-area" />}
+        {prevPoints && prevPoints.length > 0 && (
+          <path d={linePath(prevPoints)} className="dayline-line prev" fill="none" vectorEffect="non-scaling-stroke" />
+        )}
+        {points.length > 0 && <path d={linePath(points)} className="dayline-line" fill="none" vectorEffect="non-scaling-stroke" />}
         {points.map((p, i) => (
-          <rect key={p.period} x={x(i) - bw / 2} y={0} width={bw} height={H} fill="transparent">
-            <title>{`${dayLbl(p.period)}: ${fmt(value(p))}`}</title>
+          <rect key={p.period} x={xOf(i, n) - bw / 2} y={0} width={bw} height={H} fill="transparent">
+            <title>{`${dayLbl(p.period)}: ${fmt(value(p))}${prevPoints && prevPoints[i] ? ` · anterior ${fmt(value(prevPoints[i]))}` : ''}`}</title>
           </rect>
         ))}
       </svg>
