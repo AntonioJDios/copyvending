@@ -1,5 +1,4 @@
 import type { Order } from '../store/useOrders';
-import { FINISH_LABEL } from '../domain/catalog';
 
 /** IVA español general. Los precios se guardan CON IVA incluido, así que para la
  *  declaración trimestral hay que desglosar la base y la cuota. */
@@ -28,9 +27,11 @@ export interface StatsData {
     acabado: Bucket[];
     dobleCara: Bucket[];
   };
-  /** Combinaciones reales de configuración (p. ej. "A4 · Color · 2 caras · 90g"),
+  /** Combinaciones de papel (tamaño · color · caras · gramaje), sin encuadernación,
    *  lo más pedido de un vistazo. */
   byCombo: Bucket[];
+  /** Distribución por nº de copias del proyecto (en rangos). */
+  byCopies: Bucket[];
   /** Serie mensual de TODO el histórico (para la tendencia), clave 'YYYY-MM'. */
   monthly: { period: string; revenue: number; orders: number }[];
 }
@@ -45,6 +46,15 @@ function bump(map: Map<string, Bucket>, key: string, revenue: number): void {
   }
 }
 const sorted = (m: Map<string, Bucket>): Bucket[] => [...m.values()].sort((a, b) => b.revenue - a.revenue);
+
+/** Number of copies bucketed into readable ranges. */
+function copiesRange(n: number): string {
+  if (n <= 1) return '1 copia';
+  if (n <= 5) return '2–5 copias';
+  if (n <= 20) return '6–20 copias';
+  if (n <= 50) return '21–50 copias';
+  return '51+ copias';
+}
 
 /** 'YYYY-MM' del pedido en hora local (la del navegador del dueño ≈ Europe/Madrid). */
 export function monthKey(ms: number): string {
@@ -119,6 +129,7 @@ export function aggregate(orders: Order[], fromMs: number, toMs: number, source 
   const acabado = new Map<string, Bucket>();
   const dobleCara = new Map<string, Bucket>();
   const combo = new Map<string, Bucket>();
+  const copies = new Map<string, Bucket>();
 
   let revenue = 0;
   for (const o of inRange) {
@@ -134,9 +145,10 @@ export function aggregate(orders: Order[], fromMs: number, toMs: number, source 
         bump(grosor, String(c.grosor), t);
         bump(acabado, c.acabado, t);
         bump(dobleCara, c.dobleCara, t);
-        const finish = c.acabado === 'sinencuadernacion' ? '' : ` · ${FINISH_LABEL[c.acabado] ?? c.acabado}`;
-        const label = `${c.size} · ${c.color === 'BN' ? 'B/N' : 'Color'} · ${c.dobleCara === '1' ? '2 caras' : '1 cara'} · ${c.grosor}g${finish}`;
+        // Combinación de papel: tamaño · color · caras · gramaje (SIN encuadernación).
+        const label = `${c.size} · ${c.color === 'BN' ? 'B/N' : 'Color'} · ${c.dobleCara === '1' ? '2 caras' : '1 cara'} · ${c.grosor}g`;
         bump(combo, label, t);
+        bump(copies, copiesRange(Number(it.copias) || 1), t);
       }
     }
   }
@@ -166,6 +178,7 @@ export function aggregate(orders: Order[], fromMs: number, toMs: number, source 
       dobleCara: sorted(dobleCara),
     },
     byCombo: sorted(combo),
+    byCopies: sorted(copies),
     monthly,
   };
 }

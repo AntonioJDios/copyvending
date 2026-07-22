@@ -83,6 +83,7 @@ export function StatsPanel() {
   const [period, setPeriod] = useState<string>(nowQuarterKey());
   const [metric, setMetric] = useState<Metric>('revenue');
   const [compare, setCompare] = useState(false);
+  const [dailyDays, setDailyDays] = useState(90);
 
   useEffect(() => {
     void fetchOrders();
@@ -121,6 +122,17 @@ export function StatsPanel() {
   const prevSeries = useMemo(
     () => (prevRange ? seriesBy(orders, prevRange.from, prevRange.to, unit, source) : null),
     [orders, prevRange, unit, source]
+  );
+
+  // Dedicated daily-evolution window (independent of the fiscal period).
+  const dailyRange = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return { from: start.getTime() - (dailyDays - 1) * 86400000, to: start.getTime() + 86400000 - 1 };
+  }, [dailyDays]);
+  const dailySeries = useMemo(
+    () => seriesBy(orders, dailyRange.from, dailyRange.to, 'day', source),
+    [orders, dailyRange, source]
   );
 
   const mv = (p: { revenue: number; orders: number }) => (metric === 'revenue' ? p.revenue : p.orders);
@@ -212,10 +224,23 @@ export function StatsPanel() {
               )}
             </section>
 
+            {/* Evolución diaria (ventana propia) */}
+            <section className="card">
+              <div className="stats-card-head">
+                <h2>Evolución diaria · {metric === 'revenue' ? 'ventas' : 'pedidos'}</h2>
+                <div className="seg-toggle sm">
+                  {[30, 90, 180, 365].map((d) => (
+                    <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
+                  ))}
+                </div>
+              </div>
+              <DailyLine points={dailySeries} value={mv} fmt={mfmt} />
+            </section>
+
             {/* Combinaciones más frecuentes */}
             <section className="card">
-              <h2>Combinaciones más pedidas</h2>
-              <p className="muted">Las recetas reales de impresión que más {metric === 'revenue' ? 'facturan' : 'se piden'} en el periodo.</p>
+              <h2>Combinaciones de papel más pedidas</h2>
+              <p className="muted">Tamaño · color · caras · gramaje (sin encuadernación) que más {metric === 'revenue' ? 'facturan' : 'se piden'} en el periodo.</p>
               <Breakdown buckets={combos} metric={metric} labelOf={(k) => k} />
             </section>
 
@@ -242,6 +267,7 @@ export function StatsPanel() {
                 <Breakdown title="Gramaje" buckets={data.byConfig.grosor} metric={metric} labelOf={(k) => `${k} g`} />
                 <Breakdown title="Encuadernación" buckets={data.byConfig.acabado} metric={metric} labelOf={(k) => FINISH_LABEL[k as keyof typeof FINISH_LABEL] ?? k} />
                 <Breakdown title="Caras" buckets={data.byConfig.dobleCara} metric={metric} labelOf={(k) => (k === '1' ? 'Doble cara' : 'Una cara')} />
+                <Breakdown title="Nº de copias" buckets={data.byCopies} metric={metric} labelOf={(k) => k} />
               </div>
             </section>
 
@@ -297,6 +323,53 @@ function TrendChart({
             <span className="trend-tick">{tick(p.period, unit)}</span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Daily line/area chart (single series, brand hue). Only paths + hover rects live
+ *  in the SVG (stretched with preserveAspectRatio=none, non-scaling stroke); the
+ *  axis and figures are HTML so they never distort. */
+function DailyLine({ points, value, fmt }: { points: SeriesPoint[]; value: (p: SeriesPoint) => number; fmt: (n: number) => string }) {
+  const W = 760;
+  const H = 200;
+  const padT = 12;
+  const padB = 8;
+  const n = points.length;
+  const max = Math.max(1, ...points.map(value));
+  const total = points.reduce((s, p) => s + value(p), 0);
+  const innerH = H - padT - padB;
+  const x = (i: number) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
+  const y = (v: number) => padT + innerH - (v / max) * innerH;
+  const pts = points.map((p, i) => [x(i), y(value(p))] as const);
+  const line = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join(' ');
+  const baseline = padT + innerH;
+  const area = pts.length ? `M${pts[0][0].toFixed(1)},${baseline} ${pts.map(([px, py]) => `L${px.toFixed(1)},${py.toFixed(1)}`).join(' ')} L${pts[n - 1][0].toFixed(1)},${baseline} Z` : '';
+  const bw = n > 0 ? W / n : W;
+  const dayLbl = (p: string) => {
+    const [, m, d] = p.split('-');
+    return `${Number(d)}/${Number(m)}`;
+  };
+
+  return (
+    <div className="dayline">
+      <div className="dayline-head">
+        <span>máx {fmt(max)}</span>
+        <span>Total {fmt(total)}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="dayline-svg" role="img" aria-label="Evolución diaria">
+        {area && <path d={area} className="dayline-area" />}
+        {line && <path d={line} className="dayline-line" fill="none" vectorEffect="non-scaling-stroke" />}
+        {points.map((p, i) => (
+          <rect key={p.period} x={x(i) - bw / 2} y={0} width={bw} height={H} fill="transparent">
+            <title>{`${dayLbl(p.period)}: ${fmt(value(p))}`}</title>
+          </rect>
+        ))}
+      </svg>
+      <div className="dayline-axis">
+        <span>{n ? dayLbl(points[0].period) : ''}</span>
+        <span>{n ? dayLbl(points[n - 1].period) : ''}</span>
       </div>
     </div>
   );
