@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOrders } from '../store/useOrders';
 import { aggregate, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type SeriesPoint, type Unit } from '../lib/stats';
+import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -123,6 +124,29 @@ export function StatsPanel() {
     [data.byCombo, metric]
   );
 
+  const exportPdf = () => {
+    const months = data.monthly
+      .filter((m) => {
+        const [y, mm] = m.period.split('-').map(Number);
+        const t = new Date(y, mm - 1, 1).getTime();
+        return t >= range.from && t <= range.to;
+      })
+      .map((m) => {
+        const [y, mm] = m.period.split('-').map(Number);
+        return { label: `${MONTHS[mm - 1]} ${y}`, orders: m.orders, revenue: m.revenue };
+      });
+    const bySourceRows = source === 'all' ? data.bySource.map((b) => ({ label: SOURCE_LABEL[b.key] ?? cap(b.key), orders: b.count, revenue: b.revenue })) : [];
+    void downloadFiscalPdf({
+      title: `Resumen fiscal — ${periodLabel(period)}`,
+      sourceLabel: source === 'all' ? 'Todas las fuentes' : SOURCE_LABEL[source] ?? cap(source),
+      filename: `resumen-fiscal-${period}`,
+      totals: { revenue: data.totals.revenue, orders: data.totals.orders },
+      months,
+      bySource: bySourceRows,
+      vatRate: VAT_RATE,
+    });
+  };
+
   return (
     <div className="app admin">
       <header className="topbar">
@@ -162,6 +186,10 @@ export function StatsPanel() {
             <button type="button" className={metric === 'revenue' ? 'on' : ''} onClick={() => setMetric('revenue')}>Ventas €</button>
             <button type="button" className={metric === 'orders' ? 'on' : ''} onClick={() => setMetric('orders')}>Pedidos</button>
           </div>
+
+          <button type="button" className="btn btn-primary stats-pdf" onClick={exportPdf} disabled={data.totals.orders === 0}>
+            📄 PDF para el asesor
+          </button>
         </div>
 
         {orders.length === 0 ? (

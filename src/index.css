@@ -2761,6 +2761,9 @@ body {
   font-size: 14px;
   background: #fff;
 }
+.stats-pdf {
+  margin-left: auto;
+}
 
 .stats-kpis {
   display: grid;
