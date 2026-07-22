@@ -2900,6 +2900,76 @@ body {
   margin-top: 18px;
   font-size: 12px;
 }
+.stats-ctl {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #67707a;
+}
+.stats-ctl select {
+  padding: 7px 10px;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 10px;
+  font-size: 14px;
+  background: #fff;
+}
+.stats-cmp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+.stats-cmp.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.stats-cmp-note {
+  margin: -8px 0 14px;
+  font-size: 12px;
+}
+.kpi-delta {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.kpi-delta.up {
+  color: #1a7f52;
+}
+.kpi-delta.down {
+  color: #c23b3b;
+}
+.stats-kpi.strong .kpi-delta {
+  color: #fff;
+}
+/* Comparación: dos mini-gráficas lado a lado (small multiples). */
+.trend-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+.trend-title {
+  font-size: 13px;
+  color: #67707a;
+  margin-bottom: 6px;
+}
+.trend-title b {
+  color: #1f2933;
+}
+.trend-prev .trend-bar {
+  background: #b9c2cb;
+}
+.trend-prev .trend-col.on .trend-bar,
+.trend-prev .trend-col:hover .trend-bar {
+  background: #9fb0bb;
+}
+@media (max-width: 640px) {
+  .trend-compare {
+    grid-template-columns: 1fr;
+  }
+}
 .assistant-input button:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Banner de sugerencia (auto-configurador IA) ─────────────────── */
