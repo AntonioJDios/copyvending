@@ -1827,8 +1827,20 @@ body {
 .orders-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: 18px;
+}
+.orders-filters-src {
+  margin-bottom: 10px;
+}
+.filter-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
 }
 .filter-tab {
   display: inline-flex;

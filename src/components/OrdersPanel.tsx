@@ -198,6 +198,7 @@ export function OrdersPanel() {
   const orders = useOrders((s) => s.orders);
   const fetchOrders = useOrders((s) => s.fetchOrders);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
+  const [srcFilter, setSrcFilter] = useState<'todas' | string>('todas');
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [visible, setVisible] = useState(20);
@@ -239,7 +240,9 @@ export function OrdersPanel() {
     listo: orders.filter((o) => o.status === 'listo').length,
     entregado: orders.filter((o) => o.status === 'entregado').length,
   };
-  const shown = filter === 'todos' ? orders : orders.filter((o) => o.status === filter);
+  const sources = [...new Set(orders.map((o) => o.source))];
+  const byStatus = filter === 'todos' ? orders : orders.filter((o) => o.status === filter);
+  const shown = srcFilter === 'todas' ? byStatus : byStatus.filter((o) => o.source === srcFilter);
 
   return (
     <div className="app admin">
@@ -262,7 +265,39 @@ export function OrdersPanel() {
       </header>
 
       <div className="orders-body">
+        {sources.length > 1 && (
+          <div className="orders-filters orders-filters-src">
+            <span className="filter-group-label">Origen</span>
+            <button
+              type="button"
+              className={`filter-tab${srcFilter === 'todas' ? ' filter-on' : ''}`}
+              onClick={() => {
+                setSrcFilter('todas');
+                setVisible(20);
+              }}
+            >
+              Todas
+              <span className="filter-count">{orders.length}</span>
+            </button>
+            {sources.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`filter-tab${srcFilter === s ? ' filter-on' : ''}`}
+                onClick={() => {
+                  setSrcFilter(s);
+                  setVisible(20);
+                }}
+              >
+                {SOURCE_LABEL[s] ?? s}
+                <span className="filter-count">{orders.filter((o) => o.source === s).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="orders-filters">
+          <span className="filter-group-label">Estado</span>
           {(['todos', 'nuevo', 'en_proceso', 'listo', 'entregado'] as const).map((f) => (
             <button
               key={f}
@@ -283,7 +318,7 @@ export function OrdersPanel() {
           <p className="orders-empty">Cargando pedidos…</p>
         ) : shown.length === 0 ? (
           <p className="orders-empty">
-            {orders.length === 0 ? 'Aún no hay pedidos. Los que se confirmen en la tienda aparecerán aquí.' : 'No hay pedidos en este estado.'}
+            {orders.length === 0 ? 'Aún no hay pedidos. Los que se confirmen en la tienda aparecerán aquí.' : 'No hay pedidos con estos filtros.'}
           </p>
         ) : (
           <>
