@@ -1901,6 +1901,43 @@ body {
   margin: 6px 0;
   padding-left: 20px;
 }
+
+/* Mi cuenta */
+.account-orders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-orders li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #e6e9ee);
+}
+.account-order-id {
+  font-weight: 700;
+  color: var(--brand, #0ea5b7);
+  text-decoration: none;
+}
+.account-orders li strong {
+  margin-left: auto;
+}
+.account-danger {
+  border: 1px solid #f0c9c9;
+}
+.btn-danger {
+  background: #e5484d;
+  color: #fff;
+  border: none;
+}
+.btn-danger:hover {
+  background: #cf3b40;
+}
 .filter-tab {
   display: inline-flex;
   align-items: center;

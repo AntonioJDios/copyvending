@@ -6,6 +6,7 @@ import { SuggestionBanner } from './components/SuggestionBanner';
 import { PreflightNotice } from './components/PreflightNotice';
 import { RecoverOrder } from './components/RecoverOrder';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { Account } from './components/Account';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
 import { PriceBar } from './components/PriceBar';
@@ -69,6 +70,7 @@ export default function App() {
   if (route.startsWith('#carrito')) return <CartPage />;
   if (route.startsWith('#recoger')) return <RecoverOrder />;
   if (route.startsWith('#privacidad')) return <PrivacyPolicy />;
+  if (route.startsWith('#cuenta') || route.startsWith('#acceder')) return <Account />;
   if (route.startsWith('#asistente'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>

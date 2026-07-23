@@ -1,5 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import nodemailer from 'nodemailer';
+
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
+
+async function sendWelcome(to: string, nombre: string): Promise<void> {
+  if (!GMAIL_USER || !GMAIL_PASS) return; // email no configurado → se omite en silencio
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_PASS } });
+  await t.sendMail({
+    from: `${SHOP_NAME} <${GMAIL_USER}>`,
+    to,
+    subject: `¡Bienvenido a ${SHOP_NAME}!`,
+    text: `¡Hola ${nombre}!\n\nTu cuenta en ${SHOP_NAME} está lista. Desde tu área personal puedes ver y gestionar tus pedidos:\n${PUBLIC_URL}/#cuenta\n\nCuando quieras entrar, te enviaremos un enlace de acceso a este correo (no necesitas contraseña).\n\nGracias por confiar en nosotros.\n${SHOP_NAME}`,
+  });
+}
 
 // IMPORTANT: self-contained Vercel function (no imports of values from ../src).
 // Customer accounts for the shop: minimum personal data + RGPD consent. Used by
@@ -75,7 +92,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           consent_at = coalesce(customers.consent_at, excluded.consent_at),
           policy_version = excluded.policy_version,
           updated_at = excluded.updated_at
-        returning id`) as { id: string }[];
+        returning id, (xmax = 0) as inserted`) as { id: string; inserted: boolean }[];
+
+      // Welcome email only on a brand-new account (best-effort; never blocks).
+      if (rows[0]?.inserted) {
+        try {
+          await sendWelcome(email, nombre);
+        } catch {
+          /* email opcional; no romper el alta si falla */
+        }
+      }
       return res.status(200).json({ ok: true, id: rows[0]?.id });
     }
 
