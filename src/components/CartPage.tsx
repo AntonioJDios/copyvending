@@ -3,6 +3,7 @@ import { useCart } from '../store/useCart';
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { CartProjectCard } from './CartProjectCard';
 import { Checkout } from './Checkout';
+import { AccountButton } from './AccountButton';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -29,6 +30,7 @@ export function CartPage() {
           <a className="btn" href="#">
             ← Seguir comprando
           </a>
+          <AccountButton />
         </nav>
       </header>
 

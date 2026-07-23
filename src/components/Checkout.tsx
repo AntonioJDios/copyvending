@@ -4,6 +4,7 @@ import { useOrders } from '../store/useOrders';
 import { useAuth } from '../store/useAuth';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
+import { AccountButton } from './AccountButton';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -106,6 +107,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               ← Atrás
             </button>
           )}
+          <AccountButton />
         </nav>
       </header>
 

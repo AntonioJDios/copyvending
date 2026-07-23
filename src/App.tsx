@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useConfigurator } from './store/useConfigurator';
+import { useAuth } from './store/useAuth';
 import { hasBackend } from './lib/api';
 import { AssistantChat } from './components/AssistantChat';
 import { SuggestionBanner } from './components/SuggestionBanner';
@@ -39,6 +40,7 @@ function useHashRoute(): string {
 export default function App() {
   const route = useHashRoute();
   const fetchCatalog = useConfigurator((s) => s.fetchCatalog);
+  const restoreSession = useAuth((s) => s.restore);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -48,6 +50,12 @@ export default function App() {
   useEffect(() => {
     void fetchCatalog();
   }, [fetchCatalog]);
+
+  // Restore the customer session once, app-wide, so the account state is known
+  // on every page (checkout, cart, headers…).
+  useEffect(() => {
+    void restoreSession();
+  }, [restoreSession]);
 
   if (route.startsWith('#admin'))
     return (

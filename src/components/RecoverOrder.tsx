@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '../lib/api';
 import { useConfigurator } from '../store/useConfigurator';
+import { AccountButton } from './AccountButton';
 import type { Order, OrderStatus } from '../store/useOrders';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -66,6 +67,7 @@ export function RecoverOrder() {
         <h1>Recoger pedido</h1>
         <nav className="topnav">
           <a className="btn" href="#">← Volver</a>
+          <AccountButton />
         </nav>
       </header>
 

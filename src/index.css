@@ -1317,6 +1317,19 @@ body {
   display: inline-flex;
   align-items: center;
 }
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand, #0ea5b7);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
 .cart-button:hover {
   background: var(--brand-soft);
 }
