@@ -34,6 +34,7 @@ interface AuthState {
   ready: boolean; // whether we've attempted to restore the session
   requestLink: (email: string) => Promise<void>;
   verify: (token: string) => Promise<void>;
+  verifyCode: (email: string, code: string) => Promise<void>;
   restore: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -57,6 +58,16 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   verify: async (tk) => {
     const d = await post<{ session: string; customer: AuthCustomer }>({ action: 'verify', token: tk });
+    try {
+      localStorage.setItem(KEY, d.session);
+    } catch {
+      /* ignore */
+    }
+    set({ session: d.session, customer: d.customer, ready: true });
+  },
+
+  verifyCode: async (email, code) => {
+    const d = await post<{ session: string; customer: AuthCustomer }>({ action: 'verify-code', email, code });
     try {
       localStorage.setItem(KEY, d.session);
     } catch {

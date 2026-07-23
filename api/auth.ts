@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 
 // IMPORTANT: self-contained Vercel function (no imports of values from ../src).
 // Passwordless accounts: request a magic link by email, verify it → session.
@@ -37,6 +37,7 @@ function ensureSchema(): Promise<void> {
         create table if not exists login_tokens (
           token text primary key, email text not null, expires_at bigint not null,
           used boolean not null default false, created_at bigint not null)`;
+      await db()`alter table login_tokens add column if not exists code text`;
       await db()`
         create table if not exists sessions (
           token text primary key, customer_id text not null, email text not null,
@@ -74,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
     const sql = db();
-    const body = (req.body ?? {}) as { action?: string; email?: string; token?: string; session?: string };
+    const body = (req.body ?? {}) as { action?: string; email?: string; token?: string; code?: string; session?: string };
     const action = body.action;
 
     // 1) Request a magic link. Always answers ok (no email enumeration).
@@ -84,13 +85,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cust = (await sql`select nombre from customers where email = ${email}`) as { nombre: string }[];
       if (cust[0]) {
         const tk = token();
+        const code = String(randomInt(0, 1000000)).padStart(6, '0');
         const now = Date.now();
-        await sql`insert into login_tokens (token, email, expires_at, used, created_at) values (${tk}, ${email}, ${now + LOGIN_TTL}, false, ${now})`;
+        await sql`insert into login_tokens (token, code, email, expires_at, used, created_at) values (${tk}, ${code}, ${email}, ${now + LOGIN_TTL}, false, ${now})`;
         const link = `${PUBLIC_URL}/#acceder/${tk}`;
         await sendMail(
           email,
           `Acceso a tu cuenta · ${SHOP_NAME}`,
-          `Hola ${cust[0].nombre}:\n\nAccede a tu cuenta con este enlace (caduca en 30 minutos):\n${link}\n\nSi no lo has pedido, ignora este correo.\n\n${SHOP_NAME}`
+          `Hola ${cust[0].nombre}:\n\nEntra con este enlace (caduca en 30 minutos):\n${link}\n\nO usa este código para continuar en la web:\n${code}\n\nSi no lo has pedido, ignora este correo.\n\n${SHOP_NAME}`
         );
       }
       return res.status(200).json({ ok: true });
@@ -105,6 +107,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!row || row.used || Number(row.expires_at) < now) return res.status(400).json({ error: 'Enlace no válido o caducado' });
       await sql`update login_tokens set used = true where token = ${tk}`;
       const cust = (await sql`select id, email, nombre, apellidos, telefono from customers where email = ${row.email}`) as Customer[];
+      if (!cust[0]) return res.status(404).json({ error: 'Cuenta no encontrada' });
+      const sess = token();
+      await sql`insert into sessions (token, customer_id, email, expires_at, created_at) values (${sess}, ${cust[0].id}, ${cust[0].email}, ${now + SESSION_TTL}, ${now})`;
+      return res.status(200).json({ session: sess, customer: cust[0] });
+    }
+
+    // 2b) Verify a 6-digit code (inline login, e.g. during checkout) → session.
+    if (action === 'verify-code') {
+      const email = String(body.email ?? '').trim().toLowerCase();
+      const code = String(body.code ?? '').trim();
+      const now = Date.now();
+      if (!isEmail(email) || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Código no válido' });
+      const rows = (await sql`select token, expires_at, used from login_tokens where email = ${email} and code = ${code} order by created_at desc limit 1`) as { token: string; expires_at: number; used: boolean }[];
+      const row = rows[0];
+      if (!row || row.used || Number(row.expires_at) < now) return res.status(400).json({ error: 'Código no válido o caducado' });
+      await sql`update login_tokens set used = true where token = ${row.token}`;
+      const cust = (await sql`select id, email, nombre, apellidos, telefono from customers where email = ${email}`) as Customer[];
       if (!cust[0]) return res.status(404).json({ error: 'Cuenta no encontrada' });
       const sess = token();
       await sql`insert into sessions (token, customer_id, email, expires_at, created_at) values (${sess}, ${cust[0].id}, ${cust[0].email}, ${now + SESSION_TTL}, ${now})`;

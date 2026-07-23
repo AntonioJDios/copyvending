@@ -24,7 +24,7 @@ function itemMeta(p: ReturnType<typeof useCart.getState>['items'][number]): stri
   return `${p.cantidad} ud.`;
 }
 
-type Mode = 'guest' | 'account';
+type Mode = 'login' | 'guest' | 'account';
 
 /** Kiosk/tablet checkout: no payment yet. The customer can create an account
  *  (saved with RGPD consent, so they can manage their orders and — later — pay)
@@ -37,6 +37,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
 
   const customer = useAuth((s) => s.customer);
   const restore = useAuth((s) => s.restore);
+  const requestLink = useAuth((s) => s.requestLink);
+  const verifyCode = useAuth((s) => s.verifyCode);
   const loggedIn = !!customer;
 
   const [step, setStep] = useState(0);
@@ -46,6 +48,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
   const [consent, setConsent] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [saving, setSaving] = useState(false);
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
@@ -92,6 +98,33 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       setSaving(false);
     }
   };
+  const onSendCode = async () => {
+    if (authBusy || !isEmail(email)) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      await requestLink(email.trim().toLowerCase());
+      setCodeSent(true);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'No se pudo enviar el código.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+  const onVerifyCode = async () => {
+    if (authBusy || code.length !== 6) return;
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      await verifyCode(email.trim().toLowerCase(), code);
+      // On success the session is set → this component re-renders as "identified".
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Código no válido o caducado.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
   const finish = () => {
     clear();
     window.location.hash = '';
@@ -139,20 +172,78 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         {step === 0 && !loggedIn && (
           <section className="checkout-card">
             <div className="seg-toggle checkout-mode">
+              <button type="button" className={mode === 'login' ? 'on' : ''} onClick={() => setMode('login')}>
+                Entrar
+              </button>
               <button type="button" className={mode === 'guest' ? 'on' : ''} onClick={() => setMode('guest')}>
-                Continuar como invitado
+                Invitado
               </button>
               <button type="button" className={mode === 'account' ? 'on' : ''} onClick={() => setMode('account')}>
                 Crear cuenta
               </button>
             </div>
-            <p className="muted checkout-mode-hint">
-              {mode === 'account'
-                ? 'Guardamos tus datos para que gestiones tus pedidos (y, próximamente, pagues online).'
-                : 'Solo usamos tus datos para este pedido y avisarte cuando esté listo.'}
-            </p>
 
-            <div className="checkout-form">
+            {mode === 'login' ? (
+              <div className="checkout-login">
+                <p className="muted checkout-mode-hint">
+                  ¿Ya tienes cuenta? Te enviamos un código a tu email y sigues con el pedido aquí mismo.
+                </p>
+                <label className="field-block">
+                  Email
+                  <input
+                    type="email"
+                    value={email}
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    disabled={codeSent}
+                    placeholder="tu@email.com"
+                    onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                  />
+                </label>
+                {codeSent && (
+                  <label className="field-block">
+                    Código (6 dígitos)
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoFocus
+                      value={code}
+                      maxLength={6}
+                      placeholder="123456"
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void onVerifyCode();
+                      }}
+                    />
+                  </label>
+                )}
+                {authError && <p className="recover-error">⚠ {authError}</p>}
+                {!codeSent ? (
+                  <button type="button" className="btn btn-primary checkout-next" onClick={() => void onSendCode()} disabled={authBusy || !isEmail(email)}>
+                    {authBusy ? 'Enviando…' : 'Enviar código'}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" className="btn btn-primary checkout-next" onClick={() => void onVerifyCode()} disabled={authBusy || code.length !== 6}>
+                      {authBusy ? 'Entrando…' : 'Entrar y continuar'}
+                    </button>
+                    <button type="button" className="chip" style={{ marginTop: 8 }} onClick={() => { setCodeSent(false); setCode(''); setAuthError(''); }}>
+                      Cambiar email / reenviar
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="muted checkout-mode-hint">
+                  {mode === 'account'
+                    ? 'Guardamos tus datos para que gestiones tus pedidos (y, próximamente, pagues online).'
+                    : 'Solo usamos tus datos para este pedido y avisarte cuando esté listo.'}
+                </p>
+
+                <div className="checkout-form">
               <label className="field-block">
                 Nombre *
                 <input type="text" value={nombre} autoFocus maxLength={60} onChange={(e) => setNombre(e.target.value)} />
@@ -196,9 +287,11 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a>.
             </p>
 
-            <button type="button" className="btn btn-primary checkout-next" disabled={!canContinue} onClick={() => setStep(1)}>
-              Continuar
-            </button>
+                <button type="button" className="btn btn-primary checkout-next" disabled={!canContinue} onClick={() => setStep(1)}>
+                  Continuar
+                </button>
+              </>
+            )}
           </section>
         )}
 
