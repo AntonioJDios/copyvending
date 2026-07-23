@@ -42,7 +42,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const restore = useAuth((s) => s.restore);
   const requestLink = useAuth((s) => s.requestLink);
   const verifyCode = useAuth((s) => s.verifyCode);
-  const saveAddresses = useAuth((s) => s.saveAddresses);
+  const setDefaultBilling = useAuth((s) => s.setDefaultBilling);
   const loggedIn = !!customer;
 
   const payments = useConfigurator((s) => s.catalog.payments) ?? DEFAULT_PAYMENTS;
@@ -77,7 +77,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       setApellidos(customer.apellidos);
       setEmail(customer.email);
       setTelefono(customer.telefono ?? '');
-      if (customer.billing) setBillingAddr(customer.billing);
+      const defBilling = customer.addresses?.find((a) => a.defaultBilling) ?? customer.addresses?.[0];
+      if (defBilling) setBillingAddr(defBilling);
     }
   }, [customer]);
 
@@ -108,7 +109,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         paymentMethod: 'local',
       });
       // Remember this billing address as the account's default for next time.
-      if (loggedIn && billing) void saveAddresses(customer!.shipping ?? null, billing, false).catch(() => {});
+      if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
       setStep(3);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');

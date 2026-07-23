@@ -45,6 +45,7 @@ function ensureSchema(): Promise<void> {
       await db()`alter table customers add column if not exists shipping jsonb`;
       await db()`alter table customers add column if not exists billing jsonb`;
       await db()`alter table customers add column if not exists billing_same boolean default true`;
+      await db()`alter table customers add column if not exists addresses jsonb`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -56,16 +57,29 @@ function ensureSchema(): Promise<void> {
 const token = () => randomBytes(24).toString('hex');
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
-/** Keep only known address fields (strings, capped) so we never store junk. */
-function cleanAddr(a: unknown): Record<string, string> | null {
+/** Sanitise one address (known fields only, capped). Requires a street line. */
+function cleanAddress(a: unknown): Record<string, unknown> | null {
   if (!a || typeof a !== 'object') return null;
   const src = a as Record<string, unknown>;
-  const out: Record<string, string> = {};
-  for (const k of ['nombre', 'nif', 'linea1', 'linea2', 'cp', 'ciudad', 'provincia', 'telefono']) {
+  const out: Record<string, unknown> = {};
+  for (const k of ['id', 'label', 'nombre', 'nif', 'linea1', 'linea2', 'cp', 'ciudad', 'provincia', 'telefono']) {
     const v = src[k];
     if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 120);
   }
-  return Object.keys(out).length ? out : null;
+  if (!out.linea1) return null;
+  if (!out.id) out.id = randomBytes(6).toString('hex');
+  out.defaultShipping = src.defaultShipping === true;
+  out.defaultBilling = src.defaultBilling === true;
+  return out;
+}
+/** At most one default of each kind. */
+function enforceSingleDefaults(list: Record<string, unknown>[]): void {
+  let sh = false;
+  let bi = false;
+  for (const a of list) {
+    if (a.defaultShipping) { if (sh) a.defaultShipping = false; else sh = true; }
+    if (a.defaultBilling) { if (bi) a.defaultBilling = false; else bi = true; }
+  }
 }
 
 async function sendMail(to: string, subject: string, text: string): Promise<void> {
@@ -92,7 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const sql = db();
     const body = (req.body ?? {}) as {
       action?: string; email?: string; token?: string; code?: string; session?: string;
-      shipping?: unknown; billing?: unknown; billingSame?: boolean;
+      addresses?: unknown;
     };
     const action = body.action;
 
@@ -148,31 +162,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ session: sess, customer: cust[0] });
     }
 
-    // 3) Restore session → who am I (incl. addresses).
+    // 3) Restore session → who am I (incl. address list).
     if (action === 'me') {
       const c = await sessionCustomer(String(body.session ?? ''));
       if (!c) return res.status(401).json({ error: 'Sesión no válida' });
-      const rows = (await sql`select shipping, billing, billing_same from customers where id = ${c.id}`) as { shipping: unknown; billing: unknown; billing_same: boolean }[];
+      const rows = (await sql`select shipping, billing, billing_same, addresses from customers where id = ${c.id}`) as {
+        shipping: unknown; billing: unknown; billing_same: boolean; addresses: unknown;
+      }[];
       const a = rows[0];
-      return res.status(200).json({
-        customer: { ...c, shipping: a?.shipping ?? null, billing: a?.billing ?? null, billingSame: a?.billing_same ?? true },
-      });
+      let addresses = (Array.isArray(a?.addresses) ? a!.addresses : []).map(cleanAddress).filter(Boolean) as Record<string, unknown>[];
+      // Migrate a legacy single shipping/billing to the new list on first read.
+      if (addresses.length === 0 && a) {
+        const sh = cleanAddress(a.shipping);
+        if (sh) { sh.defaultShipping = true; sh.defaultBilling = a.billing_same === true; addresses.push(sh); }
+        if (a.billing_same !== true) {
+          const bi = cleanAddress(a.billing);
+          if (bi) { bi.defaultBilling = true; addresses.push(bi); }
+        }
+      }
+      enforceSingleDefaults(addresses);
+      return res.status(200).json({ customer: { ...c, addresses } });
     }
 
-    // 3b) Save the customer's shipping / billing addresses.
+    // 3b) Replace the customer's address list.
     if (action === 'save-addresses') {
       const c = await sessionCustomer(String(body.session ?? ''));
       if (!c) return res.status(401).json({ error: 'Sesión no válida' });
-      const shipping = cleanAddr(body.shipping);
-      const billingSame = body.billingSame !== false;
-      const billing = billingSame ? shipping : cleanAddr(body.billing);
-      await sql`update customers set
-          shipping = ${shipping ? JSON.stringify(shipping) : null}::jsonb,
-          billing = ${billing ? JSON.stringify(billing) : null}::jsonb,
-          billing_same = ${billingSame},
-          updated_at = ${Date.now()}
-        where id = ${c.id}`;
-      return res.status(200).json({ ok: true, shipping, billing, billingSame });
+      const arr = Array.isArray(body.addresses) ? body.addresses : [];
+      const cleaned = arr.map(cleanAddress).filter(Boolean).slice(0, 20) as Record<string, unknown>[];
+      enforceSingleDefaults(cleaned);
+      await sql`update customers set addresses = ${JSON.stringify(cleaned)}::jsonb, updated_at = ${Date.now()} where id = ${c.id}`;
+      return res.status(200).json({ ok: true, addresses: cleaned });
     }
 
     // 4) My orders (only mine, by email).

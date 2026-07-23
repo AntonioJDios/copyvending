@@ -2036,6 +2036,57 @@ body {
   align-items: center;
   gap: 12px;
   margin-top: 14px;
+  flex-wrap: wrap;
+}
+.addr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.addr-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e6e9ee);
+  border-radius: 12px;
+}
+.addr-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.addr-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.addr-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f7ee;
+  color: #1c7a4a;
+}
+.addr-badge.billing {
+  background: #eaf2ff;
+  color: #2952a3;
+}
+.addr-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.addr-editor-defaults {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 12px 0;
 }
 @media (max-width: 560px) {
   .addr-form {

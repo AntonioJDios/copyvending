@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { API_BASE } from '../lib/api';
 
 export interface Address {
+  id?: string;
+  label?: string;
   nombre?: string;
   nif?: string;
   linea1?: string;
@@ -10,6 +12,8 @@ export interface Address {
   ciudad?: string;
   provincia?: string;
   telefono?: string;
+  defaultShipping?: boolean;
+  defaultBilling?: boolean;
 }
 export interface AuthCustomer {
   id: string;
@@ -17,10 +21,10 @@ export interface AuthCustomer {
   nombre: string;
   apellidos: string;
   telefono: string | null;
-  shipping?: Address | null;
-  billing?: Address | null;
-  billingSame?: boolean;
+  addresses?: Address[];
 }
+
+const rid = () => (globalThis.crypto?.randomUUID?.() ?? `a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 export interface MyOrder {
   id: string;
   createdAt: number;
@@ -53,7 +57,10 @@ interface AuthState {
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   fetchMyOrders: () => Promise<MyOrder[]>;
-  saveAddresses: (shipping: Address | null, billing: Address | null, billingSame: boolean) => Promise<void>;
+  /** Replace the whole address list. */
+  saveAddresses: (addresses: Address[]) => Promise<void>;
+  /** Add/update `addr` as the (only) default billing address. */
+  setDefaultBilling: (addr: Address) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()((set, get) => ({
@@ -146,16 +153,21 @@ export const useAuth = create<AuthState>()((set, get) => ({
     return d.orders;
   },
 
-  saveAddresses: async (shipping, billing, billingSame) => {
+  saveAddresses: async (addresses) => {
     const s = get().session;
     if (!s) return;
-    const d = await post<{ shipping: Address | null; billing: Address | null; billingSame: boolean }>({
-      action: 'save-addresses',
-      session: s,
-      shipping,
-      billing,
-      billingSame,
-    });
-    set((st) => ({ customer: st.customer ? { ...st.customer, shipping: d.shipping, billing: d.billing, billingSame: d.billingSame } : st.customer }));
+    const d = await post<{ addresses: Address[] }>({ action: 'save-addresses', session: s, addresses });
+    set((st) => ({ customer: st.customer ? { ...st.customer, addresses: d.addresses } : st.customer }));
+  },
+
+  setDefaultBilling: async (addr) => {
+    const c = get().customer;
+    if (!c) return;
+    const list = (c.addresses ?? []).map((a) => ({ ...a, defaultBilling: false }));
+    const key = (a: Address) => `${a.linea1 ?? ''}|${a.cp ?? ''}|${a.nombre ?? ''}`.toLowerCase();
+    const idx = list.findIndex((a) => key(a) === key(addr));
+    if (idx >= 0) list[idx] = { ...list[idx], ...addr, id: list[idx].id, defaultBilling: true };
+    else list.push({ ...addr, id: addr.id || rid(), defaultBilling: true });
+    await get().saveAddresses(list);
   },
 }));

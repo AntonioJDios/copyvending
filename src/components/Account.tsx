@@ -32,11 +32,7 @@ export function Account() {
   const [error, setError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [orders, setOrders] = useState<MyOrder[] | null>(null);
-  const [shipping, setShipping] = useState<Address>({});
-  const [billing, setBilling] = useState<Address>({});
-  const [billingSame, setBillingSame] = useState(true);
-  const [addrBusy, setAddrBusy] = useState(false);
-  const [addrSaved, setAddrSaved] = useState(false);
+  const [atab, setAtab] = useState<'perfil' | 'direcciones' | 'pedidos'>('perfil');
   const [invBusy, setInvBusy] = useState<string | null>(null);
   const invoicing = useConfigurator((s) => s.catalog.invoicing);
   const invoicingOn = !!invoicing?.enabled;
@@ -77,31 +73,6 @@ export function Account() {
   useEffect(() => {
     if (customer) fetchMyOrders().then(setOrders).catch(() => setOrders([]));
   }, [customer, fetchMyOrders]);
-
-  // Load the saved addresses into the forms when the account loads.
-  useEffect(() => {
-    if (customer) {
-      setShipping(customer.shipping ?? {});
-      setBilling(customer.billing ?? {});
-      setBillingSame(customer.billingSame !== false);
-    }
-  }, [customer]);
-
-  const onSaveAddresses = async () => {
-    if (addrBusy) return;
-    setAddrBusy(true);
-    try {
-      const sh = shipping.linea1?.trim() ? shipping : null;
-      const bi = billingSame ? sh : billing.linea1?.trim() ? billing : null;
-      await saveAddresses(sh, bi, billingSame);
-      setAddrSaved(true);
-      setTimeout(() => setAddrSaved(false), 2500);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'No se pudieron guardar las direcciones.');
-    } finally {
-      setAddrBusy(false);
-    }
-  };
 
   const onRequest = async () => {
     if (!email.trim() || busy) return;
@@ -171,78 +142,75 @@ export function Account() {
           </section>
         ) : customer ? (
           <>
-            <section className="checkout-card">
-              <div className="account-head">
-                <div>
-                  <h2>Hola, {customer.nombre} 👋</h2>
+            <nav className="admin-tabs account-tabs">
+              <button type="button" className={`admin-tab${atab === 'perfil' ? ' on' : ''}`} onClick={() => setAtab('perfil')}>Perfil</button>
+              <button type="button" className={`admin-tab${atab === 'direcciones' ? ' on' : ''}`} onClick={() => setAtab('direcciones')}>Direcciones</button>
+              <button type="button" className={`admin-tab${atab === 'pedidos' ? ' on' : ''}`} onClick={() => setAtab('pedidos')}>Pedidos</button>
+            </nav>
+
+            {atab === 'perfil' && (
+              <>
+                <section className="checkout-card">
+                  <div className="account-head">
+                    <div>
+                      <h2>Hola, {customer.nombre} 👋</h2>
+                      <p className="muted">
+                        {customer.nombre} {customer.apellidos} · {customer.email}
+                        {customer.telefono ? ` · ${customer.telefono}` : ''}
+                      </p>
+                    </div>
+                    <button type="button" className="btn" onClick={() => void logout()}>
+                      Cerrar sesión
+                    </button>
+                  </div>
+                </section>
+
+                <section className="checkout-card account-danger">
+                  <h2>Borrar mi cuenta</h2>
                   <p className="muted">
-                    {customer.nombre} {customer.apellidos} · {customer.email}
-                    {customer.telefono ? ` · ${customer.telefono}` : ''}
+                    Ejerce tu <b>derecho al olvido</b>: eliminamos tu cuenta y tus datos personales. Los pedidos ya
+                    realizados se conservan de forma <b>anónima</b> por obligaciones fiscales, sin datos que te identifiquen.
                   </p>
-                </div>
-                <button type="button" className="btn" onClick={() => void logout()}>
-                  Cerrar sesión
-                </button>
-              </div>
-            </section>
+                  <button type="button" className="btn btn-danger" onClick={onDelete}>
+                    Borrar mi cuenta y mis datos
+                  </button>
+                </section>
+              </>
+            )}
 
-            <section className="checkout-card">
-              <h2>Mis pedidos</h2>
-              {orders === null ? (
-                <p className="muted">Cargando…</p>
-              ) : orders.length === 0 ? (
-                <p className="muted">Aún no tienes pedidos.</p>
-              ) : (
-                <ul className="account-orders">
-                  {orders.map((o) => (
-                    <li key={o.id}>
-                      <a href={`#recoger/${o.id}`} className="account-order-id">{o.id}</a>
-                      <span className={`status-pill st-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
-                      <span className="muted">{new Date(o.createdAt).toLocaleDateString('es-ES')}</span>
-                      <strong>{eur(o.total)}</strong>
-                      {invoicingOn && (
-                        <button type="button" className="chip" disabled={invBusy === o.id} onClick={() => void downloadFactura(o.id)}>
-                          🧾 {invBusy === o.id ? '…' : o.paid ? 'Factura' : 'Proforma'}
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {atab === 'direcciones' && (
+              <section className="checkout-card">
+                <h2>Mis direcciones</h2>
+                <AddressesManager addresses={customer.addresses ?? []} onSave={saveAddresses} />
+              </section>
+            )}
 
-            <section className="checkout-card">
-              <h2>Mis direcciones</h2>
-              <h3 className="addr-title">📦 Dirección de envío</h3>
-              <AddressForm value={shipping} onChange={setShipping} />
-              <label className="checkout-consent" style={{ marginTop: 12 }}>
-                <input type="checkbox" checked={billingSame} onChange={(e) => setBillingSame(e.target.checked)} />
-                <span>Usar la misma dirección para la facturación</span>
-              </label>
-              {!billingSame && (
-                <>
-                  <h3 className="addr-title">🧾 Dirección de facturación</h3>
-                  <AddressForm value={billing} onChange={setBilling} showNif />
-                </>
-              )}
-              <div className="addr-actions">
-                <button type="button" className="btn btn-primary" onClick={() => void onSaveAddresses()} disabled={addrBusy}>
-                  {addrBusy ? 'Guardando…' : 'Guardar direcciones'}
-                </button>
-                {addrSaved && <span className="muted">✓ Guardado</span>}
-              </div>
-            </section>
-
-            <section className="checkout-card account-danger">
-              <h2>Borrar mi cuenta</h2>
-              <p className="muted">
-                Ejerce tu <b>derecho al olvido</b>: eliminamos tu cuenta y tus datos personales. Los pedidos ya
-                realizados se conservan de forma <b>anónima</b> por obligaciones fiscales, sin datos que te identifiquen.
-              </p>
-              <button type="button" className="btn btn-danger" onClick={onDelete}>
-                Borrar mi cuenta y mis datos
-              </button>
-            </section>
+            {atab === 'pedidos' && (
+              <section className="checkout-card">
+                <h2>Mis pedidos</h2>
+                {orders === null ? (
+                  <p className="muted">Cargando…</p>
+                ) : orders.length === 0 ? (
+                  <p className="muted">Aún no tienes pedidos.</p>
+                ) : (
+                  <ul className="account-orders">
+                    {orders.map((o) => (
+                      <li key={o.id}>
+                        <a href={`#recoger/${o.id}`} className="account-order-id">{o.id}</a>
+                        <span className={`status-pill st-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                        <span className="muted">{new Date(o.createdAt).toLocaleDateString('es-ES')}</span>
+                        <strong>{eur(o.total)}</strong>
+                        {invoicingOn && (
+                          <button type="button" className="chip" disabled={invBusy === o.id} onClick={() => void downloadFactura(o.id)}>
+                            🧾 {invBusy === o.id ? '…' : o.paid ? 'Factura' : 'Proforma'}
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
           </>
         ) : (
           <section className="checkout-card">
@@ -330,6 +298,108 @@ export function Account() {
             {error && <p className="recover-error">⚠ {error}</p>}
           </section>
         )}
+      </div>
+    </div>
+  );
+}
+
+const newAddrId = () => (globalThis.crypto?.randomUUID?.() ?? `a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+
+/** List of saved addresses with default-shipping / default-billing badges, plus
+ *  add / edit / delete / set-default — instead of two big always-open forms. */
+function AddressesManager({ addresses, onSave }: { addresses: Address[]; onSave: (list: Address[]) => Promise<void> }) {
+  const [editing, setEditing] = useState<Address | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const persist = async (list: Address[]) => {
+    setBusy(true);
+    try {
+      await onSave(list);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo guardar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async (addr: Address) => {
+    const a: Address = { ...addr, id: addr.id || newAddrId() };
+    let list = addresses.map((x) => ({ ...x }));
+    if (a.defaultShipping) list = list.map((x) => ({ ...x, defaultShipping: false }));
+    if (a.defaultBilling) list = list.map((x) => ({ ...x, defaultBilling: false }));
+    const idx = list.findIndex((x) => x.id === a.id);
+    if (idx >= 0) list[idx] = a;
+    else list.push(a);
+    await persist(list);
+    setEditing(null);
+  };
+
+  const del = async (id?: string) => {
+    if (!id || !window.confirm('¿Eliminar esta dirección?')) return;
+    await persist(addresses.filter((x) => x.id !== id));
+  };
+
+  const setDefault = async (id: string, kind: 'defaultShipping' | 'defaultBilling') => {
+    await persist(addresses.map((x) => ({ ...x, [kind]: x.id === id })));
+  };
+
+  if (editing) return <AddressEditor initial={editing} busy={busy} onCancel={() => setEditing(null)} onSave={save} />;
+
+  return (
+    <div className="addr-list">
+      {addresses.length === 0 && <p className="muted">Aún no tienes direcciones guardadas.</p>}
+      {addresses.map((a) => (
+        <div key={a.id} className="addr-card">
+          <div className="addr-card-body">
+            {(a.defaultShipping || a.defaultBilling) && (
+              <div className="addr-badges">
+                {a.defaultShipping && <span className="addr-badge">⭐ Envío por defecto</span>}
+                {a.defaultBilling && <span className="addr-badge billing">🧾 Facturación por defecto</span>}
+              </div>
+            )}
+            <strong>{a.label || a.nombre || a.linea1}</strong>
+            <span className="muted">{[a.linea1, a.linea2].filter(Boolean).join(', ')}</span>
+            <span className="muted">{[a.cp, a.ciudad, a.provincia].filter(Boolean).join(' · ')}</span>
+            {a.nif && <span className="muted">NIF: {a.nif}</span>}
+          </div>
+          <div className="addr-card-actions">
+            <button type="button" className="chip" onClick={() => setEditing(a)}>Editar</button>
+            {!a.defaultShipping && <button type="button" className="chip" disabled={busy} onClick={() => void setDefault(a.id!, 'defaultShipping')}>Predet. envío</button>}
+            {!a.defaultBilling && <button type="button" className="chip" disabled={busy} onClick={() => void setDefault(a.id!, 'defaultBilling')}>Predet. factura</button>}
+            <button type="button" className="chip chip-danger" disabled={busy} onClick={() => void del(a.id)}>Eliminar</button>
+          </div>
+        </div>
+      ))}
+      <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => setEditing({})}>
+        + Añadir dirección
+      </button>
+    </div>
+  );
+}
+
+function AddressEditor({ initial, busy, onCancel, onSave }: { initial: Address; busy: boolean; onCancel: () => void; onSave: (a: Address) => void }) {
+  const [addr, setAddr] = useState<Address>(initial);
+  const valid = !!(addr.linea1?.trim() && addr.cp?.trim() && addr.ciudad?.trim());
+  return (
+    <div className="addr-editor">
+      <label className="field-block addr-wide">
+        Etiqueta (ej. Casa, Trabajo)
+        <input type="text" value={addr.label ?? ''} maxLength={40} onChange={(e) => setAddr({ ...addr, label: e.target.value })} />
+      </label>
+      <AddressForm value={addr} onChange={setAddr} showNif />
+      <div className="addr-editor-defaults">
+        <label className="chk">
+          <input type="checkbox" checked={!!addr.defaultShipping} onChange={(e) => setAddr({ ...addr, defaultShipping: e.target.checked })} /> Predeterminada de envío
+        </label>
+        <label className="chk">
+          <input type="checkbox" checked={!!addr.defaultBilling} onChange={(e) => setAddr({ ...addr, defaultBilling: e.target.checked })} /> Predeterminada de facturación
+        </label>
+      </div>
+      <div className="addr-actions">
+        <button type="button" className="btn btn-primary" disabled={busy || !valid} onClick={() => onSave(addr)}>
+          {busy ? 'Guardando…' : 'Guardar dirección'}
+        </button>
+        <button type="button" className="chip" onClick={onCancel}>Cancelar</button>
       </div>
     </div>
   );
