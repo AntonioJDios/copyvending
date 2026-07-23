@@ -2143,6 +2143,47 @@ body {
   text-decoration: none;
 }
 
+/* Backoffice login gate */
+.admin-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.admin-login-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 14px;
+  background: var(--card, #fff);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+.admin-login-card h1 {
+  margin: 0;
+  font-size: 20px;
+}
+.admin-login-card input {
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 8px;
+  font: inherit;
+}
+.admin-login-err {
+  margin: 0;
+  color: #c0392b;
+  font-size: 13px;
+}
+.admin-login-back {
+  text-align: center;
+  text-decoration: none;
+  font-size: 13px;
+}
+
 .account-head {
   display: flex;
   align-items: flex-start;

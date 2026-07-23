@@ -1,5 +1,33 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { createHmac, timingSafeEqual } from 'crypto';
+
+// Backoffice admin auth (mirror of orders.ts; self-contained). Saving settings
+// is admin-only once ADMIN_PASSWORD is set; open before that (prototype).
+const ADMIN_AUTH_ON = !!process.env.ADMIN_PASSWORD;
+const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
+function isAdmin(req: VercelRequest): boolean {
+  if (!ADMIN_SECRET) return false;
+  const h = req.headers['authorization'];
+  const raw = Array.isArray(h) ? h[0] : h || '';
+  const m = /^Bearer\s+(.+)$/i.exec(raw);
+  if (!m) return false;
+  const [expStr, sig] = m[1].split('.');
+  const exp = Number(expStr);
+  if (!exp || exp < Date.now() || !sig) return false;
+  const expected = createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
+  if (sig.length !== expected.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
+function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
+  if (!ADMIN_AUTH_ON || isAdmin(req)) return true;
+  res.status(401).json({ error: 'Necesitas iniciar sesión como administrador.' });
+  return false;
+}
 
 // Self-contained. Lazy DB init (see orders.ts).
 let _sql: NeonQueryFunction<false, false> | null = null;
@@ -58,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'PUT') {
+      if (!requireAdmin(req, res)) return; // saving settings is admin-only
       const body = req.body;
       if (!body || typeof body !== 'object') return res.status(400).json({ error: 'datos inválidos' });
 

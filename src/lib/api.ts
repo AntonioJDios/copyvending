@@ -6,14 +6,23 @@
 // (IndexedDB + localStorage) so the UI still runs offline / as a demo.
 //
 // VITE_UPLOAD_API is still read for backwards compatibility (older setups).
+import { getAdminToken } from './adminToken';
+
 const env = import.meta.env as Record<string, string | undefined>;
 const raw = env.VITE_API_BASE ?? env.VITE_UPLOAD_API;
 
 export const API_BASE: string | null = raw ? raw.replace(/\/+$/, '') : null;
 export const hasBackend = API_BASE !== null;
 
+// Attach the admin token when present. Harmless on public endpoints (ignored),
+// required by admin-only ones (order management, saving the catalog).
+function authHeaders(): Record<string, string> {
+  const t = getAdminToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -21,7 +30,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiSend<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {

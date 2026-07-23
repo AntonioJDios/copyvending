@@ -16,6 +16,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { CartPage } from './components/CartPage';
 import { CartButton } from './components/CartButton';
 import { AccountButton } from './components/AccountButton';
+import { AdminGate } from './components/AdminGate';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
 // main configurator bundle).
@@ -60,7 +61,9 @@ export default function App() {
   if (route.startsWith('#admin'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-        <AdminPanel />
+        <AdminGate>
+          <AdminPanel />
+        </AdminGate>
       </Suspense>
     );
   if (route.startsWith('#tazas'))
@@ -88,13 +91,17 @@ export default function App() {
   if (route.startsWith('#pedidos'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-        <OrdersPanel />
+        <AdminGate>
+          <OrdersPanel />
+        </AdminGate>
       </Suspense>
     );
   if (route.startsWith('#estadisticas'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-        <StatsPanel />
+        <AdminGate>
+          <StatsPanel />
+        </AdminGate>
       </Suspense>
     );
 

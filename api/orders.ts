@@ -1,6 +1,36 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
+import { createHmac, timingSafeEqual } from 'crypto';
+
+// Backoffice admin auth: verify the stateless token issued by /api/auth. Auth is
+// OFF until ADMIN_PASSWORD is set (prototype stays open); setting it enforces
+// protection on the admin-only operations below.
+const ADMIN_AUTH_ON = !!process.env.ADMIN_PASSWORD;
+const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
+function isAdmin(req: VercelRequest): boolean {
+  if (!ADMIN_SECRET) return false;
+  const h = req.headers['authorization'];
+  const raw = Array.isArray(h) ? h[0] : h || '';
+  const m = /^Bearer\s+(.+)$/i.exec(raw);
+  if (!m) return false;
+  const [expStr, sig] = m[1].split('.');
+  const exp = Number(expStr);
+  if (!exp || exp < Date.now() || !sig) return false;
+  const expected = createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
+  if (sig.length !== expected.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
+/** Allow the request through, or send 401 and return false. */
+function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
+  if (!ADMIN_AUTH_ON || isAdmin(req)) return true;
+  res.status(401).json({ error: 'Necesitas iniciar sesión como administrador.' });
+  return false;
+}
 
 // Shipment-notification email (folded in here to stay under the Hobby 12-function
 // limit). Best-effort; uses the shop Gmail SMTP.
@@ -346,12 +376,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const id = queryId(req);
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
-      // list/detail payloads because it's large.
+      // list/detail payloads because it's large. Admin only.
       if (id && req.query.label !== undefined) {
+        if (!requireAdmin(req, res)) return;
         const rows = (await sql`select label from orders where id = ${id}`) as { label: string | null }[];
         if (rows.length === 0 || !rows[0].label) return res.status(404).json({ error: 'sin etiqueta' });
         return res.status(200).json({ label: rows[0].label });
       }
+      // Single order by code stays public (customers look up their own pickup).
       if (id) {
         const rows = (await sql`
           select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
@@ -359,6 +391,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
       }
+      // Full list exposes every customer's data → admin only.
+      if (!requireAdmin(req, res)) return;
       const rows = (await sql`
         select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
         from orders order by created_at desc limit 2000`) as OrderRow[];
@@ -419,6 +453,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = queryId(req);
       const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean; generateGls?: boolean; deleteGls?: boolean };
       if (!id) return res.status(400).json({ error: 'falta id' });
+      if (!requireAdmin(req, res)) return; // order management is admin-only
 
       // Delete the stored GLS label so a fresh one can be generated. Clears the
       // label + tracking + shipped mark locally (the old GLS expedition, if any,
@@ -510,6 +545,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const id = queryId(req);
       if (!id) return res.status(400).json({ error: 'falta id' });
+      if (!requireAdmin(req, res)) return; // deleting orders is admin-only
       await sql`delete from orders where id = ${id}`;
       return res.status(200).json({ ok: true });
     }

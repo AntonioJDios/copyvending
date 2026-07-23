@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
-import { randomBytes, randomInt } from 'crypto';
+import { randomBytes, randomInt, createHmac } from 'crypto';
 
 // IMPORTANT: self-contained Vercel function (no imports of values from ../src).
 // Passwordless accounts: request a magic link by email, verify it → session.
@@ -14,6 +14,20 @@ const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
 
 const LOGIN_TTL = 30 * 60 * 1000; // magic link: 30 min
 const SESSION_TTL = 60 * 24 * 60 * 60 * 1000; // session: 60 days
+
+// ── Backoffice admin auth (single shared password) ───────────────────
+// Stateless signed token so the (self-contained) orders/catalog functions can
+// verify it without a DB lookup. Auth is OFF until ADMIN_PASSWORD is set, so
+// the prototype keeps working; setting it turns protection on everywhere.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const ADMIN_AUTH_ON = !!ADMIN_PASSWORD;
+const ADMIN_SECRET = process.env.ADMIN_SECRET || ADMIN_PASSWORD;
+const ADMIN_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const signAdmin = (exp: number) => createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
+const makeAdminToken = () => {
+  const exp = Date.now() + ADMIN_TTL;
+  return `${exp}.${signAdmin(exp)}`;
+};
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _ready: Promise<void> | null = null;
@@ -102,13 +116,22 @@ async function sessionCustomer(sess: string): Promise<Customer | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
-    await ensureSchema();
-    const sql = db();
     const body = (req.body ?? {}) as {
       action?: string; email?: string; token?: string; code?: string; session?: string;
-      addresses?: unknown;
+      addresses?: unknown; password?: string;
     };
     const action = body.action;
+
+    // Backoffice admin auth (no DB needed).
+    if (action === 'admin-status') return res.status(200).json({ enabled: ADMIN_AUTH_ON });
+    if (action === 'admin-login') {
+      if (!ADMIN_AUTH_ON) return res.status(503).json({ error: 'El backoffice no tiene contraseña configurada.' });
+      if (String(body.password ?? '') !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Contraseña incorrecta.' });
+      return res.status(200).json({ token: makeAdminToken() });
+    }
+
+    await ensureSchema();
+    const sql = db();
 
     // 1) Request a magic link. Always answers ok (no email enumeration).
     if (action === 'request') {

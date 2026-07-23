@@ -1,4 +1,5 @@
 import { API_BASE } from './api';
+import { getAdminToken } from './adminToken';
 
 // Backoffice-only GLS config, stored under the 'gls' settings key (NOT in the
 // price catalog, so the customer configurator never downloads it).
@@ -48,9 +49,10 @@ export async function saveGlsSettings(s: GlsSettings): Promise<void> {
   const body: Record<string, unknown> = { ...s };
   delete body.hasGuid;
   if (!s.guid || !s.guid.trim()) delete body.guid;
+  const t = getAdminToken();
   const res = await fetch(`${API_BASE}/catalog?key=gls`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
