@@ -17,6 +17,11 @@ const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
 const STEPS = ['Datos', 'Revisar', 'Pago', 'Confirmado'] as const;
 
+// InSite (formulario embebido) requiere que la entidad lo active en el terminal y
+// autorice el dominio del comercio; si no, Redsys rechaza el iframe. Mientras,
+// el pago online va por redirección (funciona igual y es igual de seguro).
+const INSITE_ENABLED = false;
+
 function itemName(p: ReturnType<typeof useCart.getState>['items'][number]): string {
   if (p.nombre.trim()) return p.nombre.trim();
   return p.kind === 'taza' ? 'Taza personalizada' : p.kind === 'chapa' ? 'Chapa personalizada' : 'Proyecto sin título';
@@ -116,9 +121,9 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     }
   }, [customer]);
 
-  // Load the Redsys config for the InSite form when online payment is available.
+  // Load the Redsys config for the InSite form (only if InSite is enabled).
   useEffect(() => {
-    if (canOnline && !redsysConfig) getRedsysConfig().then(setRedsysConfig).catch(() => {});
+    if (INSITE_ENABLED && canOnline && !redsysConfig) getRedsysConfig().then(setRedsysConfig).catch(() => {});
   }, [canOnline, redsysConfig]);
 
   const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
@@ -506,21 +511,25 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                   </>
                 ) : (
                   <div className="insite-wrap">
-                    <p className="muted">💳 Paga con tarjeta o Bizum. Los datos de la tarjeta no pasan por nuestra web ({eur(grandTotal)}).</p>
+                    <p className="muted">💳 Pago seguro con tarjeta o Bizum ({eur(grandTotal)}).</p>
                     {invoicingOn && !billingValid ? (
                       <p className="muted">Completa la dirección de facturación de arriba para pagar.</p>
-                    ) : redsysConfig ? (
-                      <InSiteForm config={redsysConfig} order={dsOrder} onToken={(id) => void payInsite(id)} onError={setPayError} />
+                    ) : INSITE_ENABLED && redsysConfig ? (
+                      <>
+                        <InSiteForm config={redsysConfig} order={dsOrder} onToken={(id) => void payInsite(id)} onError={setPayError} />
+                        <button type="button" className="chip" style={{ marginTop: 8 }} onClick={() => void payRedirect()} disabled={saving}>
+                          ¿Problemas con el formulario? Pagar en la pasarela
+                        </button>
+                      </>
                     ) : (
-                      <p className="muted">Cargando pasarela de pago…</p>
+                      <button type="button" className="btn btn-primary checkout-next" onClick={() => void payRedirect()} disabled={saving}>
+                        {saving ? 'Redirigiendo al pago…' : 'Pagar ahora (tarjeta o Bizum)'}
+                      </button>
                     )}
-                    {saving && <p className="muted">Procesando pago…</p>}
-                    <button type="button" className="chip" style={{ marginTop: 8 }} onClick={() => void payRedirect()} disabled={saving}>
-                      ¿Prefieres pagar en la pasarela? (redirección)
-                    </button>
+                    {saving && <p className="muted">Procesando…</p>}
+                    {payError && <p className="recover-error">⚠ {payError}</p>}
                   </div>
                 )}
-                {payError && <p className="recover-error">⚠ {payError}</p>}
               </>
             )}
           </section>
