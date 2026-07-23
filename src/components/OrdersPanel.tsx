@@ -7,6 +7,7 @@ import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { downloadOrderZip } from '../lib/downloadZip';
 import { downloadInvoice } from '../lib/invoicePdf';
+import { DEFAULT_BUSINESS } from '../domain/catalog';
 import { CartDocsPreview } from './CartProjectCard';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -114,8 +115,8 @@ function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const setPaid = useOrders((s) => s.setPaid);
   const remove = useOrders((s) => s.remove);
-  const invoicing = useConfigurator((s) => s.catalog.invoicing);
-  const invoicingOn = !!invoicing?.enabled;
+  const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
+  const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
   const [open, setOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
 
@@ -161,6 +162,14 @@ function OrderCard({ order }: { order: Order }) {
         {order.customer.telefono && <span className="muted"> · 📞 {order.customer.telefono}</span>}
         <span className="muted"> · {order.items.length} artículo{order.items.length !== 1 ? 's' : ''}</span>
       </div>
+      {order.shippingMethod === 'envio' && order.customer.shipping && (
+        <div className="order-customer">
+          🚚 <b>Envío</b>{order.shippingCost ? ` (${eur(order.shippingCost)})` : ' (gratis)'} ·{' '}
+          <span className="muted">
+            {[order.customer.shipping.linea1, order.customer.shipping.linea2, order.customer.shipping.cp, order.customer.shipping.ciudad, order.customer.shipping.provincia].filter(Boolean).join(', ')}
+          </span>
+        </div>
+      )}
 
       {open && (
         <>
@@ -192,7 +201,7 @@ function OrderCard({ order }: { order: Order }) {
                 {order.paid ? '↩ Marcar pendiente' : '💶 Marcar pagado'}
               </button>
               {invoicingOn && (
-                <button type="button" className="chip" onClick={() => void downloadInvoice(order, invoicing!)}>
+                <button type="button" className="chip" onClick={() => void downloadInvoice(order, business)}>
                   🧾 {order.paid ? 'Factura' : 'Proforma'}
                 </button>
               )}

@@ -131,6 +131,8 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists price_mismatch boolean default false`;
       await db()`alter table orders add column if not exists paid boolean default false`;
       await db()`alter table orders add column if not exists payment_method text`;
+      await db()`alter table orders add column if not exists shipping_method text`;
+      await db()`alter table orders add column if not exists shipping_cost double precision default 0`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -152,13 +154,24 @@ interface OrderRow {
   id: string; created_at: string | number; source: string; customer: unknown;
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
   paid?: boolean; payment_method?: string | null;
+  shipping_method?: string | null; shipping_cost?: string | number | null;
 }
 function mapRow(r: OrderRow) {
   return {
     id: r.id, createdAt: Number(r.created_at), source: r.source, customer: r.customer,
     items: r.items, total: Number(r.total), status: r.status, priceMismatch: !!r.price_mismatch,
     paid: !!r.paid, paymentMethod: r.payment_method ?? undefined,
+    shippingMethod: r.shipping_method ?? undefined, shippingCost: r.shipping_cost != null ? Number(r.shipping_cost) : undefined,
   };
+}
+
+/** Shipping zone from a Spanish postal code (Baleares 07, Canarias 35/38). */
+function zoneForCP(cp: string): 'peninsula' | 'baleares' | 'canarias' | null {
+  const p = (cp || '').trim().slice(0, 2);
+  if (!/^\d{2}$/.test(p)) return null;
+  if (p === '35' || p === '38') return 'canarias';
+  if (p === '07') return 'baleares';
+  return 'peninsula';
 }
 function queryId(req: VercelRequest): string | undefined {
   const v = req.query.id;
@@ -174,13 +187,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = queryId(req);
       if (id) {
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
       }
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -189,7 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const o = req.body as {
         id?: string; createdAt?: number; source?: string; customer?: unknown;
         items?: Record<string, unknown>[]; total?: number; status?: string;
-        paid?: boolean; paymentMethod?: string;
+        paid?: boolean; paymentMethod?: string; shippingMethod?: string;
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
@@ -203,17 +216,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         serverTotal += t;
         return { ...it, total: t };
       });
-      serverTotal = Math.round(serverTotal * 100) / 100;
+      const itemsSubtotal = Math.round(serverTotal * 100) / 100;
+
+      // Shipping recomputed here (anti-fraud): zone by CP + free-shipping threshold.
+      const ship = (catalog as unknown as { shipping?: { enabled?: boolean; peninsula?: number; baleares?: number; freeThreshold?: number } }).shipping;
+      const cust = (o.customer ?? {}) as { shipping?: { cp?: string } };
+      let shippingMethod = o.shippingMethod === 'envio' ? 'envio' : 'recoger';
+      let shippingCost = 0;
+      if (shippingMethod === 'envio') {
+        if (!ship?.enabled) return res.status(400).json({ error: 'Los envíos no están disponibles' });
+        const zone = zoneForCP(cust.shipping?.cp ?? '');
+        if (!zone || zone === 'canarias') return res.status(400).json({ error: 'No realizamos envíos a ese código postal' });
+        const base = zone === 'baleares' ? Number(ship.baleares) || 0 : Number(ship.peninsula) || 0;
+        const threshold = Number(ship.freeThreshold) || 0;
+        shippingCost = threshold > 0 && itemsSubtotal >= threshold ? 0 : base;
+      }
+      serverTotal = Math.round((itemsSubtotal + shippingCost) * 100) / 100;
+
       // Email orders intentionally arrive with total 0 (priced here), so a
       // difference there isn't a client mismatch — only flag client sources.
       const mismatch =
         o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${o.source ?? 'mostrador'},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
-                ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null})
+                ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null},
+                ${shippingMethod}, ${shippingCost})
         on conflict (id) do nothing`;
       return res.status(201).json({ ok: true, total: serverTotal, priceMismatch: mismatch });
     }

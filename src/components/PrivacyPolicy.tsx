@@ -1,9 +1,17 @@
+import { useConfigurator } from '../store/useConfigurator';
+import { DEFAULT_BUSINESS } from '../domain/catalog';
+
 /**
- * Privacy policy (RGPD/LOPDGDD) — template. The shop must fill in the bracketed
- * placeholders with its real identity before going live. Kept simple and honest;
- * not legal advice.
+ * Privacy policy (RGPD/LOPDGDD). The shop's identity is filled from the admin
+ * "Datos del negocio"; anything not set falls back to a bracketed placeholder.
+ * Kept simple and honest; not legal advice.
  */
 export function PrivacyPolicy() {
+  const b = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
+  const name = b.name || '[NOMBRE DEL NEGOCIO / TITULAR]';
+  const nif = b.nif || '[NIF]';
+  const address = b.address || '[DIRECCIÓN]';
+  const email = b.email || '[EMAIL DE CONTACTO]';
   return (
     <div className="app">
       <header className="topbar">
@@ -20,8 +28,8 @@ export function PrivacyPolicy() {
 
         <h2>1. Responsable del tratamiento</h2>
         <p>
-          [NOMBRE DEL NEGOCIO / TITULAR], con NIF [NIF], domicilio en [DIRECCIÓN] y correo de contacto
-          [EMAIL DE CONTACTO], es el responsable del tratamiento de tus datos personales.
+          {name}, con NIF {nif}, domicilio en {address} y correo de contacto {email}, es el responsable del
+          tratamiento de tus datos personales.
         </p>
 
         <h2>2. Qué datos recogemos</h2>
@@ -60,7 +68,7 @@ export function PrivacyPolicy() {
         <h2>7. Tus derechos</h2>
         <p>
           Puedes ejercer los derechos de <b>acceso, rectificación, supresión, oposición, limitación y portabilidad</b>
-          escribiendo a [EMAIL DE CONTACTO], indicando tu solicitud. También puedes presentar una reclamación ante la
+          escribiendo a {email}, indicando tu solicitud. También puedes presentar una reclamación ante la
           Agencia Española de Protección de Datos (<span className="muted">www.aepd.es</span>) si consideras que no se
           han atendido debidamente.
         </p>

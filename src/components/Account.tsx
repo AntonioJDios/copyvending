@@ -5,6 +5,7 @@ import { registerCustomer } from '../lib/customers';
 import { AddressForm } from './AddressForm';
 import { useConfigurator } from '../store/useConfigurator';
 import { downloadInvoice } from '../lib/invoicePdf';
+import { DEFAULT_BUSINESS } from '../domain/catalog';
 import type { Order } from '../store/useOrders';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -34,15 +35,15 @@ export function Account() {
   const [orders, setOrders] = useState<MyOrder[] | null>(null);
   const [atab, setAtab] = useState<'perfil' | 'direcciones' | 'pedidos'>('perfil');
   const [invBusy, setInvBusy] = useState<string | null>(null);
-  const invoicing = useConfigurator((s) => s.catalog.invoicing);
-  const invoicingOn = !!invoicing?.enabled;
+  const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
+  const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
 
   const downloadFactura = async (id: string) => {
     if (invBusy) return;
     setInvBusy(id);
     try {
       const order = await apiGet<Order>(`/orders?id=${encodeURIComponent(id)}`);
-      await downloadInvoice(order, invoicing!);
+      await downloadInvoice(order, business);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo generar la factura.');
     } finally {

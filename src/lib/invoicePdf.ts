@@ -1,5 +1,5 @@
 import type { Order } from '../store/useOrders';
-import type { InvoicingConfig } from '../domain/catalog';
+import type { BusinessConfig } from '../domain/catalog';
 import { projectDisplayName, projectSpecLines } from '../domain/orderSpec';
 
 /**
@@ -12,7 +12,7 @@ const money = (n: number) => `${n.toLocaleString('es-ES', { minimumFractionDigit
 
 const PAYMENT_LABEL: Record<string, string> = { local: 'Pago en el mostrador', redsys: 'Tarjeta / Bizum (Redsys)' };
 
-export async function downloadInvoice(order: Order, shop: InvoicingConfig): Promise<void> {
+export async function downloadInvoice(order: Order, shop: BusinessConfig): Promise<void> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -44,12 +44,13 @@ export async function downloadInvoice(order: Order, shop: InvoicingConfig): Prom
   const billing = order.customer.billing;
 
   // Header: shop (emisor) + title.
-  text(shop.shopName || 'Copistería', M, 15, bold);
+  text(shop.name || 'Copistería', M, 15, bold);
   y -= 15;
-  if (shop.shopNif) { text(`NIF: ${shop.shopNif}`, M, 9, font, grey); y -= 12; }
-  for (const line of (shop.shopAddress || '').split('\n').slice(0, 3)) {
+  if (shop.nif) { text(`NIF: ${shop.nif}`, M, 9, font, grey); y -= 12; }
+  for (const line of (shop.address || '').split('\n').slice(0, 3)) {
     if (line.trim()) { text(line.trim(), M, 9, font, grey); y -= 12; }
   }
+  if (shop.email) { text(shop.email, M, 9, font, grey); y -= 12; }
   // Title block (right side of the first row).
   page.drawText(title, { x: W - M - bold.widthOfTextAtSize(title, 18), y: A4[1] - M - 2, size: 18, font: bold, color: brand });
   page.drawText(`Nº ${order.id}`, { x: W - M - font.widthOfTextAtSize(`Nº ${order.id}`, 10), y: A4[1] - M - 22, size: 10, font, color: ink });
@@ -94,6 +95,14 @@ export async function downloadInvoice(order: Order, shop: InvoicingConfig): Prom
     const spec = projectSpecLines(it).map(([k, v]) => `${k}: ${v}`).join(' · ');
     if (spec) { text(clip(spec, 8, W - 2 * M), M + 8, 8, font, grey); y -= 12; }
     y -= 4;
+  }
+
+  if (order.shippingCost && order.shippingCost > 0) {
+    need(18);
+    text('Envío a domicilio', M, 10, bold);
+    right('1', REqty, 10);
+    right(money(order.shippingCost), REtotal, 10);
+    y -= 17;
   }
 
   // Totals.

@@ -4,16 +4,20 @@ import { deleteProjectFiles } from '../lib/projectFiles';
 import { CartProjectCard } from './CartProjectCard';
 import { Checkout } from './Checkout';
 import { AccountButton } from './AccountButton';
+import { useConfigurator } from '../store/useConfigurator';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
 export function CartPage() {
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
+  const shipping = useConfigurator((s) => s.catalog.shipping);
   const [checkout, setCheckout] = useState(false);
 
   if (checkout && items.length > 0) return <Checkout onBack={() => setCheckout(false)} />;
   const total = items.reduce((s, p) => s + p.total, 0);
+  const freeThreshold = shipping?.enabled ? shipping.freeThreshold || 0 : 0;
+  const toFree = freeThreshold > 0 && total < freeThreshold ? Math.round((freeThreshold - total) * 100) / 100 : 0;
   const displayName = (p: (typeof items)[number]) =>
     p.nombre.trim() || (p.kind === 'taza' ? 'Taza personalizada' : p.kind === 'chapa' ? 'Chapa personalizada' : 'Proyecto sin título');
 
@@ -78,6 +82,8 @@ export function CartPage() {
               <span>Total</span>
               <strong>{eur(total)}</strong>
             </div>
+            {toFree > 0 && <p className="free-ship-hint">🚚 Añade <b>{eur(toFree)}</b> más y el envío te sale <b>gratis</b></p>}
+            {freeThreshold > 0 && total >= freeThreshold && <p className="free-ship-ok">✓ ¡Tienes el envío gratis!</p>}
             <p className="cart-sum-note">El precio se confirmará al tramitar el pedido.</p>
             <button type="button" className="btn btn-primary cart-checkout" onClick={() => setCheckout(true)}>
               Tramitar pedido

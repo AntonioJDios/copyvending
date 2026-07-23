@@ -8,6 +8,8 @@ import {
   DEFAULT_CATALOG,
   DEFAULT_PAYMENTS,
   DEFAULT_INVOICING,
+  DEFAULT_BUSINESS,
+  DEFAULT_SHIPPING,
   FINISH_LABEL,
   FOLIO_LABEL,
   GROSORES,
@@ -18,7 +20,7 @@ import {
   type PaymentMethodConfig,
 } from '../domain/catalog';
 
-type AdminTab = 'catalogo' | 'pagos' | 'asistente' | 'herramientas';
+type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
@@ -86,7 +88,8 @@ export function AdminPanel() {
       <div className="admin-body">
         <nav className="admin-tabs">
           <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Catálogo y precios</button>
-          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos</button>
+          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y facturación</button>
+          <button type="button" className={`admin-tab${tab === 'envios' ? ' on' : ''}`} onClick={() => setTab('envios')}>Envíos</button>
           <button type="button" className={`admin-tab${tab === 'asistente' ? ' on' : ''}`} onClick={() => setTab('asistente')}>Asistente</button>
           {API_BASE && (
             <button type="button" className={`admin-tab${tab === 'herramientas' ? ' on' : ''}`} onClick={() => setTab('herramientas')}>Herramientas</button>
@@ -324,10 +327,13 @@ export function AdminPanel() {
 
         {tab === 'pagos' && (
           <>
+            <BusinessEditor draft={draft} change={change} />
             <PaymentsEditor draft={draft} change={change} />
             <InvoicingEditor draft={draft} change={change} />
           </>
         )}
+
+        {tab === 'envios' && <ShippingEditor draft={draft} change={change} />}
 
         {tab === 'asistente' && (
         <section className="card">
@@ -650,35 +656,87 @@ function PaymentsEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
   );
 }
 
-/** Invoicing: on/off + the shop's fiscal identity for the invoice header. */
+/** Shop identity used by invoices and the privacy policy. */
+function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const b = draft.business ?? DEFAULT_BUSINESS;
+  const set = (patch: Partial<typeof b>) => change((d) => { d.business = { ...DEFAULT_BUSINESS, ...d.business, ...patch }; });
+  return (
+    <section className="card">
+      <h2>Datos del negocio</h2>
+      <p className="muted">Se usan en las facturas y en la política de privacidad.</p>
+      <div className="admin-grid">
+        <label className="field-inline">
+          Nombre / razón social
+          <input type="text" value={b.name} onChange={(e) => set({ name: e.target.value })} />
+        </label>
+        <label className="field-inline">
+          NIF
+          <input type="text" value={b.nif} onChange={(e) => set({ nif: e.target.value })} />
+        </label>
+        <label className="field-inline">
+          Email de contacto
+          <input type="email" value={b.email} onChange={(e) => set({ email: e.target.value })} />
+        </label>
+      </div>
+      <label className="field-block" style={{ marginTop: 10 }}>
+        Dirección
+        <textarea className="assistant-instructions" rows={2} value={b.address} onChange={(e) => set({ address: e.target.value })} />
+      </label>
+    </section>
+  );
+}
+
+/** Invoicing: just on/off (the header uses the shop's business data). */
 function InvoicingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const inv = draft.invoicing ?? DEFAULT_INVOICING;
   const set = (patch: Partial<typeof inv>) => change((d) => { d.invoicing = { ...DEFAULT_INVOICING, ...d.invoicing, ...patch }; });
   return (
     <section className="card">
       <h2>Facturación</h2>
-      <p className="muted">Genera facturas (proforma o factura según el pago) descargables desde los pedidos.</p>
+      <p className="muted">Genera facturas (proforma o factura según el pago) descargables desde los pedidos. Usa los datos del negocio de arriba.</p>
       <label className="chk">
         <input type="checkbox" checked={inv.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
         Activar la generación de facturas
       </label>
-      {inv.enabled && (
+      {inv.enabled && (!(draft.business?.name) || !(draft.business?.nif)) && (
+        <p className="muted">⚠ Completa el nombre y el NIF en "Datos del negocio" para que las facturas salgan correctas.</p>
+      )}
+    </section>
+  );
+}
+
+/** Home delivery config: prices by zone + free-shipping threshold + info text. */
+function ShippingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const s = draft.shipping ?? DEFAULT_SHIPPING;
+  const set = (patch: Partial<typeof s>) => change((d) => { d.shipping = { ...DEFAULT_SHIPPING, ...d.shipping, ...patch }; });
+  return (
+    <section className="card">
+      <h2>Envíos a domicilio</h2>
+      <label className="chk">
+        <input type="checkbox" checked={s.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        Activar envíos a domicilio
+      </label>
+      {s.enabled && (
         <>
           <div className="admin-grid" style={{ marginTop: 12 }}>
             <label className="field-inline">
-              Nombre / razón social
-              <input type="text" value={inv.shopName} onChange={(e) => set({ shopName: e.target.value })} />
+              Precio Península (€)
+              <input type="number" step="0.01" min="0" value={s.peninsula} onChange={(e) => set({ peninsula: num(e.target.value) })} />
             </label>
             <label className="field-inline">
-              NIF
-              <input type="text" value={inv.shopNif} onChange={(e) => set({ shopNif: e.target.value })} />
+              Precio Baleares / islas (€)
+              <input type="number" step="0.01" min="0" value={s.baleares} onChange={(e) => set({ baleares: num(e.target.value) })} />
+            </label>
+            <label className="field-inline">
+              Envío gratis a partir de (€ · 0 = nunca)
+              <input type="number" step="0.01" min="0" value={s.freeThreshold} onChange={(e) => set({ freeThreshold: num(e.target.value) })} />
             </label>
           </div>
           <label className="field-block" style={{ marginTop: 10 }}>
-            Dirección fiscal
-            <textarea className="assistant-instructions" rows={2} value={inv.shopAddress} onChange={(e) => set({ shopAddress: e.target.value })} />
+            Texto informativo (se muestra al cliente)
+            <textarea className="assistant-instructions" rows={3} value={s.info} onChange={(e) => set({ info: e.target.value })} />
           </label>
-          {(!inv.shopName || !inv.shopNif) && <p className="muted">⚠ Completa nombre y NIF para que las facturas salgan correctas.</p>}
+          <p className="muted">Canarias no está permitido (se detecta por el código postal). Baleares usa el precio de islas.</p>
         </>
       )}
     </section>

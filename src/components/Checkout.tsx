@@ -6,6 +6,7 @@ import { useConfigurator } from '../store/useConfigurator';
 import { DEFAULT_PAYMENTS } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
+import { shippingQuote } from '../lib/shipping';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
 
@@ -49,6 +50,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const localPay = payments.local ?? DEFAULT_PAYMENTS.local;
   const invoicing = useConfigurator((s) => s.catalog.invoicing);
   const invoicingOn = !!invoicing?.enabled;
+  const shippingCfg = useConfigurator((s) => s.catalog.shipping);
+  const shippingOn = !!shippingCfg?.enabled;
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
@@ -62,9 +65,16 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [billingAddr, setBillingAddr] = useState<Address>({});
+  const [delivery, setDelivery] = useState<'recoger' | 'envio'>('recoger');
+  const [shipAddr, setShipAddr] = useState<Address>({});
   const [saving, setSaving] = useState(false);
 
   const billingValid = !!(billingAddr.linea1?.trim() && billingAddr.cp?.trim() && billingAddr.ciudad?.trim());
+  const quote = shippingOn && delivery === 'envio' && shippingCfg ? shippingQuote(shippingCfg, shipAddr.cp ?? '', total) : null;
+  const shippingCost = quote?.cost ?? 0;
+  const grandTotal = total + shippingCost;
+  const shipValid = !!(shipAddr.linea1?.trim() && shipAddr.cp?.trim() && shipAddr.ciudad?.trim());
+  const deliveryOk = !shippingOn || delivery === 'recoger' || (!!quote && quote.allowed && shipValid);
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
   // Recognise an existing session and prefill from the account.
@@ -79,6 +89,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       setTelefono(customer.telefono ?? '');
       const defBilling = customer.addresses?.find((a) => a.defaultBilling) ?? customer.addresses?.[0];
       if (defBilling) setBillingAddr(defBilling);
+      const defShip = customer.addresses?.find((a) => a.defaultShipping) ?? customer.addresses?.[0];
+      if (defShip) setShipAddr(defShip);
     }
   }, [customer]);
 
@@ -97,16 +109,19 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         accountId = await registerCustomer(data); // throws → aborts below (order not created)
       }
       const billing = invoicingOn && billingValid ? billingAddr : undefined;
+      const shippingUsed = shippingOn && delivery === 'envio' ? shipAddr : undefined;
       await addOrder({
         id: orderId,
         createdAt: Date.now(),
         source: 'mostrador',
-        customer: { ...data, accountId, billing },
+        customer: { ...data, accountId, billing, shipping: shippingUsed },
         items: items.map((p) => ({ ...p })),
-        total,
+        total: grandTotal,
         status: 'nuevo',
         paid: false,
         paymentMethod: 'local',
+        shippingMethod: shippingOn ? delivery : undefined,
+        shippingCost,
       });
       // Remember this billing address as the account's default for next time.
       if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
@@ -337,12 +352,41 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                 </li>
               ))}
             </ul>
+            {shippingOn && (
+              <div className="checkout-delivery">
+                <h3 className="addr-title">Entrega</h3>
+                <div className="seg-toggle checkout-mode">
+                  <button type="button" className={delivery === 'recoger' ? 'on' : ''} onClick={() => setDelivery('recoger')}>Recoger en tienda</button>
+                  <button type="button" className={delivery === 'envio' ? 'on' : ''} onClick={() => setDelivery('envio')}>Envío a domicilio</button>
+                </div>
+                {delivery === 'envio' && (
+                  <>
+                    {shippingCfg?.info?.trim() && <p className="muted checkout-mode-hint">{shippingCfg.info}</p>}
+                    <AddressForm value={shipAddr} onChange={setShipAddr} />
+                    {shipAddr.cp?.trim() && quote && !quote.allowed && (
+                      <p className="recover-error">⚠ No realizamos envíos a ese código postal (Canarias no disponible).</p>
+                    )}
+                    {quote?.allowed && !quote.free && quote.toFree > 0 && (
+                      <p className="free-ship-hint">🚚 ¡Añade <b>{eur(quote.toFree)}</b> más y el envío te sale <b>gratis</b>!</p>
+                    )}
+                    {quote?.allowed && quote.free && <p className="free-ship-ok">✓ ¡Enhorabuena, tu envío es gratis!</p>}
+                  </>
+                )}
+              </div>
+            )}
+
+            {shippingOn && delivery === 'envio' && quote?.allowed && (
+              <div className="checkout-total checkout-subline">
+                <span>Envío {quote.zone === 'baleares' ? '(Baleares)' : '(Península)'}</span>
+                <span>{shippingCost === 0 ? 'Gratis' : eur(shippingCost)}</span>
+              </div>
+            )}
             <div className="checkout-total">
               <span>Total</span>
-              <strong>{eur(total)}</strong>
+              <strong>{eur(grandTotal)}</strong>
             </div>
-            <button type="button" className="btn btn-primary checkout-next" onClick={() => setStep(2)}>
-              Continuar al pago
+            <button type="button" className="btn btn-primary checkout-next" onClick={() => setStep(2)} disabled={!deliveryOk}>
+              {deliveryOk ? 'Continuar al pago' : 'Completa la dirección de envío'}
             </button>
           </section>
         )}
@@ -363,7 +407,11 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               <>
                 <div className="pay-choice on">
                   <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
-                  <span className="muted">Pagas <b>{eur(total)}</b> en el mostrador al recoger el pedido.</span>
+                  <span className="muted">
+                    {shippingOn && delivery === 'envio'
+                      ? <>Importe <b>{eur(grandTotal)}</b> (envío incluido). Pago pendiente.</>
+                      : <>Pagas <b>{eur(grandTotal)}</b> en el mostrador al recoger el pedido.</>}
+                  </span>
                 </div>
                 <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving || (invoicingOn && !billingValid)}>
                   {saving ? 'Enviando…' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
@@ -383,8 +431,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               Nº de pedido <strong>{orderId}</strong>
             </p>
             <p className="muted">
-              A nombre de <b>{nombre} {apellidos}</b>. Hemos enviado tu trabajo al mostrador.
-              Pasa a recogerlo y <b>paga allí ({eur(total)})</b>; te avisaremos cuando esté listo.
+              A nombre de <b>{nombre} {apellidos}</b>.{' '}
+              {shippingOn && delivery === 'envio'
+                ? <>Te lo enviaremos a tu dirección. Importe total <b>{eur(grandTotal)}</b>.</>
+                : <>Pasa a recogerlo y <b>paga allí ({eur(grandTotal)})</b>; te avisaremos cuando esté listo.</>}
             </p>
             <button type="button" className="btn btn-primary checkout-next" onClick={finish}>
               Hacer otro pedido

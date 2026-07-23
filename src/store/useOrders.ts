@@ -11,13 +11,16 @@ export interface Order {
   id: string;
   createdAt: number;
   source: OrderSource;
-  customer: { nombre: string; apellidos: string; email?: string; telefono?: string; accountId?: string; billing?: Address };
+  customer: { nombre: string; apellidos: string; email?: string; telefono?: string; accountId?: string; billing?: Address; shipping?: Address };
   items: CartProject[];
   total: number;
   status: OrderStatus;
   /** Whether the order has been paid, and how (local/redsys…). Local = pending until paid at the counter. */
   paid?: boolean;
   paymentMethod?: string;
+  /** Delivery: 'recoger' (pickup) or 'envio' (home delivery), + its cost. */
+  shippingMethod?: string;
+  shippingCost?: number;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }

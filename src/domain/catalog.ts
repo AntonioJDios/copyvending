@@ -33,18 +33,37 @@ export const DEFAULT_PAYMENTS: PaymentsConfig = {
   local: { enabled: true, label: 'Pagar al recoger' },
 };
 
-/** Invoicing (optional). Needs the shop's fiscal identity to print invoices. */
+/** The shop's own identity/contact data, shared by invoices and the privacy
+ *  policy (edited once in the admin). */
+export interface BusinessConfig {
+  name: string;
+  nif: string;
+  address: string;
+  email: string;
+}
+export const DEFAULT_BUSINESS: BusinessConfig = { name: '', nif: '', address: '', email: '' };
+
+/** Invoicing (optional). Uses the shop's `business` data for the header. */
 export interface InvoicingConfig {
   enabled: boolean;
-  shopName: string;
-  shopNif: string;
-  shopAddress: string;
 }
-export const DEFAULT_INVOICING: InvoicingConfig = {
+export const DEFAULT_INVOICING: InvoicingConfig = { enabled: false };
+
+/** Home delivery (optional). Prices by zone (from the postal code); Canarias is
+ *  not served. Free over `freeThreshold` (0 = never free). */
+export interface ShippingConfig {
+  enabled: boolean;
+  peninsula: number;
+  baleares: number;
+  freeThreshold: number;
+  info: string;
+}
+export const DEFAULT_SHIPPING: ShippingConfig = {
   enabled: false,
-  shopName: '',
-  shopNif: '',
-  shopAddress: '',
+  peninsula: 4.95,
+  baleares: 8.95,
+  freeThreshold: 0,
+  info: '',
 };
 
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */
@@ -67,6 +86,10 @@ export interface Catalog {
   payments?: PaymentsConfig;
   /** Invoicing config (optional; absent = disabled). */
   invoicing?: InvoicingConfig;
+  /** Shop identity/contact (for invoices + privacy policy). */
+  business?: BusinessConfig;
+  /** Home delivery config (optional; absent = disabled). */
+  shipping?: ShippingConfig;
   /** Paper sizes offered to the customer. */
   enabledSizes: Size[];
   /** Ring/spiral colors offered when the finish is AnillasColores. */
@@ -143,6 +166,8 @@ export const DEFAULT_CATALOG: Catalog = {
   },
   payments: DEFAULT_PAYMENTS,
   invoicing: DEFAULT_INVOICING,
+  business: DEFAULT_BUSINESS,
+  shipping: DEFAULT_SHIPPING,
   enabledSizes: ['A4', 'A3', 'A5'],
   ringColors: [
     { name: 'Transparente', hex: '#f2f2f2', img: '/anillas/transparente.png', enabled: true },
