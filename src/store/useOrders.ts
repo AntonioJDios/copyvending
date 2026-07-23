@@ -10,7 +10,7 @@ export interface Order {
   id: string;
   createdAt: number;
   source: OrderSource;
-  customer: { nombre: string; apellidos: string; telefono?: string };
+  customer: { nombre: string; apellidos: string; email?: string; telefono?: string; accountId?: string };
   items: CartProject[];
   total: number;
   status: OrderStatus;

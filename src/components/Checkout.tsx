@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
+import { hasBackend } from '../lib/api';
+import { registerCustomer } from '../lib/customers';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
 const STEPS = ['Datos', 'Revisar', 'Confirmado'] as const;
 
@@ -19,8 +22,11 @@ function itemMeta(p: ReturnType<typeof useCart.getState>['items'][number]): stri
   return `${p.cantidad} ud.`;
 }
 
-/** Kiosk checkout: no payment, no account — collect the customer's name so the
- *  counter can identify the job; pickup + pay in person. */
+type Mode = 'guest' | 'account';
+
+/** Kiosk/tablet checkout: no payment yet. The customer can create an account
+ *  (saved with RGPD consent, so they can manage their orders and — later — pay)
+ *  or continue as a guest. Minimum data: name, surname, email and phone. */
 export function Checkout({ onBack }: { onBack: () => void }) {
   const items = useCart((s) => s.items);
   const clear = useCart((s) => s.clear);
@@ -28,23 +34,32 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const total = items.reduce((s, p) => s + p.total, 0);
 
   const [step, setStep] = useState(0);
+  const [mode, setMode] = useState<Mode>('guest');
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
+  const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [consent, setConsent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
-  const canContinue = nombre.trim().length > 0 && apellidos.trim().length > 0;
+  const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
+  const canContinue = dataOk && (mode === 'guest' || consent);
 
   const confirm = async () => {
     if (saving) return;
     setSaving(true);
     try {
+      const data = { nombre: nombre.trim(), apellidos: apellidos.trim(), email: email.trim().toLowerCase(), telefono: telefono.trim() };
+      let accountId: string | undefined;
+      if (mode === 'account' && hasBackend) {
+        accountId = await registerCustomer(data); // throws → aborts below (order not created)
+      }
       await addOrder({
         id: orderId,
         createdAt: Date.now(),
         source: 'mostrador',
-        customer: { nombre: nombre.trim(), apellidos: apellidos.trim(), telefono: telefono.trim() || undefined },
+        customer: { ...data, accountId },
         items: items.map((p) => ({ ...p })),
         total,
         status: 'nuevo',
@@ -87,8 +102,20 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       <div className="checkout">
         {step === 0 && (
           <section className="checkout-card">
-            <h2>¿A nombre de quién es el pedido?</h2>
-            <p className="muted">Lo usamos para localizar tu trabajo en el mostrador al recogerlo.</p>
+            <div className="seg-toggle checkout-mode">
+              <button type="button" className={mode === 'guest' ? 'on' : ''} onClick={() => setMode('guest')}>
+                Continuar como invitado
+              </button>
+              <button type="button" className={mode === 'account' ? 'on' : ''} onClick={() => setMode('account')}>
+                Crear cuenta
+              </button>
+            </div>
+            <p className="muted checkout-mode-hint">
+              {mode === 'account'
+                ? 'Guardamos tus datos para que gestiones tus pedidos (y, próximamente, pagues online).'
+                : 'Solo usamos tus datos para este pedido y avisarte cuando esté listo.'}
+            </p>
+
             <div className="checkout-form">
               <label className="field-block">
                 Nombre *
@@ -99,16 +126,30 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                 <input type="text" value={apellidos} maxLength={80} onChange={(e) => setApellidos(e.target.value)} />
               </label>
               <label className="field-block">
-                Teléfono (opcional)
-                <input
-                  type="tel"
-                  value={telefono}
-                  maxLength={20}
-                  placeholder="Para avisarte cuando esté listo"
-                  onChange={(e) => setTelefono(e.target.value)}
-                />
+                Email *
+                <input type="email" value={email} maxLength={120} placeholder="para el resguardo y avisos" onChange={(e) => setEmail(e.target.value)} />
+              </label>
+              <label className="field-block">
+                Teléfono *
+                <input type="tel" value={telefono} maxLength={20} placeholder="para avisarte cuando esté listo" onChange={(e) => setTelefono(e.target.value)} />
               </label>
             </div>
+
+            {mode === 'account' && (
+              <label className="checkout-consent">
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                <span>
+                  He leído y acepto la{' '}
+                  <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a> y el tratamiento de mis datos.
+                </span>
+              </label>
+            )}
+
+            <p className="muted checkout-privacy">
+              Tratamos tus datos para gestionar tu pedido conforme al RGPD. Más información en la{' '}
+              <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a>.
+            </p>
+
             <button type="button" className="btn btn-primary checkout-next" disabled={!canContinue} onClick={() => setStep(1)}>
               Continuar
             </button>
@@ -120,8 +161,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
             <h2>Revisa tu pedido</h2>
             <div className="checkout-who">
               <span>
-                <b>{nombre} {apellidos}</b>
-                {telefono.trim() && <> · {telefono.trim()}</>}
+                <b>{nombre} {apellidos}</b> · {email.trim().toLowerCase()} · {telefono.trim()}
+                {mode === 'account' && <span className="checkout-badge">cuenta</span>}
               </span>
               <button type="button" className="chip" onClick={() => setStep(0)}>
                 Editar datos
@@ -157,8 +198,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
             </p>
             <p className="muted">
               A nombre de <b>{nombre} {apellidos}</b>. Hemos enviado tu trabajo al mostrador.
-              Pasa a recogerlo y <b>paga allí ({eur(total)})</b>
-              {telefono.trim() ? '; te avisaremos cuando esté listo.' : '.'}
+              Pasa a recogerlo y <b>paga allí ({eur(total)})</b>; te avisaremos cuando esté listo.
             </p>
             <button type="button" className="btn btn-primary checkout-next" onClick={finish}>
               Hacer otro pedido
