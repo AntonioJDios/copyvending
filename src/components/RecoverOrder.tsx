@@ -18,6 +18,7 @@ export function RecoverOrder() {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [justPaid, setJustPaid] = useState(false);
   const loadProject = useConfigurator((s) => s.loadProject);
   const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
 
@@ -54,7 +55,10 @@ export function RecoverOrder() {
   useEffect(() => {
     const m = window.location.hash.match(/#recoger\/(.+)$/);
     if (m) {
-      const c = decodeURIComponent(m[1]).trim().toUpperCase();
+      // Redsys (y otras pasarelas) añaden parámetros a la URL de retorno; como la
+      // ruta va tras '#', quedan pegados al código → recortamos desde ? o &.
+      if (/ds_signature/i.test(window.location.hash)) setJustPaid(true);
+      const c = decodeURIComponent(m[1].split(/[?&]/)[0]).trim().toUpperCase();
       setCode(c);
       void lookup(c);
     }
@@ -72,6 +76,11 @@ export function RecoverOrder() {
       </header>
 
       <div className="recover">
+        {justPaid && (
+          <section className="checkout-card">
+            <p className="recover-ready">✓ ¡Pago recibido! Gracias. Aquí tienes el estado de tu pedido.</p>
+          </section>
+        )}
         <section className="checkout-card">
           <h2>Introduce tu código de pedido</h2>
           <p className="muted">Lo recibiste por email al enviar tu trabajo (por ejemplo, P-AB12CD).</p>
