@@ -3,7 +3,12 @@
  * thumbnails). The full-resolution, print-ready artwork is uploaded to R2
  * separately; this keeps order rows tiny and under the API body-size limit.
  */
-export async function downscaleDataUrl(dataUrl: string, maxDim = 480, quality = 0.72): Promise<string> {
+export async function downscaleDataUrl(
+  dataUrl: string,
+  maxDim = 480,
+  quality = 0.72,
+  type: 'image/jpeg' | 'image/png' = 'image/jpeg'
+): Promise<string> {
   try {
     const img = await loadImage(dataUrl);
     const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
@@ -15,7 +20,7 @@ export async function downscaleDataUrl(dataUrl: string, maxDim = 480, quality = 
     const ctx = canvas.getContext('2d');
     if (!ctx) return dataUrl;
     ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', quality);
+    return canvas.toDataURL(type, quality);
   } catch {
     return dataUrl; // on any failure keep the original (still works, just heavier)
   }

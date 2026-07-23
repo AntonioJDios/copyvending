@@ -2575,6 +2575,11 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+.color-upload {
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 .color-row input[type='text'] {
   flex: 1;

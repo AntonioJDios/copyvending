@@ -22,6 +22,16 @@ import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE } from '../lib/api';
+import { downscaleDataUrl } from '../lib/imageDownscale';
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(file);
+  });
+}
 
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
@@ -537,6 +547,17 @@ function EmailTestTool() {
 }
 
 function ColorEditor({ title, items, onChange }: { title: string; items: ColorOption[]; onChange: (items: ColorOption[]) => void }) {
+  const patch = (i: number, p: Partial<ColorOption>) => onChange(items.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const uploadImg = async (i: number, file?: File) => {
+    if (!file) return;
+    try {
+      const raw = await fileToDataUrl(file);
+      const img = await downscaleDataUrl(raw, 240, 0.85, 'image/png'); // PNG conserva transparencia
+      patch(i, { img });
+    } catch {
+      /* imagen inválida → se ignora */
+    }
+  };
   return (
     <section className="card">
       <h2>{title}</h2>
@@ -547,14 +568,23 @@ function ColorEditor({ title, items, onChange }: { title: string; items: ColorOp
               type="checkbox"
               title="Activar/desactivar"
               checked={c.enabled !== false}
-              onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, enabled: e.target.checked } : x)))}
+              onChange={(e) => patch(i, { enabled: e.target.checked })}
             />
             {c.img ? (
               <img className="color-thumb" src={c.img} alt="" />
             ) : (
-              <input type="color" value={c.hex} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, hex: e.target.value } : x)))} />
+              <input type="color" value={c.hex} onChange={(e) => patch(i, { hex: e.target.value })} />
             )}
-            <input type="text" value={c.name} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <label className="chip color-upload" title="Subir imagen del color">
+              📷
+              <input type="file" accept="image/*" hidden onChange={(e) => void uploadImg(i, e.target.files?.[0])} />
+            </label>
+            {c.img && (
+              <button type="button" className="chip" title="Quitar imagen (volver a color)" onClick={() => patch(i, { img: undefined })}>
+                ✕ img
+              </button>
+            )}
+            <input type="text" value={c.name} onChange={(e) => patch(i, { name: e.target.value })} />
             <label className="color-extra" title="Suplemento por este color (€)">
               +€
               <input
