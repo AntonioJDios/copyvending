@@ -1312,6 +1312,11 @@ body {
   padding: 4px 6px;
   border-radius: 8px;
 }
+.account-button {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
 .cart-button:hover {
   background: var(--brand-soft);
 }

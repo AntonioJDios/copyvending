@@ -13,6 +13,7 @@ import { ProjectName } from './components/ProjectName';
 import { CartDrawer } from './components/CartDrawer';
 import { CartPage } from './components/CartPage';
 import { CartButton } from './components/CartButton';
+import { AccountButton } from './components/AccountButton';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
 // main configurator bundle).
@@ -111,6 +112,7 @@ export default function App() {
               ⚙
             </a>
           </div>
+          <AccountButton />
           <CartButton onClick={() => setCartOpen(true)} />
           <button type="button" className="burger" aria-label="Menú" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
             ☰

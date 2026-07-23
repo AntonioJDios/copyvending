@@ -6,6 +6,7 @@ import { useCart } from '../store/useCart';
 import { useConfigurator } from '../store/useConfigurator';
 import { flyToCart } from '../lib/flyToCart';
 import { CartButton } from '../components/CartButton';
+import { AccountButton } from '../components/AccountButton';
 import { uploadService } from '../lib/uploads';
 import { dataUrlToFile, downscaleDataUrl } from '../lib/imageDownscale';
 
@@ -95,6 +96,7 @@ export function ChapaConfigurator() {
           <a className="btn" href="#">
             ← Volver
           </a>
+          <AccountButton />
           <CartButton onClick={() => (window.location.hash = 'carrito')} />
         </nav>
       </header>

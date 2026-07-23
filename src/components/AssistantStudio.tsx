@@ -10,6 +10,7 @@ import type { Configuracion } from '../domain/types';
 import { DEFAULT_CONFIG, useConfigurator } from '../store/useConfigurator';
 import { useCart } from '../store/useCart';
 import { CartButton } from './CartButton';
+import { AccountButton } from './AccountButton';
 import { MicButton } from './MicButton';
 import { GrowTextarea } from './GrowTextarea';
 
@@ -171,6 +172,7 @@ export function AssistantStudio() {
         <h1>Asistente</h1>
         <nav className="topnav">
           <a className="btn" href="#">← Volver</a>
+          <AccountButton />
           <CartButton onClick={() => (window.location.hash = 'carrito')} />
         </nav>
       </header>
