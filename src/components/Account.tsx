@@ -148,8 +148,12 @@ export function Account() {
                     type="email"
                     value={email}
                     autoFocus
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="tu@email.com"
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(e.target.value.toLowerCase())}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void onRequest();
                     }}

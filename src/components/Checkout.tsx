@@ -127,7 +127,17 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               </label>
               <label className="field-block">
                 Email *
-                <input type="email" value={email} maxLength={120} placeholder="para el resguardo y avisos" onChange={(e) => setEmail(e.target.value)} />
+                <input
+                  type="email"
+                  value={email}
+                  maxLength={120}
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="para el resguardo y avisos"
+                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                />
               </label>
               <label className="field-block">
                 Teléfono *
