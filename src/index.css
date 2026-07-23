@@ -1972,6 +1972,28 @@ body {
   padding: 12px 0;
   border-top: 1px solid var(--border, #e6e9ee);
 }
+.pay-matrix {
+  margin-top: 14px;
+}
+.pay-matrix h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.pay-matrix table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.pay-matrix th,
+.pay-matrix td {
+  padding: 7px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border, #e6e9ee);
+  font-size: 13px;
+}
+.pay-matrix th:first-child,
+.pay-matrix td:first-child {
+  text-align: left;
+}
 .pay-method .field-inline {
   margin-top: 8px;
 }

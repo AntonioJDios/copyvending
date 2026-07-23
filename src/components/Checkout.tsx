@@ -3,7 +3,7 @@ import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
 import { useAuth, type Address } from '../store/useAuth';
 import { useConfigurator } from '../store/useConfigurator';
-import { DEFAULT_PAYMENTS } from '../domain/catalog';
+import { DEFAULT_PAYMENTS, DEFAULT_PAY_MATRIX } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
@@ -51,6 +51,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const requestLink = useAuth((s) => s.requestLink);
   const verifyCode = useAuth((s) => s.verifyCode);
   const setDefaultBilling = useAuth((s) => s.setDefaultBilling);
+  const setDefaultShipping = useAuth((s) => s.setDefaultShipping);
   const loggedIn = !!customer;
 
   const payments = useConfigurator((s) => s.catalog.payments) ?? DEFAULT_PAYMENTS;
@@ -74,6 +75,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [billingAddr, setBillingAddr] = useState<Address>({});
   const [delivery, setDelivery] = useState<'recoger' | 'envio'>('recoger');
   const [shipAddr, setShipAddr] = useState<Address>({});
+  const [selectedShipId, setSelectedShipId] = useState('');
   const [payMethod, setPayMethod] = useState<'local' | 'redsys'>('local');
   const [redsysConfig, setRedsysConfig] = useState<RedsysConfig | null>(null);
   const [payError, setPayError] = useState('');
@@ -87,21 +89,24 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const grandTotal = total + shippingCost;
   const shipValid = !!(shipAddr.linea1?.trim() && shipAddr.cp?.trim() && shipAddr.ciudad?.trim());
   const deliveryOk = !shippingOn || delivery === 'recoger' || (!!quote && quote.allowed && shipValid);
-  // Home delivery requires prepayment (no pay-at-counter) → online (Redsys).
-  const requiresPrepay = shippingOn && delivery === 'envio';
+  // Payment methods allowed for this delivery mode (admin matrix).
   const redsysOn = !!payments.redsys?.enabled;
-  const canLocal = localPay.enabled && !requiresPrepay; // no pay-at-counter for delivery
-  const canOnline = redsysOn;
+  const matrix = payments.matrix ?? DEFAULT_PAY_MATRIX;
+  const modeAllow = matrix[delivery] ?? (delivery === 'recoger' ? { local: true, redsys: true } : { local: false, redsys: true });
+  const canLocal = localPay.enabled && !!modeAllow.local;
+  const canOnline = redsysOn && !!modeAllow.redsys;
+  const onlineOnly = !canLocal && canOnline; // e.g. home delivery = prepaid only
   // Resolved payment method for this order.
-  const payResolved: 'local' | 'redsys' | null = requiresPrepay
-    ? (canOnline ? 'redsys' : null)
-    : payMethod === 'redsys' && canOnline
+  const payResolved: 'local' | 'redsys' | null =
+    payMethod === 'redsys' && canOnline
       ? 'redsys'
-      : canLocal
+      : payMethod === 'local' && canLocal
         ? 'local'
-        : canOnline
-          ? 'redsys'
-          : null;
+        : canLocal
+          ? 'local'
+          : canOnline
+            ? 'redsys'
+            : null;
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
   // Recognise an existing session and prefill from the account.
@@ -117,9 +122,22 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       const defBilling = customer.addresses?.find((a) => a.defaultBilling) ?? customer.addresses?.[0];
       if (defBilling) setBillingAddr(defBilling);
       const defShip = customer.addresses?.find((a) => a.defaultShipping) ?? customer.addresses?.[0];
-      if (defShip) setShipAddr(defShip);
+      if (defShip) {
+        setShipAddr(defShip);
+        setSelectedShipId(defShip.id ?? '');
+      }
     }
   }, [customer]);
+
+  const chooseShip = (id: string) => {
+    setSelectedShipId(id);
+    if (!id) {
+      setShipAddr({});
+      return;
+    }
+    const a = customer?.addresses?.find((x) => x.id === id);
+    if (a) setShipAddr(a);
+  };
 
   // Load the Redsys config for the InSite form (only if InSite is enabled).
   useEffect(() => {
@@ -152,6 +170,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       shippingCost,
     });
     if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
+    if (loggedIn && shippingUsed && shipValid) void setDefaultShipping(shippingUsed).catch(() => {});
   };
 
   // Pay at the counter (local): just record the order and finish.
@@ -433,6 +452,17 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                 {delivery === 'envio' && (
                   <>
                     {shippingCfg?.info?.trim() && <p className="muted checkout-mode-hint">{shippingCfg.info}</p>}
+                    {loggedIn && (customer?.addresses?.length ?? 0) > 0 && (
+                      <label className="field-block">
+                        Usar una dirección guardada
+                        <select value={selectedShipId} onChange={(e) => chooseShip(e.target.value)}>
+                          <option value="">➕ Nueva dirección…</option>
+                          {customer!.addresses!.map((a) => (
+                            <option key={a.id} value={a.id}>{(a.label || a.linea1 || 'Dirección')} · {a.cp}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <AddressForm value={shipAddr} onChange={setShipAddr} />
                     {shipAddr.cp?.trim() && quote && !quote.allowed && (
                       <p className="recover-error">⚠ No realizamos envíos a ese código postal (Canarias no disponible).</p>
@@ -441,7 +471,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                       <p className="free-ship-hint">🚚 ¡Añade <b>{eur(quote.toFree)}</b> más y el envío te sale <b>gratis</b>!</p>
                     )}
                     {quote?.allowed && quote.free && <p className="free-ship-ok">✓ ¡Enhorabuena, tu envío es gratis!</p>}
-                    <p className="muted">ℹ️ Los envíos requieren <b>pago online</b>{redsysOn ? ' (tarjeta o Bizum, en el paso siguiente).' : ' (aún no activo).'}</p>
+                    {onlineOnly && <p className="muted">ℹ️ El envío se paga <b>online</b> (tarjeta o Bizum) en el paso siguiente.</p>}
                   </>
                 )}
               </div>
@@ -476,14 +506,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
             )}
 
             {payResolved === null ? (
-              requiresPrepay ? (
-                <p className="muted">
-                  🚚 El <b>envío a domicilio</b> requiere <b>pago online</b>, que no está activo. Vuelve atrás y elige{' '}
-                  <b>Recoger en tienda</b>, o pide a la copistería que active el pago online.
-                </p>
-              ) : (
-                <p className="muted">No hay métodos de pago disponibles ahora mismo. Contacta con la copistería.</p>
-              )
+              <p className="muted">
+                No hay métodos de pago disponibles para <b>{delivery === 'envio' ? 'envío a domicilio' : 'recoger en tienda'}</b>. Cambia el modo
+                de entrega o pide a la copistería que active un método de pago.
+              </p>
             ) : (
               <>
                 {canLocal && canOnline && (

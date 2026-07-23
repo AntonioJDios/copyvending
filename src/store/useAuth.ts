@@ -61,6 +61,8 @@ interface AuthState {
   saveAddresses: (addresses: Address[]) => Promise<void>;
   /** Add/update `addr` as the (only) default billing address. */
   setDefaultBilling: (addr: Address) => Promise<void>;
+  /** Add/update `addr` as the (only) default shipping address. */
+  setDefaultShipping: (addr: Address) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()((set, get) => ({
@@ -168,6 +170,17 @@ export const useAuth = create<AuthState>()((set, get) => ({
     const idx = list.findIndex((a) => key(a) === key(addr));
     if (idx >= 0) list[idx] = { ...list[idx], ...addr, id: list[idx].id, defaultBilling: true };
     else list.push({ ...addr, id: addr.id || rid(), defaultBilling: true });
+    await get().saveAddresses(list);
+  },
+
+  setDefaultShipping: async (addr) => {
+    const c = get().customer;
+    if (!c) return;
+    const list = (c.addresses ?? []).map((a) => ({ ...a, defaultShipping: false }));
+    const key = (a: Address) => `${a.linea1 ?? ''}|${a.cp ?? ''}|${a.nombre ?? ''}`.toLowerCase();
+    const idx = list.findIndex((a) => key(a) === key(addr));
+    if (idx >= 0) list[idx] = { ...list[idx], ...addr, id: list[idx].id, defaultShipping: true };
+    else list.push({ ...addr, id: addr.id || rid(), defaultShipping: true });
     await get().saveAddresses(list);
   },
 }));

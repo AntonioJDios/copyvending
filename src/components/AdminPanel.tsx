@@ -7,6 +7,7 @@ import {
   COLORS,
   DEFAULT_CATALOG,
   DEFAULT_PAYMENTS,
+  DEFAULT_PAY_MATRIX,
   DEFAULT_INVOICING,
   DEFAULT_BUSINESS,
   DEFAULT_SHIPPING,
@@ -658,6 +659,43 @@ function PaymentsEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
         </label>
         <p className="muted">Las credenciales (comercio, terminal, clave, entorno) se configuran en las variables del servidor <code>REDSYS_*</code>. Necesario para el envío a domicilio (exige pago previo).</p>
       </div>
+
+      {(() => {
+        const matrix = p.matrix ?? DEFAULT_PAY_MATRIX;
+        const setCell = (mode: 'recoger' | 'envio', method: 'local' | 'redsys', val: boolean) =>
+          change((d) => {
+            const cur = d.payments ?? structuredClone(DEFAULT_PAYMENTS);
+            const m = cur.matrix ?? structuredClone(DEFAULT_PAY_MATRIX);
+            d.payments = { ...cur, matrix: { ...m, [mode]: { ...m[mode], [method]: val } } };
+          });
+        return (
+          <div className="pay-matrix">
+            <h3>Métodos permitidos según la entrega</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Entrega</th>
+                  <th>Pagar al recoger</th>
+                  <th>Pago online</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Recoger en tienda</td>
+                  <td><input type="checkbox" checked={matrix.recoger.local} onChange={(e) => setCell('recoger', 'local', e.target.checked)} /></td>
+                  <td><input type="checkbox" checked={matrix.recoger.redsys} onChange={(e) => setCell('recoger', 'redsys', e.target.checked)} /></td>
+                </tr>
+                <tr>
+                  <td>Envío a domicilio</td>
+                  <td><input type="checkbox" checked={matrix.envio.local} onChange={(e) => setCell('envio', 'local', e.target.checked)} /></td>
+                  <td><input type="checkbox" checked={matrix.envio.redsys} onChange={(e) => setCell('envio', 'redsys', e.target.checked)} /></td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="muted">Por defecto, el envío a domicilio solo permite pago online (pago previo). "Pagar al recoger" en envío equivaldría a contra reembolso.</p>
+          </div>
+        );
+      })()}
 
       {!p.local.enabled && !(p.redsys?.enabled) && (
         <p className="muted">⚠ Con "Pagar al recoger" desactivado y sin pago online, los clientes no podrán finalizar el pedido.</p>

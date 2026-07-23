@@ -25,15 +25,27 @@ export interface PaymentMethodConfig {
   enabled: boolean;
   label: string;
 }
+/** Which payment methods are allowed for a given delivery mode. */
+export interface DeliveryPayMethods {
+  local: boolean;
+  redsys: boolean;
+}
 export interface PaymentsConfig {
   /** Pay in person at the counter when picking up the order. */
   local: PaymentMethodConfig;
   /** Online payment via Redsys (card + Bizum). Credentials live in server env. */
   redsys?: { enabled: boolean };
+  /** Matrix: payment methods allowed per delivery mode (pickup / home delivery). */
+  matrix?: { recoger: DeliveryPayMethods; envio: DeliveryPayMethods };
 }
+export const DEFAULT_PAY_MATRIX = {
+  recoger: { local: true, redsys: true },
+  envio: { local: false, redsys: true }, // home delivery = prepaid only, by default
+};
 export const DEFAULT_PAYMENTS: PaymentsConfig = {
   local: { enabled: true, label: 'Pagar al recoger' },
   redsys: { enabled: false },
+  matrix: DEFAULT_PAY_MATRIX,
 };
 
 /** The shop's own identity/contact data, shared by invoices and the privacy

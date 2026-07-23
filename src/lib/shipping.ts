@@ -1,13 +1,16 @@
 import type { ShippingConfig } from '../domain/catalog';
 
-export type Zone = 'peninsula' | 'baleares' | 'canarias';
+export type Zone = 'peninsula' | 'baleares' | 'noservido';
 
-/** Zone from a Spanish postal code (first two digits). Baleares = 07,
- *  Canarias = 35/38 (not served). Everything else → peninsula. */
+// Not served: only Canarias (35/38). Ceuta/Melilla count as peninsula.
+const NOT_SERVED = ['35', '38'];
+
+/** Zone from a Spanish postal code (first two digits). Baleares = 07; Canarias
+ *  (35/38) not served; everything else (incl. Ceuta/Melilla) → peninsula. */
 export function zoneForCP(cp: string): Zone | null {
   const p = (cp || '').trim().slice(0, 2);
   if (!/^\d{2}$/.test(p)) return null;
-  if (p === '35' || p === '38') return 'canarias';
+  if (NOT_SERVED.includes(p)) return 'noservido';
   if (p === '07') return 'baleares';
   return 'peninsula';
 }
@@ -24,7 +27,7 @@ export interface ShippingQuote {
 /** Compute the shipping quote for a postal code and an order subtotal. */
 export function shippingQuote(cfg: ShippingConfig, cp: string, subtotal: number): ShippingQuote {
   const zone = zoneForCP(cp);
-  if (!zone || zone === 'canarias') return { allowed: false, zone, cost: 0, free: false, toFree: 0 };
+  if (!zone || zone === 'noservido') return { allowed: false, zone, cost: 0, free: false, toFree: 0 };
   const base = zone === 'baleares' ? cfg.baleares : cfg.peninsula;
   const threshold = cfg.freeThreshold || 0;
   const free = threshold > 0 && subtotal >= threshold;

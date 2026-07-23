@@ -165,11 +165,12 @@ function mapRow(r: OrderRow) {
   };
 }
 
-/** Shipping zone from a Spanish postal code (Baleares 07, Canarias 35/38). */
-function zoneForCP(cp: string): 'peninsula' | 'baleares' | 'canarias' | null {
+/** Shipping zone from a Spanish postal code. Not served: Canarias (35/38).
+ *  Baleares 07; rest (incl. Ceuta/Melilla) peninsula. */
+function zoneForCP(cp: string): 'peninsula' | 'baleares' | 'noservido' | null {
   const p = (cp || '').trim().slice(0, 2);
   if (!/^\d{2}$/.test(p)) return null;
-  if (p === '35' || p === '38') return 'canarias';
+  if (['35', '38'].includes(p)) return 'noservido';
   if (p === '07') return 'baleares';
   return 'peninsula';
 }
@@ -226,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (shippingMethod === 'envio') {
         if (!ship?.enabled) return res.status(400).json({ error: 'Los envíos no están disponibles' });
         const zone = zoneForCP(cust.shipping?.cp ?? '');
-        if (!zone || zone === 'canarias') return res.status(400).json({ error: 'No realizamos envíos a ese código postal' });
+        if (!zone || zone === 'noservido') return res.status(400).json({ error: 'No realizamos envíos a ese código postal' });
         const base = zone === 'baleares' ? Number(ship.baleares) || 0 : Number(ship.peninsula) || 0;
         const threshold = Number(ship.freeThreshold) || 0;
         shippingCost = threshold > 0 && itemsSubtotal >= threshold ? 0 : base;
