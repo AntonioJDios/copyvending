@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuth, type MyOrder } from '../store/useAuth';
+import { useAuth, type MyOrder, type Address } from '../store/useAuth';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 
@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
 /** Customer account area: passwordless access by email (magic link), "my orders"
  *  and account erasure (RGPD right to be forgotten). Routes: #cuenta / #acceder/<token>. */
 export function Account() {
-  const { customer, requestLink, verify, restore, logout, deleteAccount, fetchMyOrders } = useAuth();
+  const { customer, requestLink, verify, restore, logout, deleteAccount, fetchMyOrders, saveAddresses } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [nombre, setNombre] = useState('');
@@ -28,6 +28,11 @@ export function Account() {
   const [error, setError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [orders, setOrders] = useState<MyOrder[] | null>(null);
+  const [shipping, setShipping] = useState<Address>({});
+  const [billing, setBilling] = useState<Address>({});
+  const [billingSame, setBillingSame] = useState(true);
+  const [addrBusy, setAddrBusy] = useState(false);
+  const [addrSaved, setAddrSaved] = useState(false);
 
   const registerOk = nombre.trim() && apellidos.trim() && isEmail(email) && telefono.trim().length >= 6 && consent;
 
@@ -52,6 +57,31 @@ export function Account() {
   useEffect(() => {
     if (customer) fetchMyOrders().then(setOrders).catch(() => setOrders([]));
   }, [customer, fetchMyOrders]);
+
+  // Load the saved addresses into the forms when the account loads.
+  useEffect(() => {
+    if (customer) {
+      setShipping(customer.shipping ?? {});
+      setBilling(customer.billing ?? {});
+      setBillingSame(customer.billingSame !== false);
+    }
+  }, [customer]);
+
+  const onSaveAddresses = async () => {
+    if (addrBusy) return;
+    setAddrBusy(true);
+    try {
+      const sh = shipping.linea1?.trim() ? shipping : null;
+      const bi = billingSame ? sh : billing.linea1?.trim() ? billing : null;
+      await saveAddresses(sh, bi, billingSame);
+      setAddrSaved(true);
+      setTimeout(() => setAddrSaved(false), 2500);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudieron guardar las direcciones.');
+    } finally {
+      setAddrBusy(false);
+    }
+  };
 
   const onRequest = async () => {
     if (!email.trim() || busy) return;
@@ -156,6 +186,28 @@ export function Account() {
               )}
             </section>
 
+            <section className="checkout-card">
+              <h2>Mis direcciones</h2>
+              <h3 className="addr-title">📦 Dirección de envío</h3>
+              <AddressForm value={shipping} onChange={setShipping} />
+              <label className="checkout-consent" style={{ marginTop: 12 }}>
+                <input type="checkbox" checked={billingSame} onChange={(e) => setBillingSame(e.target.checked)} />
+                <span>Usar la misma dirección para la facturación</span>
+              </label>
+              {!billingSame && (
+                <>
+                  <h3 className="addr-title">🧾 Dirección de facturación</h3>
+                  <AddressForm value={billing} onChange={setBilling} showNif />
+                </>
+              )}
+              <div className="addr-actions">
+                <button type="button" className="btn btn-primary" onClick={() => void onSaveAddresses()} disabled={addrBusy}>
+                  {addrBusy ? 'Guardando…' : 'Guardar direcciones'}
+                </button>
+                {addrSaved && <span className="muted">✓ Guardado</span>}
+              </div>
+            </section>
+
             <section className="checkout-card account-danger">
               <h2>Borrar mi cuenta</h2>
               <p className="muted">
@@ -254,6 +306,49 @@ export function Account() {
           </section>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Simple address form (shipping / billing). NIF only for billing. */
+function AddressForm({ value, onChange, showNif }: { value: Address; onChange: (a: Address) => void; showNif?: boolean }) {
+  const set = (k: keyof Address, v: string) => onChange({ ...value, [k]: v });
+  return (
+    <div className="addr-form">
+      <label className="field-block addr-wide">
+        Nombre y apellidos {showNif ? '/ empresa' : '(destinatario)'}
+        <input type="text" value={value.nombre ?? ''} maxLength={120} onChange={(e) => set('nombre', e.target.value)} />
+      </label>
+      {showNif && (
+        <label className="field-block">
+          NIF / DNI
+          <input type="text" value={value.nif ?? ''} maxLength={20} onChange={(e) => set('nif', e.target.value)} />
+        </label>
+      )}
+      <label className="field-block addr-wide">
+        Dirección (calle y número)
+        <input type="text" value={value.linea1 ?? ''} maxLength={120} onChange={(e) => set('linea1', e.target.value)} />
+      </label>
+      <label className="field-block">
+        Piso / puerta (opcional)
+        <input type="text" value={value.linea2 ?? ''} maxLength={60} onChange={(e) => set('linea2', e.target.value)} />
+      </label>
+      <label className="field-block">
+        Código postal
+        <input type="text" inputMode="numeric" value={value.cp ?? ''} maxLength={10} onChange={(e) => set('cp', e.target.value)} />
+      </label>
+      <label className="field-block">
+        Ciudad
+        <input type="text" value={value.ciudad ?? ''} maxLength={80} onChange={(e) => set('ciudad', e.target.value)} />
+      </label>
+      <label className="field-block">
+        Provincia
+        <input type="text" value={value.provincia ?? ''} maxLength={80} onChange={(e) => set('provincia', e.target.value)} />
+      </label>
+      <label className="field-block">
+        Teléfono (opcional)
+        <input type="tel" inputMode="tel" value={value.telefono ?? ''} maxLength={20} onChange={(e) => set('telefono', e.target.value)} />
+      </label>
     </div>
   );
 }

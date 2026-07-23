@@ -1,12 +1,25 @@
 import { create } from 'zustand';
 import { API_BASE } from '../lib/api';
 
+export interface Address {
+  nombre?: string;
+  nif?: string;
+  linea1?: string;
+  linea2?: string;
+  cp?: string;
+  ciudad?: string;
+  provincia?: string;
+  telefono?: string;
+}
 export interface AuthCustomer {
   id: string;
   email: string;
   nombre: string;
   apellidos: string;
   telefono: string | null;
+  shipping?: Address | null;
+  billing?: Address | null;
+  billingSame?: boolean;
 }
 export interface MyOrder {
   id: string;
@@ -39,6 +52,7 @@ interface AuthState {
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   fetchMyOrders: () => Promise<MyOrder[]>;
+  saveAddresses: (shipping: Address | null, billing: Address | null, billingSame: boolean) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()((set, get) => ({
@@ -129,5 +143,18 @@ export const useAuth = create<AuthState>()((set, get) => ({
     if (!s) return [];
     const d = await post<{ orders: MyOrder[] }>({ action: 'orders', session: s });
     return d.orders;
+  },
+
+  saveAddresses: async (shipping, billing, billingSame) => {
+    const s = get().session;
+    if (!s) return;
+    const d = await post<{ shipping: Address | null; billing: Address | null; billingSame: boolean }>({
+      action: 'save-addresses',
+      session: s,
+      shipping,
+      billing,
+      billingSame,
+    });
+    set((st) => ({ customer: st.customer ? { ...st.customer, shipping: d.shipping, billing: d.billing, billingSame: d.billingSame } : st.customer }));
   },
 }));

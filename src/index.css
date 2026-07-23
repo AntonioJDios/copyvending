@@ -2000,6 +2000,29 @@ body {
   gap: 12px;
   flex-wrap: wrap;
 }
+.addr-title {
+  font-size: 14px;
+  margin: 4px 0 8px;
+}
+.addr-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.addr-wide {
+  grid-column: 1 / -1;
+}
+.addr-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+@media (max-width: 560px) {
+  .addr-form {
+    grid-template-columns: 1fr;
+  }
+}
 .account-head h2 {
   margin: 0 0 4px;
 }

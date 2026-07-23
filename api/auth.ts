@@ -42,6 +42,9 @@ function ensureSchema(): Promise<void> {
         create table if not exists sessions (
           token text primary key, customer_id text not null, email text not null,
           expires_at bigint not null, created_at bigint not null)`;
+      await db()`alter table customers add column if not exists shipping jsonb`;
+      await db()`alter table customers add column if not exists billing jsonb`;
+      await db()`alter table customers add column if not exists billing_same boolean default true`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -52,6 +55,18 @@ function ensureSchema(): Promise<void> {
 
 const token = () => randomBytes(24).toString('hex');
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+
+/** Keep only known address fields (strings, capped) so we never store junk. */
+function cleanAddr(a: unknown): Record<string, string> | null {
+  if (!a || typeof a !== 'object') return null;
+  const src = a as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const k of ['nombre', 'nif', 'linea1', 'linea2', 'cp', 'ciudad', 'provincia', 'telefono']) {
+    const v = src[k];
+    if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 120);
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 async function sendMail(to: string, subject: string, text: string): Promise<void> {
   if (!GMAIL_USER || !GMAIL_PASS) throw new Error('Falta configuración de email en el servidor (GMAIL_USER / GMAIL_APP_PASSWORD)');
@@ -75,7 +90,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
     const sql = db();
-    const body = (req.body ?? {}) as { action?: string; email?: string; token?: string; code?: string; session?: string };
+    const body = (req.body ?? {}) as {
+      action?: string; email?: string; token?: string; code?: string; session?: string;
+      shipping?: unknown; billing?: unknown; billingSame?: boolean;
+    };
     const action = body.action;
 
     // 1) Request a magic link. Always answers ok (no email enumeration).
@@ -130,11 +148,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ session: sess, customer: cust[0] });
     }
 
-    // 3) Restore session → who am I.
+    // 3) Restore session → who am I (incl. addresses).
     if (action === 'me') {
       const c = await sessionCustomer(String(body.session ?? ''));
       if (!c) return res.status(401).json({ error: 'Sesión no válida' });
-      return res.status(200).json({ customer: c });
+      const rows = (await sql`select shipping, billing, billing_same from customers where id = ${c.id}`) as { shipping: unknown; billing: unknown; billing_same: boolean }[];
+      const a = rows[0];
+      return res.status(200).json({
+        customer: { ...c, shipping: a?.shipping ?? null, billing: a?.billing ?? null, billingSame: a?.billing_same ?? true },
+      });
+    }
+
+    // 3b) Save the customer's shipping / billing addresses.
+    if (action === 'save-addresses') {
+      const c = await sessionCustomer(String(body.session ?? ''));
+      if (!c) return res.status(401).json({ error: 'Sesión no válida' });
+      const shipping = cleanAddr(body.shipping);
+      const billingSame = body.billingSame !== false;
+      const billing = billingSame ? shipping : cleanAddr(body.billing);
+      await sql`update customers set
+          shipping = ${shipping ? JSON.stringify(shipping) : null}::jsonb,
+          billing = ${billing ? JSON.stringify(billing) : null}::jsonb,
+          billing_same = ${billingSame},
+          updated_at = ${Date.now()}
+        where id = ${c.id}`;
+      return res.status(200).json({ ok: true, shipping, billing, billingSame });
     }
 
     // 4) My orders (only mine, by email).
