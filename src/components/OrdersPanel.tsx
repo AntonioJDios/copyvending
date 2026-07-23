@@ -114,11 +114,14 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
 function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const setPaid = useOrders((s) => s.setPaid);
+  const markShipped = useOrders((s) => s.markShipped);
   const remove = useOrders((s) => s.remove);
   const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
   const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
   const [open, setOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
+  const [tracking, setTracking] = useState(order.tracking ?? '');
+  const [shipping, setShipping] = useState(false);
 
   const onDownload = async () => {
     setZipping(true);
@@ -144,6 +147,7 @@ function OrderCard({ order }: { order: Order }) {
           <span className={`src-pill src-${order.source}`}>{SOURCE_LABEL[order.source] ?? order.source}</span>
           <span className={`status-pill st-${order.status}`}>{STATUS_LABEL[order.status]}</span>
           <span className={`pay-pill ${order.paid ? 'pay-yes' : 'pay-no'}`}>{order.paid ? '💶 Pagado' : '⏳ Pendiente'}</span>
+          {order.shippingMethod === 'envio' && order.shippedAt && <span className="pay-pill pay-yes">🚚 Enviado</span>}
           {order.priceMismatch && (
             <span className="price-flag" title="El precio enviado por el cliente no coincidía con el recalculado en el servidor. Se muestra el del servidor.">
               ⚠ precio recalculado
@@ -193,6 +197,33 @@ function OrderCard({ order }: { order: Order }) {
                 </button>
               ))}
             </div>
+            {order.shippingMethod === 'envio' && (
+              <div className="order-ship-row">
+                <input
+                  type="text"
+                  value={tracking}
+                  placeholder="Nº de seguimiento / transportista"
+                  onChange={(e) => setTracking(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="chip"
+                  disabled={shipping}
+                  onClick={async () => {
+                    setShipping(true);
+                    try {
+                      await markShipped(order.id, tracking.trim());
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : 'No se pudo marcar como enviado.');
+                    } finally {
+                      setShipping(false);
+                    }
+                  }}
+                >
+                  {shipping ? 'Avisando…' : order.shippedAt ? '↻ Actualizar seguimiento' : '🚚 Marcar enviado y avisar'}
+                </button>
+              </div>
+            )}
             <div className="order-action-btns">
               <button type="button" className="btn btn-small btn-primary" onClick={onDownload} disabled={zipping}>
                 {zipping ? 'Preparando…' : '⬇ Descargar archivos (ZIP)'}

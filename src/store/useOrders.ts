@@ -21,6 +21,9 @@ export interface Order {
   /** Delivery: 'recoger' (pickup) or 'envio' (home delivery), + its cost. */
   shippingMethod?: string;
   shippingCost?: number;
+  /** Shipment tracking (carrier + number, free text) and when it was shipped. */
+  tracking?: string;
+  shippedAt?: number;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }
@@ -52,6 +55,7 @@ interface OrdersState {
   addOrder: (order: Order) => Promise<void>;
   setStatus: (id: string, status: OrderStatus) => Promise<void>;
   setPaid: (id: string, paid: boolean, paymentMethod?: string) => Promise<void>;
+  markShipped: (id: string, tracking: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -89,6 +93,20 @@ export const useOrders = create<OrdersState>()((set, get) => ({
     set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, paid, paymentMethod } : o)) }));
     if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { paid, paymentMethod });
     else saveLocal(get().orders);
+  },
+
+  markShipped: async (id, tracking) => {
+    const shippedAt = Date.now();
+    set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, tracking, shippedAt } : o)) }));
+    if (API_BASE) {
+      await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { tracking, shipped: true });
+      // Best-effort: email the customer that the order is on its way.
+      try {
+        await apiSend('POST', '/notify-shipment', { orderId: id });
+      } catch {
+        /* email opcional */
+      }
+    } else saveLocal(get().orders);
   },
 
   remove: async (id) => {

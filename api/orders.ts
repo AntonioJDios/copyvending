@@ -133,6 +133,8 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists payment_method text`;
       await db()`alter table orders add column if not exists shipping_method text`;
       await db()`alter table orders add column if not exists shipping_cost double precision default 0`;
+      await db()`alter table orders add column if not exists tracking text`;
+      await db()`alter table orders add column if not exists shipped_at bigint`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -155,6 +157,7 @@ interface OrderRow {
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
   paid?: boolean; payment_method?: string | null;
   shipping_method?: string | null; shipping_cost?: string | number | null;
+  tracking?: string | null; shipped_at?: string | number | null;
 }
 function mapRow(r: OrderRow) {
   return {
@@ -162,6 +165,7 @@ function mapRow(r: OrderRow) {
     items: r.items, total: Number(r.total), status: r.status, priceMismatch: !!r.price_mismatch,
     paid: !!r.paid, paymentMethod: r.payment_method ?? undefined,
     shippingMethod: r.shipping_method ?? undefined, shippingCost: r.shipping_cost != null ? Number(r.shipping_cost) : undefined,
+    tracking: r.tracking ?? undefined, shippedAt: r.shipped_at != null ? Number(r.shipped_at) : undefined,
   };
 }
 
@@ -188,13 +192,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = queryId(req);
       if (id) {
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
       }
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -251,11 +255,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const id = queryId(req);
-      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string };
+      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean };
       if (!id) return res.status(400).json({ error: 'falta id' });
       if (typeof body.status === 'string') await sql`update orders set status = ${body.status} where id = ${id}`;
       if (typeof body.paid === 'boolean') {
         await sql`update orders set paid = ${body.paid}, payment_method = ${body.paymentMethod ?? 'local'} where id = ${id}`;
+      }
+      if (body.shipped !== undefined || body.tracking !== undefined) {
+        await sql`update orders set tracking = ${body.tracking ?? null}, shipped_at = ${body.shipped ? Date.now() : null} where id = ${id}`;
       }
       return res.status(200).json({ ok: true });
     }
