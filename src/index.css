@@ -2007,6 +2007,19 @@ body {
   border-color: var(--brand, #0ea5b7);
   box-shadow: 0 0 0 1px var(--brand, #0ea5b7) inset;
 }
+.pay-online-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pay-bizum {
+  background: #03b3c9;
+  color: #fff;
+  border: none;
+}
+.pay-bizum:hover {
+  background: #0299ac;
+}
 .checkout-billing {
   margin-bottom: 18px;
 }

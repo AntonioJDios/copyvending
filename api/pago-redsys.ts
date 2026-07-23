@@ -48,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!orderId) return res.status(400).json({ error: 'falta orderId' });
 
     const sql = neon(process.env.DATABASE_URL);
-    const rows = (await sql`select total from orders where id = ${orderId}`) as { total: number }[];
+    const rows = (await sql`select total, customer from orders where id = ${orderId}`) as { total: number; customer: { telefono?: string } | null }[];
     if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
     const amountCents = Math.round(Number(rows[0].total) * 100);
     if (amountCents <= 0) return res.status(400).json({ error: 'importe inválido' });
@@ -74,8 +74,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       DS_MERCHANT_MERCHANTNAME: SHOP_NAME.slice(0, 25),
       DS_MERCHANT_CONSUMERLANGUAGE: '001',
     };
-    if (method === 'bizum') params.DS_MERCHANT_PAYMETHODS = 'z';
-    else if (method === 'card') params.DS_MERCHANT_PAYMETHODS = 'C';
+    if (method === 'bizum') {
+      params.DS_MERCHANT_PAYMETHODS = 'z';
+      // Prefill the customer's mobile in Bizum (with country prefix), if we have it.
+      const phone = (rows[0].customer?.telefono ?? '').replace(/[\s-]/g, '');
+      const mobile = phone.startsWith('+') ? phone : /^\d{9}$/.test(phone) ? `+34${phone}` : '';
+      if (mobile) params.DS_MERCHANT_BIZUM_MOBILENUMBER = mobile;
+    } else if (method === 'card') {
+      params.DS_MERCHANT_PAYMETHODS = 'C';
+    }
     if (idOper) params.DS_MERCHANT_IDOPER = String(idOper); // InSite: tokenised card
 
     const paramsB64 = Buffer.from(JSON.stringify(params), 'utf8').toString('base64');

@@ -185,8 +185,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       setSaving(false);
     }
   };
-  // Fallback: pay on the Redsys hosted page (redirection).
-  const payRedirect = async () => {
+  // Pay on the Redsys hosted page (redirection). `method`: card | bizum | both.
+  const payRedirect = async (method?: 'card' | 'bizum') => {
     if (invoicingOn && !billingValid) {
       setPayError('Completa la dirección de facturación.');
       return;
@@ -197,7 +197,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     try {
       await placeOrder('redsys');
       clear();
-      await payWithRedsys(orderId);
+      await payWithRedsys(orderId, method);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'No se pudo iniciar el pago.');
       setSaving(false);
@@ -522,9 +522,14 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                         </button>
                       </>
                     ) : (
-                      <button type="button" className="btn btn-primary checkout-next" onClick={() => void payRedirect()} disabled={saving}>
-                        {saving ? 'Redirigiendo al pago…' : 'Pagar ahora (tarjeta o Bizum)'}
-                      </button>
+                      <div className="pay-online-btns">
+                        <button type="button" className="btn btn-primary checkout-next" onClick={() => void payRedirect('card')} disabled={saving}>
+                          {saving ? 'Redirigiendo…' : '💳 Pagar con tarjeta'}
+                        </button>
+                        <button type="button" className="btn checkout-next pay-bizum" onClick={() => void payRedirect('bizum')} disabled={saving}>
+                          Pagar con Bizum
+                        </button>
+                      </div>
                     )}
                     {saving && <p className="muted">Procesando…</p>}
                     {payError && <p className="recover-error">⚠ {payError}</p>}
