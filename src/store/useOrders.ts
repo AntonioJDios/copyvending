@@ -98,15 +98,9 @@ export const useOrders = create<OrdersState>()((set, get) => ({
   markShipped: async (id, tracking) => {
     const shippedAt = Date.now();
     set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, tracking, shippedAt } : o)) }));
-    if (API_BASE) {
-      await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { tracking, shipped: true });
-      // Best-effort: email the customer that the order is on its way.
-      try {
-        await apiSend('POST', '/notify-shipment', { orderId: id });
-      } catch {
-        /* email opcional */
-      }
-    } else saveLocal(get().orders);
+    // The PATCH updates the order and (server-side) emails the customer.
+    if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { tracking, shipped: true });
+    else saveLocal(get().orders);
   },
 
   remove: async (id) => {

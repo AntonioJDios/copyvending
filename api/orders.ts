@@ -1,5 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import nodemailer from 'nodemailer';
+
+// Shipment-notification email (folded in here to stay under the Hobby 12-function
+// limit). Best-effort; uses the shop Gmail SMTP.
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
+async function sendShipMail(to: string, nombre: string, orderId: string, tracking: string): Promise<void> {
+  if (!GMAIL_USER || !GMAIL_PASS || !to) return;
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_PASS } });
+  await t.sendMail({
+    from: `${SHOP_NAME} <${GMAIL_USER}>`,
+    to,
+    subject: `Tu pedido ${orderId} va en camino 🚚`,
+    text: `Hola ${nombre}:\n\nTu pedido ${orderId} ya está en camino.\n${tracking ? `Seguimiento: ${tracking}\n` : ''}\nPuedes ver su estado aquí:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por tu compra.\n${SHOP_NAME}`,
+  });
+}
 
 // IMPORTANT: Vercel Node functions here must be SELF-CONTAINED — importing
 // values from ../src (or other api files) breaks the runtime. So the pricing
@@ -263,6 +281,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (body.shipped !== undefined || body.tracking !== undefined) {
         await sql`update orders set tracking = ${body.tracking ?? null}, shipped_at = ${body.shipped ? Date.now() : null} where id = ${id}`;
+        if (body.shipped) {
+          try {
+            const r = (await sql`select customer from orders where id = ${id}`) as { customer: { nombre?: string; email?: string } | null }[];
+            const c = r[0]?.customer;
+            if (c?.email) await sendShipMail(c.email, c.nombre ?? '', id, body.tracking ?? '');
+          } catch {
+            /* email opcional */
+          }
+        }
       }
       return res.status(200).json({ ok: true });
     }
