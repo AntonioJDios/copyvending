@@ -19,6 +19,141 @@ async function sendShipMail(to: string, nombre: string, orderId: string, trackin
   });
 }
 
+// ── GLS (ASM) shipping labels ────────────────────────────────────────
+// GLS España = ASM SOAP webservice. A single HTTPS POST (GrabaServicios)
+// registers the shipment and returns the tracking number (codbarras) + the
+// label as a base64 PDF. Auth is a single GUID (uidcliente). Folded in here to
+// respect the Hobby 12-function limit. No SOAP library: build XML, parse reply.
+const GLS_URL = 'https://wsclientes.asmred.com/b2b.asmx';
+const GLS_UID = process.env.GLS_UID || '';
+const GLS_SERVICE = process.env.GLS_SERVICE || '96'; // 96 = BusinessParcel (24/48h)
+const GLS_HORARIO = process.env.GLS_HORARIO || '18';
+const GLS_WEIGHT = process.env.GLS_WEIGHT || '1'; // kg
+const GLS_SENDER = {
+  name: process.env.GLS_SENDER_NAME || SHOP_NAME,
+  phone: process.env.GLS_SENDER_PHONE || '',
+  street: process.env.GLS_SENDER_STREET || '',
+  city: process.env.GLS_SENDER_CITY || '',
+  cp: process.env.GLS_SENDER_CP || '',
+  country: process.env.GLS_SENDER_COUNTRY || 'ES',
+};
+const GLS_TRACK_URL = 'https://mygls.gls-spain.es/e/';
+
+const xesc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const xcdata = (s: unknown) => `<![CDATA[${String(s ?? '').replace(/]]>/g, ']] >')}]]>`;
+
+type GlsAddr = { nombre?: string; linea1?: string; linea2?: string; cp?: string; ciudad?: string; provincia?: string; telefono?: string };
+type GlsCustomer = { nombre?: string; apellidos?: string; email?: string; telefono?: string; shipping?: GlsAddr };
+// GLS config stored under the 'gls' settings key (backoffice only). Includes the
+// guid credential — this stays server-side and is never sent to the browser.
+type GlsConfig = {
+  enabled?: boolean; guid?: string; senderName?: string; senderStreet?: string; senderCp?: string;
+  senderCity?: string; senderPhone?: string; service?: string; horario?: string; weight?: string;
+};
+
+/** Read the backoffice GLS config from the settings table (server-side only). */
+async function getGlsConfig(): Promise<GlsConfig | null> {
+  try {
+    const rows = (await db()`select value from settings where key = 'gls'`) as { value: GlsConfig }[];
+    return rows[0]?.value ?? null;
+  } catch {
+    return null; // settings table may not exist yet
+  }
+}
+
+/** Register a GLS shipment for an order and return its tracking + base64 PDF label.
+ *  Config comes from the admin (`cfg`, settings key 'gls') when set, else env fallbacks. */
+async function createGlsShipment(orderId: string, cust: GlsCustomer, cfg?: GlsConfig): Promise<{ ok: boolean; tracking?: string; label?: string; error?: string }> {
+  if (cfg && cfg.enabled === false) return { ok: false, error: 'GLS está desactivado en el panel de administración.' };
+  const guid = (cfg?.guid && cfg.guid.trim()) || GLS_UID;
+  if (!guid) return { ok: false, error: 'GLS no está configurado (falta el GUID en el panel de administración).' };
+  const s = cust.shipping;
+  if (!s || !s.cp || !s.linea1) return { ok: false, error: 'El pedido no tiene una dirección de envío completa.' };
+  const zone = zoneForCP(s.cp);
+  if (!zone || zone === 'noservido') return { ok: false, error: 'No se realizan envíos a ese código postal.' };
+
+  // Admin value wins; env var is the fallback; then a sane default.
+  const service = cfg?.service || GLS_SERVICE;
+  const horario = cfg?.horario || GLS_HORARIO;
+  const weight = cfg?.weight || GLS_WEIGHT;
+  const sender = {
+    name: cfg?.senderName || GLS_SENDER.name,
+    phone: cfg?.senderPhone || GLS_SENDER.phone,
+    street: cfg?.senderStreet || GLS_SENDER.street,
+    city: cfg?.senderCity || GLS_SENDER.city,
+    cp: cfg?.senderCp || GLS_SENDER.cp,
+    country: GLS_SENDER.country,
+  };
+
+  const nombre = [cust.nombre, cust.apellidos].filter(Boolean).join(' ') || s.nombre || 'Cliente';
+  const direccion = [s.linea1, s.linea2].filter(Boolean).join(', ');
+  const tel = s.telefono || cust.telefono || '';
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <GrabaServicios xmlns="http://www.asmred.com/">
+      <docIn>
+        <Servicios uidcliente="${xesc(guid)}">
+          <Envio>
+            <Portes>P</Portes>
+            <Servicio>${xesc(service)}</Servicio>
+            <Horario>${xesc(horario)}</Horario>
+            <Bultos>1</Bultos>
+            <Peso>${xesc(weight)}</Peso>
+            <Remite>
+              <Nombre>${xcdata(sender.name)}</Nombre>
+              <Telefono>${xcdata(sender.phone)}</Telefono>
+              <Direccion>${xcdata(sender.street)}</Direccion>
+              <Poblacion>${xcdata(sender.city)}</Poblacion>
+              <Pais>${xesc(sender.country)}</Pais>
+              <CP>${xesc(sender.cp)}</CP>
+            </Remite>
+            <Destinatario>
+              <Nombre>${xcdata(nombre)}</Nombre>
+              <Direccion>${xcdata(direccion)}</Direccion>
+              <Poblacion>${xcdata(s.ciudad || '')}</Poblacion>
+              <Pais>ES</Pais>
+              <CP>${xesc(s.cp)}</CP>
+              <Telefono>${xesc(tel)}</Telefono>
+              <Movil>${xesc(tel)}</Movil>
+              <Observaciones>${xcdata('Pedido ' + orderId)}</Observaciones>
+              <Email>${xesc(cust.email || '')}</Email>
+            </Destinatario>
+            <Referencias>
+              <Referencia tipo="0">${xesc(orderId)}</Referencia>
+            </Referencias>
+            <DevuelveAdicionales>
+              <Etiqueta tipo="PDF"></Etiqueta>
+            </DevuelveAdicionales>
+          </Envio>
+          <Plataforma>copyvending</Plataforma>
+        </Servicios>
+      </docIn>
+    </GrabaServicios>
+  </soap12:Body>
+</soap12:Envelope>`;
+
+  let text = '';
+  try {
+    const resp = await fetch(GLS_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=UTF-8' }, body: xml });
+    text = await resp.text();
+  } catch (e) {
+    return { ok: false, error: 'No se pudo conectar con GLS: ' + (e instanceof Error ? e.message : 'error de red') };
+  }
+  const ret = /<Resultado[^>]*\breturn="([^"]*)"/i.exec(text)?.[1] ?? '';
+  const codbarras = /\bcodbarras="([^"]+)"/i.exec(text)?.[1] ?? '';
+  const errText = () =>
+    /<Error[^>]*>([\s\S]*?)<\/Error>/i.exec(text)?.[1]?.trim() ||
+    /<(?:\w+:)?faultstring[^>]*>([\s\S]*?)<\/(?:\w+:)?faultstring>/i.exec(text)?.[1]?.trim();
+  if (ret && ret !== '0') {
+    const e = errText();
+    return { ok: false, error: `GLS rechazó el envío (código ${ret})${e ? ': ' + e : ''}.` };
+  }
+  if (!codbarras) return { ok: false, error: errText() || 'GLS no devolvió número de seguimiento.' };
+  const label = /<Etiquetas>[\s\S]*?<Etiqueta[^>]*>([\s\S]*?)<\/Etiqueta>/i.exec(text)?.[1]?.replace(/\s+/g, '') || undefined;
+  return { ok: true, tracking: codbarras, label };
+}
+
 // IMPORTANT: Vercel Node functions here must be SELF-CONTAINED — importing
 // values from ../src (or other api files) breaks the runtime. So the pricing
 // math below is a synced copy of src/domain/priceEngine.ts. Keep them in sync;
@@ -153,6 +288,7 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists shipping_cost double precision default 0`;
       await db()`alter table orders add column if not exists tracking text`;
       await db()`alter table orders add column if not exists shipped_at bigint`;
+      await db()`alter table orders add column if not exists label text`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -175,7 +311,7 @@ interface OrderRow {
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
   paid?: boolean; payment_method?: string | null;
   shipping_method?: string | null; shipping_cost?: string | number | null;
-  tracking?: string | null; shipped_at?: string | number | null;
+  tracking?: string | null; shipped_at?: string | number | null; has_label?: boolean;
 }
 function mapRow(r: OrderRow) {
   return {
@@ -184,6 +320,7 @@ function mapRow(r: OrderRow) {
     paid: !!r.paid, paymentMethod: r.payment_method ?? undefined,
     shippingMethod: r.shipping_method ?? undefined, shippingCost: r.shipping_cost != null ? Number(r.shipping_cost) : undefined,
     tracking: r.tracking ?? undefined, shippedAt: r.shipped_at != null ? Number(r.shipped_at) : undefined,
+    hasLabel: !!r.has_label,
   };
 }
 
@@ -208,15 +345,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const id = queryId(req);
+      // Download a stored GLS label (base64 PDF) on demand — kept out of the
+      // list/detail payloads because it's large.
+      if (id && req.query.label !== undefined) {
+        const rows = (await sql`select label from orders where id = ${id}`) as { label: string | null }[];
+        if (rows.length === 0 || !rows[0].label) return res.status(404).json({ error: 'sin etiqueta' });
+        return res.status(200).json({ label: rows[0].label });
+      }
       if (id) {
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
       }
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -273,8 +417,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const id = queryId(req);
-      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean };
+      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean; generateGls?: boolean; deleteGls?: boolean };
       if (!id) return res.status(400).json({ error: 'falta id' });
+
+      // Delete the stored GLS label so a fresh one can be generated. Clears the
+      // label + tracking + shipped mark locally (the old GLS expedition, if any,
+      // stays in your GLS account — cancel it there if needed).
+      if (body.deleteGls) {
+        await sql`update orders set label = null, tracking = null, shipped_at = null where id = ${id}`;
+        return res.status(200).json({ ok: true });
+      }
+
+      // Generate a GLS shipment: registers it with GLS, stores the returned
+      // tracking + label, and emails the customer. Replaces the manual tracking.
+      if (body.generateGls) {
+        const r = (await sql`select customer from orders where id = ${id}`) as { customer: GlsCustomer | null }[];
+        if (r.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
+        const cust = (r[0].customer ?? {}) as GlsCustomer;
+        const glsCfg = await getGlsConfig();
+        const g = await createGlsShipment(id, cust, glsCfg ?? undefined);
+        if (!g.ok) return res.status(502).json({ error: g.error });
+        const now = Date.now();
+        await sql`update orders set tracking = ${g.tracking!}, shipped_at = ${now}, label = ${g.label ?? null} where id = ${id}`;
+        try {
+          if (cust.email) await sendShipMail(cust.email, cust.nombre ?? '', id, `GLS ${g.tracking} — ${GLS_TRACK_URL}${g.tracking}`);
+        } catch {
+          /* email opcional */
+        }
+        return res.status(200).json({ ok: true, tracking: g.tracking, shippedAt: now, hasLabel: !!g.label, trackUrl: `${GLS_TRACK_URL}${g.tracking}` });
+      }
+
       if (typeof body.status === 'string') await sql`update orders set status = ${body.status} where id = ${id}`;
       if (typeof body.paid === 'boolean') {
         await sql`update orders set paid = ${body.paid}, payment_method = ${body.paymentMethod ?? 'local'} where id = ${id}`;

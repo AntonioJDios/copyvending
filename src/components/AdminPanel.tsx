@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSettings } from '../lib/glsSettings';
 import {
   ALL_FINISHES,
   ALL_FOLIOS,
@@ -334,7 +335,12 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'envios' && <ShippingEditor draft={draft} change={change} />}
+        {tab === 'envios' && (
+          <>
+            <ShippingEditor draft={draft} change={change} />
+            <GlsEditor />
+          </>
+        )}
 
         {tab === 'asistente' && (
         <section className="card">
@@ -787,6 +793,117 @@ function ShippingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
           <p className="muted">Canarias no está permitido (se detecta por el código postal). Baleares usa el precio de islas.</p>
         </>
       )}
+    </section>
+  );
+}
+
+/** GLS courier config — stored separately from the price catalog (backoffice
+ *  only; the customer configurator never loads it). The GUID is write-only:
+ *  saved to the server but never sent back to the browser. */
+function GlsEditor() {
+  const [s, setS] = useState<GlsSettings>(DEFAULT_GLS_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    loadGlsSettings()
+      .then((v) => { if (alive) setS(v); })
+      .catch(() => { /* keep defaults */ })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const set = (patch: Partial<GlsSettings>) => { setS((p) => ({ ...p, ...patch })); setSaved(false); };
+  const onSave = async () => {
+    setSaving(true);
+    setErr('');
+    try {
+      await saveGlsSettings(s);
+      setS(await loadGlsSettings()); // refresh (clears the typed guid, updates hasGuid)
+      setSaved(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo guardar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="card">
+        <h2>Envíos GLS</h2>
+        <p className="muted">Cargando…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card">
+      <h2>Envíos GLS</h2>
+      <p className="muted">Config del transportista. No forma parte del catálogo de precios: solo se usa en el backoffice para generar etiquetas.</p>
+      <label className="chk" style={{ marginTop: 10 }}>
+        <input type="checkbox" checked={s.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        Activar generación de etiquetas GLS
+      </label>
+      {s.enabled && (
+        <>
+          <label className="field-block" style={{ marginTop: 12 }}>
+            GUID de tu cuenta GLS (credencial)
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder={s.hasGuid ? '•••••••• (guardado — escribe para cambiarlo)' : 'Pega aquí el GUID de GLS'}
+              value={s.guid ?? ''}
+              onChange={(e) => set({ guid: e.target.value })}
+            />
+          </label>
+          <p className="muted">Se guarda en el servidor y nunca se muestra de vuelta, por seguridad.</p>
+          <div className="admin-grid" style={{ marginTop: 12 }}>
+            <label className="field-inline">
+              Nombre remitente
+              <input value={s.senderName} onChange={(e) => set({ senderName: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Teléfono remitente
+              <input value={s.senderPhone} onChange={(e) => set({ senderPhone: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Dirección remitente
+              <input value={s.senderStreet} onChange={(e) => set({ senderStreet: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              CP remitente
+              <input value={s.senderCp} onChange={(e) => set({ senderCp: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Población remitente
+              <input value={s.senderCity} onChange={(e) => set({ senderCity: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Servicio (96 = BusinessParcel)
+              <input value={s.service} onChange={(e) => set({ service: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Horario (18)
+              <input value={s.horario} onChange={(e) => set({ horario: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              Peso por bulto (kg)
+              <input value={s.weight} onChange={(e) => set({ weight: e.target.value })} />
+            </label>
+          </div>
+        </>
+      )}
+      <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={saving}>
+          {saving ? 'Guardando…' : 'Guardar GLS'}
+        </button>
+        {saved && <span className="muted">✓ Guardado</span>}
+        {err && <span className="price-flag">{err}</span>}
+      </div>
     </section>
   );
 }

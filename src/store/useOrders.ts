@@ -24,6 +24,8 @@ export interface Order {
   /** Shipment tracking (carrier + number, free text) and when it was shipped. */
   tracking?: string;
   shippedAt?: number;
+  /** Whether a GLS label PDF is stored server-side for this order. */
+  hasLabel?: boolean;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }
@@ -56,6 +58,10 @@ interface OrdersState {
   setStatus: (id: string, status: OrderStatus) => Promise<void>;
   setPaid: (id: string, paid: boolean, paymentMethod?: string) => Promise<void>;
   markShipped: (id: string, tracking: string) => Promise<void>;
+  /** Register a GLS shipment: creates it at GLS, stores tracking + label, emails the customer. */
+  generateGls: (id: string) => Promise<{ tracking: string; trackUrl: string }>;
+  /** Delete the stored GLS label + tracking so a new one can be generated. */
+  deleteGlsLabel: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -101,6 +107,27 @@ export const useOrders = create<OrdersState>()((set, get) => ({
     // The PATCH updates the order and (server-side) emails the customer.
     if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { tracking, shipped: true });
     else saveLocal(get().orders);
+  },
+
+  generateGls: async (id) => {
+    if (!API_BASE) throw new Error('Los envíos GLS requieren el backend.');
+    const r = await apiSend<{ tracking: string; shippedAt: number; hasLabel: boolean; trackUrl: string }>(
+      'PATCH',
+      `/orders?id=${encodeURIComponent(id)}`,
+      { generateGls: true }
+    );
+    set((s) => ({
+      orders: s.orders.map((o) => (o.id === id ? { ...o, tracking: r.tracking, shippedAt: r.shippedAt, hasLabel: r.hasLabel } : o)),
+    }));
+    return { tracking: r.tracking, trackUrl: r.trackUrl };
+  },
+
+  deleteGlsLabel: async (id) => {
+    if (!API_BASE) throw new Error('Los envíos GLS requieren el backend.');
+    await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { deleteGls: true });
+    set((s) => ({
+      orders: s.orders.map((o) => (o.id === id ? { ...o, tracking: undefined, shippedAt: undefined, hasLabel: false } : o)),
+    }));
   },
 
   remove: async (id) => {

@@ -7,6 +7,7 @@ import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { downloadOrderZip } from '../lib/downloadZip';
 import { downloadInvoice } from '../lib/invoicePdf';
+import { downloadGlsLabel, glsTrackUrl } from '../lib/glsLabel';
 import { DEFAULT_BUSINESS } from '../domain/catalog';
 import { CartDocsPreview } from './CartProjectCard';
 
@@ -115,6 +116,8 @@ function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
   const setPaid = useOrders((s) => s.setPaid);
   const markShipped = useOrders((s) => s.markShipped);
+  const generateGls = useOrders((s) => s.generateGls);
+  const deleteGlsLabel = useOrders((s) => s.deleteGlsLabel);
   const remove = useOrders((s) => s.remove);
   const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
   const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
@@ -122,6 +125,7 @@ function OrderCard({ order }: { order: Order }) {
   const [zipping, setZipping] = useState(false);
   const [tracking, setTracking] = useState(order.tracking ?? '');
   const [shipping, setShipping] = useState(false);
+  const [glsBusy, setGlsBusy] = useState(false);
 
   const onDownload = async () => {
     setZipping(true);
@@ -222,6 +226,67 @@ function OrderCard({ order }: { order: Order }) {
                 >
                   {shipping ? 'Avisando…' : order.shippedAt ? '↻ Actualizar seguimiento' : '🚚 Marcar enviado y avisar'}
                 </button>
+              </div>
+            )}
+            {order.shippingMethod === 'envio' && (
+              <div className="order-ship-row order-gls-row">
+                <span className="muted">GLS:</span>
+                {!order.hasLabel ? (
+                  <button
+                    type="button"
+                    className="chip"
+                    disabled={glsBusy}
+                    onClick={async () => {
+                      if (!window.confirm('¿Generar la etiqueta de envío con GLS y avisar al cliente?')) return;
+                      setGlsBusy(true);
+                      try {
+                        const r = await generateGls(order.id);
+                        setTracking(r.tracking);
+                        alert(`Envío GLS creado ✔\nSeguimiento: ${r.tracking}\n${r.trackUrl}`);
+                      } catch (e) {
+                        alert(e instanceof Error ? e.message : 'No se pudo generar el envío GLS.');
+                      } finally {
+                        setGlsBusy(false);
+                      }
+                    }}
+                  >
+                    {glsBusy ? 'Generando…' : '🏷️ Generar etiqueta'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="chip"
+                      onClick={() => downloadGlsLabel(order.id).catch((e) => alert(e instanceof Error ? e.message : 'No se pudo descargar la etiqueta.'))}
+                    >
+                      ⬇ Descargar etiqueta
+                    </button>
+                    {order.tracking && (
+                      <a className="chip" href={glsTrackUrl(order.tracking)} target="_blank" rel="noopener noreferrer">
+                        🔎 Seguir
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="chip chip-danger"
+                      disabled={glsBusy}
+                      onClick={async () => {
+                        if (!window.confirm('¿Borrar la etiqueta para poder generar una nueva?\n\nLa expedición anterior seguirá en tu cuenta de GLS (anúlala allí si hace falta).')) return;
+                        setGlsBusy(true);
+                        try {
+                          await deleteGlsLabel(order.id);
+                          setTracking('');
+                        } catch (e) {
+                          alert(e instanceof Error ? e.message : 'No se pudo borrar la etiqueta.');
+                        } finally {
+                          setGlsBusy(false);
+                        }
+                      }}
+                    >
+                      {glsBusy ? '…' : '🗑️ Borrar etiqueta'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
             <div className="order-action-btns">

@@ -2134,6 +2134,14 @@ body {
   font: inherit;
   font-size: 13px;
 }
+.order-gls-row {
+  margin-top: -4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border, #d8dde3);
+}
+.order-gls-row a.chip {
+  text-decoration: none;
+}
 
 .account-head {
   display: flex;
