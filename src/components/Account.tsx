@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useAuth, type MyOrder } from '../store/useAuth';
 import { hasBackend } from '../lib/api';
+import { registerCustomer } from '../lib/customers';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 const STATUS_LABEL: Record<string, string> = {
   nuevo: 'Recibido',
   en_proceso: 'En proceso',
@@ -14,12 +16,20 @@ const STATUS_LABEL: Record<string, string> = {
  *  and account erasure (RGPD right to be forgotten). Routes: #cuenta / #acceder/<token>. */
 export function Account() {
   const { customer, requestLink, verify, restore, logout, deleteAccount, fetchMyOrders } = useAuth();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [consent, setConsent] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sentKind, setSentKind] = useState<'login' | 'register'>('login');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [orders, setOrders] = useState<MyOrder[] | null>(null);
+
+  const registerOk = nombre.trim() && apellidos.trim() && isEmail(email) && telefono.trim().length >= 6 && consent;
 
   // On mount: verify the magic link if we arrived via #acceder/<token>, else
   // restore any existing session.
@@ -49,9 +59,27 @@ export function Account() {
     setError('');
     try {
       await requestLink(email.trim());
+      setSentKind('login');
       setSent(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo enviar el enlace.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRegister = async () => {
+    if (!registerOk || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await registerCustomer({ nombre: nombre.trim(), apellidos: apellidos.trim(), email: email.trim().toLowerCase(), telefono: telefono.trim() });
+      // Passwordless: send the access link so they can enter right away.
+      await requestLink(email.trim());
+      setSentKind('register');
+      setSent(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo crear la cuenta.');
     } finally {
       setBusy(false);
     }
@@ -134,14 +162,23 @@ export function Account() {
           </>
         ) : (
           <section className="checkout-card">
-            <h2>Accede a tu cuenta</h2>
+            <div className="seg-toggle checkout-mode">
+              <button type="button" className={mode === 'login' ? 'on' : ''} onClick={() => { setMode('login'); setSent(false); setError(''); }}>
+                Entrar
+              </button>
+              <button type="button" className={mode === 'register' ? 'on' : ''} onClick={() => { setMode('register'); setSent(false); setError(''); }}>
+                Crear cuenta
+              </button>
+            </div>
+
             {sent ? (
               <p className="recover-ready">
-                📧 Si hay una cuenta con <b>{email.trim()}</b>, te hemos enviado un enlace de acceso. Revisa tu correo
-                (caduca en 30 minutos).
+                📧 {sentKind === 'register' ? '¡Cuenta creada! ' : ''}
+                Te hemos enviado un enlace de acceso a <b>{email.trim()}</b>. Revisa tu correo (caduca en 30 minutos).
               </p>
-            ) : (
+            ) : mode === 'login' ? (
               <>
+                <h2>Accede a tu cuenta</h2>
                 <p className="muted">Sin contraseñas: escribe tu email y te enviamos un enlace para entrar.</p>
                 <div className="recover-form">
                   <input
@@ -162,9 +199,48 @@ export function Account() {
                     {busy ? 'Enviando…' : 'Enviar enlace'}
                   </button>
                 </div>
-                <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>
-                  ¿Aún no tienes cuenta? Se crea al tramitar un pedido eligiendo “Crear cuenta”.
-                </p>
+              </>
+            ) : (
+              <>
+                <h2>Crear cuenta</h2>
+                <p className="muted">Sin contraseñas: creas la cuenta y entras con un enlace que te enviamos por email.</p>
+                <div className="checkout-form">
+                  <label className="field-block">
+                    Nombre *
+                    <input type="text" value={nombre} maxLength={60} onChange={(e) => setNombre(e.target.value)} />
+                  </label>
+                  <label className="field-block">
+                    Apellidos *
+                    <input type="text" value={apellidos} maxLength={80} onChange={(e) => setApellidos(e.target.value)} />
+                  </label>
+                  <label className="field-block">
+                    Email *
+                    <input
+                      type="email"
+                      value={email}
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      maxLength={120}
+                      onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                    />
+                  </label>
+                  <label className="field-block">
+                    Teléfono *
+                    <input type="tel" value={telefono} maxLength={20} onChange={(e) => setTelefono(e.target.value)} />
+                  </label>
+                </div>
+                <label className="checkout-consent">
+                  <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                  <span>
+                    He leído y acepto la{' '}
+                    <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a> y el tratamiento de mis datos.
+                  </span>
+                </label>
+                <button type="button" className="btn btn-primary checkout-next" onClick={() => void onRegister()} disabled={busy || !registerOk}>
+                  {busy ? 'Creando…' : 'Crear cuenta'}
+                </button>
               </>
             )}
             {error && <p className="recover-error">⚠ {error}</p>}
