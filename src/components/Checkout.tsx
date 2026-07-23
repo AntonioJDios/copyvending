@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
+import { useAuth } from '../store/useAuth';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 
@@ -33,6 +34,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const addOrder = useOrders((s) => s.addOrder);
   const total = items.reduce((s, p) => s + p.total, 0);
 
+  const customer = useAuth((s) => s.customer);
+  const restore = useAuth((s) => s.restore);
+  const loggedIn = !!customer;
+
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
   const [nombre, setNombre] = useState('');
@@ -43,8 +48,21 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false);
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
+  // Recognise an existing session and prefill from the account.
+  useEffect(() => {
+    if (!customer) void restore();
+  }, [customer, restore]);
+  useEffect(() => {
+    if (customer) {
+      setNombre(customer.nombre);
+      setApellidos(customer.apellidos);
+      setEmail(customer.email);
+      setTelefono(customer.telefono ?? '');
+    }
+  }, [customer]);
+
   const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
-  const canContinue = dataOk && (mode === 'guest' || consent);
+  const canContinue = loggedIn || (dataOk && (mode === 'guest' || consent));
 
   const confirm = async () => {
     if (saving) return;
@@ -52,7 +70,9 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     try {
       const data = { nombre: nombre.trim(), apellidos: apellidos.trim(), email: email.trim().toLowerCase(), telefono: telefono.trim() };
       let accountId: string | undefined;
-      if (mode === 'account' && hasBackend) {
+      if (loggedIn) {
+        accountId = customer!.id; // already identified → link to the account
+      } else if (mode === 'account' && hasBackend) {
         accountId = await registerCustomer(data); // throws → aborts below (order not created)
       }
       await addOrder({
@@ -100,7 +120,21 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       </ol>
 
       <div className="checkout">
-        {step === 0 && (
+        {step === 0 && loggedIn && (
+          <section className="checkout-card">
+            <h2>¿A nombre de quién es el pedido?</h2>
+            <p className="muted">
+              Estás identificado como <b>{customer!.nombre} {customer!.apellidos}</b> · {customer!.email}
+              {customer!.telefono ? ` · ${customer!.telefono}` : ''}. Usaremos los datos de tu cuenta.
+            </p>
+            <a className="chip" href="#cuenta">Ver mi cuenta</a>
+            <button type="button" className="btn btn-primary checkout-next" onClick={() => setStep(1)}>
+              Continuar
+            </button>
+          </section>
+        )}
+
+        {step === 0 && !loggedIn && (
           <section className="checkout-card">
             <div className="seg-toggle checkout-mode">
               <button type="button" className={mode === 'guest' ? 'on' : ''} onClick={() => setMode('guest')}>
@@ -172,7 +206,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
             <div className="checkout-who">
               <span>
                 <b>{nombre} {apellidos}</b> · {email.trim().toLowerCase()} · {telefono.trim()}
-                {mode === 'account' && <span className="checkout-badge">cuenta</span>}
+                {(loggedIn || mode === 'account') && <span className="checkout-badge">cuenta</span>}
               </span>
               <button type="button" className="chip" onClick={() => setStep(0)}>
                 Editar datos
