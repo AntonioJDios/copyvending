@@ -26,6 +26,7 @@ export interface MyOrder {
   createdAt: number;
   total: number;
   status: string;
+  paid?: boolean;
 }
 
 const KEY = 'copisteria/session';

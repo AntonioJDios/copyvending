@@ -33,6 +33,20 @@ export const DEFAULT_PAYMENTS: PaymentsConfig = {
   local: { enabled: true, label: 'Pagar al recoger' },
 };
 
+/** Invoicing (optional). Needs the shop's fiscal identity to print invoices. */
+export interface InvoicingConfig {
+  enabled: boolean;
+  shopName: string;
+  shopNif: string;
+  shopAddress: string;
+}
+export const DEFAULT_INVOICING: InvoicingConfig = {
+  enabled: false,
+  shopName: '',
+  shopNif: '',
+  shopAddress: '',
+};
+
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */
 export interface AssistantConfig {
   /** Show the chat assistant to customers. */
@@ -51,6 +65,8 @@ export interface Catalog {
   assistant?: AssistantConfig;
   /** Payment methods (optional; absent = only "pay at counter"). */
   payments?: PaymentsConfig;
+  /** Invoicing config (optional; absent = disabled). */
+  invoicing?: InvoicingConfig;
   /** Paper sizes offered to the customer. */
   enabledSizes: Size[];
   /** Ring/spiral colors offered when the finish is AnillasColores. */
@@ -126,6 +142,7 @@ export const DEFAULT_CATALOG: Catalog = {
     instructions: '',
   },
   payments: DEFAULT_PAYMENTS,
+  invoicing: DEFAULT_INVOICING,
   enabledSizes: ['A4', 'A3', 'A5'],
   ringColors: [
     { name: 'Transparente', hex: '#f2f2f2', img: '/anillas/transparente.png', enabled: true },

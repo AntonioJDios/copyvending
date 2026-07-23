@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
-import { useAuth } from '../store/useAuth';
+import { useAuth, type Address } from '../store/useAuth';
 import { useConfigurator } from '../store/useConfigurator';
 import { DEFAULT_PAYMENTS } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { AccountButton } from './AccountButton';
+import { AddressForm } from './AddressForm';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -41,10 +42,13 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const restore = useAuth((s) => s.restore);
   const requestLink = useAuth((s) => s.requestLink);
   const verifyCode = useAuth((s) => s.verifyCode);
+  const saveAddresses = useAuth((s) => s.saveAddresses);
   const loggedIn = !!customer;
 
   const payments = useConfigurator((s) => s.catalog.payments) ?? DEFAULT_PAYMENTS;
   const localPay = payments.local ?? DEFAULT_PAYMENTS.local;
+  const invoicing = useConfigurator((s) => s.catalog.invoicing);
+  const invoicingOn = !!invoicing?.enabled;
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
@@ -57,7 +61,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [codeSent, setCodeSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [billingAddr, setBillingAddr] = useState<Address>({});
   const [saving, setSaving] = useState(false);
+
+  const billingValid = !!(billingAddr.linea1?.trim() && billingAddr.cp?.trim() && billingAddr.ciudad?.trim());
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
   // Recognise an existing session and prefill from the account.
@@ -70,6 +77,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       setApellidos(customer.apellidos);
       setEmail(customer.email);
       setTelefono(customer.telefono ?? '');
+      if (customer.billing) setBillingAddr(customer.billing);
     }
   }, [customer]);
 
@@ -87,15 +95,20 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       } else if (mode === 'account' && hasBackend) {
         accountId = await registerCustomer(data); // throws → aborts below (order not created)
       }
+      const billing = invoicingOn && billingValid ? billingAddr : undefined;
       await addOrder({
         id: orderId,
         createdAt: Date.now(),
         source: 'mostrador',
-        customer: { ...data, accountId },
+        customer: { ...data, accountId, billing },
         items: items.map((p) => ({ ...p })),
         total,
         status: 'nuevo',
+        paid: false,
+        paymentMethod: 'local',
       });
+      // Remember this billing address as the account's default for next time.
+      if (loggedIn && billing) void saveAddresses(customer!.shipping ?? null, billing, false).catch(() => {});
       setStep(3);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');
@@ -336,14 +349,23 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         {step === 2 && (
           <section className="checkout-card">
             <h2>Pago</h2>
+
+            {invoicingOn && (
+              <div className="checkout-billing">
+                <h3 className="addr-title">🧾 Dirección de facturación</h3>
+                <p className="muted">La usaremos para tu factura. {loggedIn ? 'Se guardará como predeterminada.' : ''}</p>
+                <AddressForm value={billingAddr} onChange={setBillingAddr} showNif />
+              </div>
+            )}
+
             {localPay.enabled ? (
               <>
                 <div className="pay-choice on">
                   <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
                   <span className="muted">Pagas <b>{eur(total)}</b> en el mostrador al recoger el pedido.</span>
                 </div>
-                <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving}>
-                  {saving ? 'Enviando…' : 'Confirmar pedido'}
+                <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving || (invoicingOn && !billingValid)}>
+                  {saving ? 'Enviando…' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
                 </button>
               </>
             ) : (

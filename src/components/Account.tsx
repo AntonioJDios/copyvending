@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth, type MyOrder, type Address } from '../store/useAuth';
-import { hasBackend } from '../lib/api';
+import { apiGet, hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
+import { AddressForm } from './AddressForm';
+import { useConfigurator } from '../store/useConfigurator';
+import { downloadInvoice } from '../lib/invoicePdf';
+import type { Order } from '../store/useOrders';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -33,6 +37,22 @@ export function Account() {
   const [billingSame, setBillingSame] = useState(true);
   const [addrBusy, setAddrBusy] = useState(false);
   const [addrSaved, setAddrSaved] = useState(false);
+  const [invBusy, setInvBusy] = useState<string | null>(null);
+  const invoicing = useConfigurator((s) => s.catalog.invoicing);
+  const invoicingOn = !!invoicing?.enabled;
+
+  const downloadFactura = async (id: string) => {
+    if (invBusy) return;
+    setInvBusy(id);
+    try {
+      const order = await apiGet<Order>(`/orders?id=${encodeURIComponent(id)}`);
+      await downloadInvoice(order, invoicing!);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo generar la factura.');
+    } finally {
+      setInvBusy(null);
+    }
+  };
 
   const registerOk = nombre.trim() && apellidos.trim() && isEmail(email) && telefono.trim().length >= 6 && consent;
 
@@ -180,6 +200,11 @@ export function Account() {
                       <span className={`status-pill st-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
                       <span className="muted">{new Date(o.createdAt).toLocaleDateString('es-ES')}</span>
                       <strong>{eur(o.total)}</strong>
+                      {invoicingOn && (
+                        <button type="button" className="chip" disabled={invBusy === o.id} onClick={() => void downloadFactura(o.id)}>
+                          🧾 {invBusy === o.id ? '…' : o.paid ? 'Factura' : 'Proforma'}
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -310,45 +335,3 @@ export function Account() {
   );
 }
 
-/** Simple address form (shipping / billing). NIF only for billing. */
-function AddressForm({ value, onChange, showNif }: { value: Address; onChange: (a: Address) => void; showNif?: boolean }) {
-  const set = (k: keyof Address, v: string) => onChange({ ...value, [k]: v });
-  return (
-    <div className="addr-form">
-      <label className="field-block addr-wide">
-        Nombre y apellidos {showNif ? '/ empresa' : '(destinatario)'}
-        <input type="text" value={value.nombre ?? ''} maxLength={120} onChange={(e) => set('nombre', e.target.value)} />
-      </label>
-      {showNif && (
-        <label className="field-block">
-          NIF / DNI
-          <input type="text" value={value.nif ?? ''} maxLength={20} onChange={(e) => set('nif', e.target.value)} />
-        </label>
-      )}
-      <label className="field-block addr-wide">
-        Dirección (calle y número)
-        <input type="text" value={value.linea1 ?? ''} maxLength={120} onChange={(e) => set('linea1', e.target.value)} />
-      </label>
-      <label className="field-block">
-        Piso / puerta (opcional)
-        <input type="text" value={value.linea2 ?? ''} maxLength={60} onChange={(e) => set('linea2', e.target.value)} />
-      </label>
-      <label className="field-block">
-        Código postal
-        <input type="text" inputMode="numeric" value={value.cp ?? ''} maxLength={10} onChange={(e) => set('cp', e.target.value)} />
-      </label>
-      <label className="field-block">
-        Ciudad
-        <input type="text" value={value.ciudad ?? ''} maxLength={80} onChange={(e) => set('ciudad', e.target.value)} />
-      </label>
-      <label className="field-block">
-        Provincia
-        <input type="text" value={value.provincia ?? ''} maxLength={80} onChange={(e) => set('provincia', e.target.value)} />
-      </label>
-      <label className="field-block">
-        Teléfono (opcional)
-        <input type="tel" inputMode="tel" value={value.telefono ?? ''} maxLength={20} onChange={(e) => set('telefono', e.target.value)} />
-      </label>
-    </div>
-  );
-}

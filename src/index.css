@@ -1992,6 +1992,25 @@ body {
 .pay-choice-name {
   font-size: 15px;
 }
+.checkout-billing {
+  margin-bottom: 18px;
+}
+.pay-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pay-pill.pay-yes {
+  background: #e7f7ee;
+  color: #1c7a4a;
+}
+.pay-pill.pay-no {
+  background: #fdf0e3;
+  color: #a85b12;
+}
 
 .account-head {
   display: flex;

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { CartProject } from './useCart';
+import type { Address } from './useAuth';
 import { API_BASE, apiGet, apiSend } from '../lib/api';
 
 export type OrderStatus = 'nuevo' | 'en_proceso' | 'listo' | 'entregado';
@@ -10,10 +11,13 @@ export interface Order {
   id: string;
   createdAt: number;
   source: OrderSource;
-  customer: { nombre: string; apellidos: string; email?: string; telefono?: string; accountId?: string };
+  customer: { nombre: string; apellidos: string; email?: string; telefono?: string; accountId?: string; billing?: Address };
   items: CartProject[];
   total: number;
   status: OrderStatus;
+  /** Whether the order has been paid, and how (local/redsys…). Local = pending until paid at the counter. */
+  paid?: boolean;
+  paymentMethod?: string;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }
@@ -44,6 +48,7 @@ interface OrdersState {
   fetchOrders: () => Promise<void>;
   addOrder: (order: Order) => Promise<void>;
   setStatus: (id: string, status: OrderStatus) => Promise<void>;
+  setPaid: (id: string, paid: boolean, paymentMethod?: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -74,6 +79,12 @@ export const useOrders = create<OrdersState>()((set, get) => ({
   setStatus: async (id, status) => {
     set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, status } : o)) }));
     if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { status });
+    else saveLocal(get().orders);
+  },
+
+  setPaid: async (id, paid, paymentMethod = 'local') => {
+    set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, paid, paymentMethod } : o)) }));
+    if (API_BASE) await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { paid, paymentMethod });
     else saveLocal(get().orders);
   },
 

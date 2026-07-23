@@ -180,9 +180,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const c = await sessionCustomer(String(body.session ?? ''));
       if (!c) return res.status(401).json({ error: 'Sesión no válida' });
       const rows = (await sql`
-        select id, created_at, total, status from orders
-        where customer->>'email' = ${c.email} order by created_at desc limit 100`) as { id: string; created_at: number; total: number; status: string }[];
-      return res.status(200).json({ orders: rows.map((r) => ({ id: r.id, createdAt: Number(r.created_at), total: Number(r.total), status: r.status })) });
+        select id, created_at, total, status, paid from orders
+        where customer->>'email' = ${c.email} order by created_at desc limit 100`) as { id: string; created_at: number; total: number; status: string; paid: boolean }[];
+      return res.status(200).json({ orders: rows.map((r) => ({ id: r.id, createdAt: Number(r.created_at), total: Number(r.total), status: r.status, paid: !!r.paid })) });
     }
 
     // 5) Logout.

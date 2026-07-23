@@ -7,6 +7,7 @@ import {
   COLORS,
   DEFAULT_CATALOG,
   DEFAULT_PAYMENTS,
+  DEFAULT_INVOICING,
   FINISH_LABEL,
   FOLIO_LABEL,
   GROSORES,
@@ -321,7 +322,12 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'pagos' && <PaymentsEditor draft={draft} change={change} />}
+        {tab === 'pagos' && (
+          <>
+            <PaymentsEditor draft={draft} change={change} />
+            <InvoicingEditor draft={draft} change={change} />
+          </>
+        )}
 
         {tab === 'asistente' && (
         <section className="card">
@@ -639,6 +645,41 @@ function PaymentsEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
 
       {!p.local.enabled && (
         <p className="muted">⚠ Con "Pagar al recoger" desactivado y sin pago online, los clientes no podrán finalizar el pedido.</p>
+      )}
+    </section>
+  );
+}
+
+/** Invoicing: on/off + the shop's fiscal identity for the invoice header. */
+function InvoicingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const inv = draft.invoicing ?? DEFAULT_INVOICING;
+  const set = (patch: Partial<typeof inv>) => change((d) => { d.invoicing = { ...DEFAULT_INVOICING, ...d.invoicing, ...patch }; });
+  return (
+    <section className="card">
+      <h2>Facturación</h2>
+      <p className="muted">Genera facturas (proforma o factura según el pago) descargables desde los pedidos.</p>
+      <label className="chk">
+        <input type="checkbox" checked={inv.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        Activar la generación de facturas
+      </label>
+      {inv.enabled && (
+        <>
+          <div className="admin-grid" style={{ marginTop: 12 }}>
+            <label className="field-inline">
+              Nombre / razón social
+              <input type="text" value={inv.shopName} onChange={(e) => set({ shopName: e.target.value })} />
+            </label>
+            <label className="field-inline">
+              NIF
+              <input type="text" value={inv.shopNif} onChange={(e) => set({ shopNif: e.target.value })} />
+            </label>
+          </div>
+          <label className="field-block" style={{ marginTop: 10 }}>
+            Dirección fiscal
+            <textarea className="assistant-instructions" rows={2} value={inv.shopAddress} onChange={(e) => set({ shopAddress: e.target.value })} />
+          </label>
+          {(!inv.shopName || !inv.shopNif) && <p className="muted">⚠ Completa nombre y NIF para que las facturas salgan correctas.</p>}
+        </>
       )}
     </section>
   );

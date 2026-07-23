@@ -129,6 +129,8 @@ function ensureSchema(): Promise<void> {
           customer jsonb not null, items jsonb not null,
           total double precision not null, status text not null)`;
       await db()`alter table orders add column if not exists price_mismatch boolean default false`;
+      await db()`alter table orders add column if not exists paid boolean default false`;
+      await db()`alter table orders add column if not exists payment_method text`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -149,11 +151,13 @@ async function getCatalog(): Promise<PriceCatalog> {
 interface OrderRow {
   id: string; created_at: string | number; source: string; customer: unknown;
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
+  paid?: boolean; payment_method?: string | null;
 }
 function mapRow(r: OrderRow) {
   return {
     id: r.id, createdAt: Number(r.created_at), source: r.source, customer: r.customer,
     items: r.items, total: Number(r.total), status: r.status, priceMismatch: !!r.price_mismatch,
+    paid: !!r.paid, paymentMethod: r.payment_method ?? undefined,
   };
 }
 function queryId(req: VercelRequest): string | undefined {
@@ -170,13 +174,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = queryId(req);
       if (id) {
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
       }
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -185,6 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const o = req.body as {
         id?: string; createdAt?: number; source?: string; customer?: unknown;
         items?: Record<string, unknown>[]; total?: number; status?: string;
+        paid?: boolean; paymentMethod?: string;
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
@@ -205,19 +210,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${o.source ?? 'mostrador'},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
-                ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch})
+                ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null})
         on conflict (id) do nothing`;
       return res.status(201).json({ ok: true, total: serverTotal, priceMismatch: mismatch });
     }
 
     if (req.method === 'PATCH') {
       const id = queryId(req);
-      const { status } = (req.body ?? {}) as { status?: string };
-      if (!id || !status) return res.status(400).json({ error: 'faltan datos' });
-      await sql`update orders set status = ${status} where id = ${id}`;
+      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string };
+      if (!id) return res.status(400).json({ error: 'falta id' });
+      if (typeof body.status === 'string') await sql`update orders set status = ${body.status} where id = ${id}`;
+      if (typeof body.paid === 'boolean') {
+        await sql`update orders set paid = ${body.paid}, payment_method = ${body.paymentMethod ?? 'local'} where id = ${id}`;
+      }
       return res.status(200).json({ ok: true });
     }
 

@@ -6,6 +6,7 @@ import type { CartProject } from '../store/useCart';
 import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain/orderSpec';
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { downloadOrderZip } from '../lib/downloadZip';
+import { downloadInvoice } from '../lib/invoicePdf';
 import { CartDocsPreview } from './CartProjectCard';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -111,7 +112,10 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
 
 function OrderCard({ order }: { order: Order }) {
   const setStatus = useOrders((s) => s.setStatus);
+  const setPaid = useOrders((s) => s.setPaid);
   const remove = useOrders((s) => s.remove);
+  const invoicing = useConfigurator((s) => s.catalog.invoicing);
+  const invoicingOn = !!invoicing?.enabled;
   const [open, setOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
 
@@ -138,6 +142,7 @@ function OrderCard({ order }: { order: Order }) {
           <span className="order-id">{order.id}</span>
           <span className={`src-pill src-${order.source}`}>{SOURCE_LABEL[order.source] ?? order.source}</span>
           <span className={`status-pill st-${order.status}`}>{STATUS_LABEL[order.status]}</span>
+          <span className={`pay-pill ${order.paid ? 'pay-yes' : 'pay-no'}`}>{order.paid ? '💶 Pagado' : '⏳ Pendiente'}</span>
           {order.priceMismatch && (
             <span className="price-flag" title="El precio enviado por el cliente no coincidía con el recalculado en el servidor. Se muestra el del servidor.">
               ⚠ precio recalculado
@@ -183,6 +188,14 @@ function OrderCard({ order }: { order: Order }) {
               <button type="button" className="btn btn-small btn-primary" onClick={onDownload} disabled={zipping}>
                 {zipping ? 'Preparando…' : '⬇ Descargar archivos (ZIP)'}
               </button>
+              <button type="button" className="chip" onClick={() => void setPaid(order.id, !order.paid)}>
+                {order.paid ? '↩ Marcar pendiente' : '💶 Marcar pagado'}
+              </button>
+              {invoicingOn && (
+                <button type="button" className="chip" onClick={() => void downloadInvoice(order, invoicing!)}>
+                  🧾 {order.paid ? 'Factura' : 'Proforma'}
+                </button>
+              )}
               <button type="button" className="chip chip-danger" onClick={onDelete}>
                 Eliminar
               </button>
