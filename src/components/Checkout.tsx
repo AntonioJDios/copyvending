@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
 import { useAuth, type Address } from '../store/useAuth';
@@ -7,9 +7,10 @@ import { DEFAULT_PAYMENTS } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
-import { payWithRedsys } from '../lib/redsys';
+import { payWithRedsys, authorizeInsite, getRedsysConfig, type RedsysConfig } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
+import { InSiteForm } from './InSiteForm';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -69,7 +70,11 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [delivery, setDelivery] = useState<'recoger' | 'envio'>('recoger');
   const [shipAddr, setShipAddr] = useState<Address>({});
   const [payMethod, setPayMethod] = useState<'local' | 'redsys'>('local');
+  const [redsysConfig, setRedsysConfig] = useState<RedsysConfig | null>(null);
+  const [payError, setPayError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Stable Redsys order number for the InSite form (must match the authorisation).
+  const dsOrder = useMemo(() => (String(Date.now()).slice(-10) + Math.floor(10 + Math.random() * 89)).slice(0, 12), []);
 
   const billingValid = !!(billingAddr.linea1?.trim() && billingAddr.cp?.trim() && billingAddr.ciudad?.trim());
   const quote = shippingOn && delivery === 'envio' && shippingCfg ? shippingQuote(shippingCfg, shipAddr.cp ?? '', total) : null;
@@ -77,8 +82,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const grandTotal = total + shippingCost;
   const shipValid = !!(shipAddr.linea1?.trim() && shipAddr.cp?.trim() && shipAddr.ciudad?.trim());
   const deliveryOk = !shippingOn || delivery === 'recoger' || (!!quote && quote.allowed && shipValid);
-  // Home delivery requires prepayment (no pay-at-counter). Online payment isn't
-  // wired yet (Redsys pending), so shipping can't be completed until then.
+  // Home delivery requires prepayment (no pay-at-counter) → online (Redsys).
   const requiresPrepay = shippingOn && delivery === 'envio';
   const redsysOn = !!payments.redsys?.enabled;
   const canLocal = localPay.enabled && !requiresPrepay; // no pay-at-counter for delivery
@@ -112,46 +116,85 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     }
   }, [customer]);
 
+  // Load the Redsys config for the InSite form when online payment is available.
+  useEffect(() => {
+    if (canOnline && !redsysConfig) getRedsysConfig().then(setRedsysConfig).catch(() => {});
+  }, [canOnline, redsysConfig]);
+
   const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
   const canContinue = loggedIn || (dataOk && (mode === 'guest' || consent));
 
-  const confirm = async (payVia: 'local' | 'redsys') => {
+  // Create the order in the backend (idempotent by id). Returns nothing; the
+  // caller decides what to do next (finish / go to Redsys).
+  const placeOrder = async (payVia: 'local' | 'redsys') => {
+    const data = { nombre: nombre.trim(), apellidos: apellidos.trim(), email: email.trim().toLowerCase(), telefono: telefono.trim() };
+    let accountId: string | undefined;
+    if (loggedIn) accountId = customer!.id;
+    else if (mode === 'account' && hasBackend) accountId = await registerCustomer(data);
+    const billing = invoicingOn && billingValid ? billingAddr : undefined;
+    const shippingUsed = shippingOn && delivery === 'envio' ? shipAddr : undefined;
+    await addOrder({
+      id: orderId,
+      createdAt: Date.now(),
+      source: 'mostrador',
+      customer: { ...data, accountId, billing, shipping: shippingUsed },
+      items: items.map((p) => ({ ...p })),
+      total: grandTotal,
+      status: 'nuevo',
+      paid: false,
+      paymentMethod: payVia,
+      shippingMethod: shippingOn ? delivery : undefined,
+      shippingCost,
+    });
+    if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
+  };
+
+  // Pay at the counter (local): just record the order and finish.
+  const finishLocal = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      const data = { nombre: nombre.trim(), apellidos: apellidos.trim(), email: email.trim().toLowerCase(), telefono: telefono.trim() };
-      let accountId: string | undefined;
-      if (loggedIn) {
-        accountId = customer!.id; // already identified → link to the account
-      } else if (mode === 'account' && hasBackend) {
-        accountId = await registerCustomer(data); // throws → aborts below (order not created)
-      }
-      const billing = invoicingOn && billingValid ? billingAddr : undefined;
-      const shippingUsed = shippingOn && delivery === 'envio' ? shipAddr : undefined;
-      await addOrder({
-        id: orderId,
-        createdAt: Date.now(),
-        source: 'mostrador',
-        customer: { ...data, accountId, billing, shipping: shippingUsed },
-        items: items.map((p) => ({ ...p })),
-        total: grandTotal,
-        status: 'nuevo',
-        paid: false,
-        paymentMethod: payVia,
-        shippingMethod: shippingOn ? delivery : undefined,
-        shippingCost,
-      });
-      // Remember this billing address as the account's default for next time.
-      if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
-      if (payVia === 'redsys') {
-        clear(); // order is created; hand off to Redsys (navigates away)
-        await payWithRedsys(orderId);
-        return;
-      }
+      await placeOrder('local');
       setStep(3);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');
     } finally {
+      setSaving(false);
+    }
+  };
+  // Online via InSite: the card was tokenised on our page (idOper) → authorise.
+  const payInsite = async (idOper: string) => {
+    if (invoicingOn && !billingValid) {
+      setPayError('Completa la dirección de facturación.');
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    setPayError('');
+    try {
+      await placeOrder('redsys');
+      clear();
+      await authorizeInsite(orderId, idOper, dsOrder);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'No se pudo procesar el pago.');
+      setSaving(false);
+    }
+  };
+  // Fallback: pay on the Redsys hosted page (redirection).
+  const payRedirect = async () => {
+    if (invoicingOn && !billingValid) {
+      setPayError('Completa la dirección de facturación.');
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    setPayError('');
+    try {
+      await placeOrder('redsys');
+      clear();
+      await payWithRedsys(orderId);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'No se pudo iniciar el pago.');
       setSaving(false);
     }
   };
@@ -438,32 +481,46 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               )
             ) : (
               <>
-                {canLocal && (
-                  <label className={`pay-opt${payResolved === 'local' ? ' on' : ''}`}>
-                    <input type="radio" name="paymethod" checked={payResolved === 'local'} onChange={() => setPayMethod('local')} />
-                    <span>🏪 <b>{localPay.label}</b> · <span className="muted">pagas {eur(grandTotal)} en el mostrador</span></span>
-                  </label>
+                {canLocal && canOnline && (
+                  <>
+                    <label className={`pay-opt${payResolved === 'local' ? ' on' : ''}`}>
+                      <input type="radio" name="paymethod" checked={payResolved === 'local'} onChange={() => setPayMethod('local')} />
+                      <span>🏪 <b>{localPay.label}</b> · <span className="muted">pagas {eur(grandTotal)} en el mostrador</span></span>
+                    </label>
+                    <label className={`pay-opt${payResolved === 'redsys' ? ' on' : ''}`}>
+                      <input type="radio" name="paymethod" checked={payResolved === 'redsys'} onChange={() => setPayMethod('redsys')} />
+                      <span>💳 <b>Pagar ahora</b> (tarjeta o Bizum) · <span className="muted">{eur(grandTotal)}</span></span>
+                    </label>
+                  </>
                 )}
-                {canOnline && (
-                  <label className={`pay-opt${payResolved === 'redsys' ? ' on' : ''}`}>
-                    <input type="radio" name="paymethod" checked={payResolved === 'redsys'} onChange={() => setPayMethod('redsys')} />
-                    <span>💳 <b>Pagar ahora</b> (tarjeta o Bizum) · <span className="muted">{eur(grandTotal)}</span></span>
-                  </label>
+
+                {payResolved === 'local' ? (
+                  <>
+                    <div className="pay-choice on">
+                      <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
+                      <span className="muted">Pagas <b>{eur(grandTotal)}</b> en el mostrador al recoger el pedido.</span>
+                    </div>
+                    <button type="button" className="btn btn-primary checkout-next" onClick={() => void finishLocal()} disabled={saving || (invoicingOn && !billingValid)}>
+                      {saving ? 'Enviando…' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
+                    </button>
+                  </>
+                ) : (
+                  <div className="insite-wrap">
+                    <p className="muted">💳 Paga con tarjeta o Bizum. Los datos de la tarjeta no pasan por nuestra web ({eur(grandTotal)}).</p>
+                    {invoicingOn && !billingValid ? (
+                      <p className="muted">Completa la dirección de facturación de arriba para pagar.</p>
+                    ) : redsysConfig ? (
+                      <InSiteForm config={redsysConfig} order={dsOrder} onToken={(id) => void payInsite(id)} onError={setPayError} />
+                    ) : (
+                      <p className="muted">Cargando pasarela de pago…</p>
+                    )}
+                    {saving && <p className="muted">Procesando pago…</p>}
+                    <button type="button" className="chip" style={{ marginTop: 8 }} onClick={() => void payRedirect()} disabled={saving}>
+                      ¿Prefieres pagar en la pasarela? (redirección)
+                    </button>
+                  </div>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-primary checkout-next"
-                  onClick={() => void confirm(payResolved)}
-                  disabled={saving || (invoicingOn && !billingValid)}
-                >
-                  {saving
-                    ? 'Procesando…'
-                    : invoicingOn && !billingValid
-                      ? 'Completa la dirección de facturación'
-                      : payResolved === 'redsys'
-                        ? 'Pagar ahora'
-                        : 'Confirmar pedido'}
-                </button>
+                {payError && <p className="recover-error">⚠ {payError}</p>}
               </>
             )}
           </section>

@@ -31,12 +31,20 @@ function sign(paramsB64: string, order: string): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
     if (!MERCHANT || !SECRET) return res.status(500).json({ error: 'Redsys no configurado (faltan variables REDSYS_*)' });
+
+    // GET → public config for the InSite card form (no secret).
+    if (req.method === 'GET') {
+      const jsUrl = ENV === 'prod' ? 'https://sis.redsys.es/sis/NC/redsysV3.js' : 'https://sis-t.redsys.es:25443/sis/NC/sandbox/redsysV3.js';
+      return res.status(200).json({ merchantCode: MERCHANT, terminal: TERMINAL, env: ENV, jsUrl });
+    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
     if (!process.env.DATABASE_URL) return res.status(500).json({ error: 'Falta DATABASE_URL' });
 
-    const { orderId, method } = (req.body ?? {}) as { orderId?: string; method?: 'card' | 'bizum' };
+    const { orderId, method, idOper, order } = (req.body ?? {}) as {
+      orderId?: string; method?: 'card' | 'bizum'; idOper?: string; order?: string;
+    };
     if (!orderId) return res.status(400).json({ error: 'falta orderId' });
 
     const sql = neon(process.env.DATABASE_URL);
@@ -46,8 +54,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (amountCents <= 0) return res.status(400).json({ error: 'importe inválido' });
 
     // Redsys order number: 4-12 chars, first 4 numeric, unique. Our real id goes
-    // in MERCHANTDATA so the notification can find the order.
-    const dsOrder = (String(Date.now()).slice(-10) + Math.floor(10 + Math.random() * 89)).slice(0, 12);
+    // in MERCHANTDATA so the notification can find the order. For InSite the order
+    // must match the one used to generate the idOper, so accept it from the client.
+    const dsOrder = order && /^\d{4,12}$/.test(order)
+      ? order
+      : (String(Date.now()).slice(-10) + Math.floor(10 + Math.random() * 89)).slice(0, 12);
 
     const params: Record<string, string> = {
       DS_MERCHANT_AMOUNT: String(amountCents),
@@ -65,6 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     if (method === 'bizum') params.DS_MERCHANT_PAYMETHODS = 'z';
     else if (method === 'card') params.DS_MERCHANT_PAYMETHODS = 'C';
+    if (idOper) params.DS_MERCHANT_IDOPER = String(idOper); // InSite: tokenised card
 
     const paramsB64 = Buffer.from(JSON.stringify(params), 'utf8').toString('base64');
     return res.status(200).json({
