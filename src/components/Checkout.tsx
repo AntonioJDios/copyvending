@@ -452,18 +452,24 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                 {delivery === 'envio' && (
                   <>
                     {shippingCfg?.info?.trim() && <p className="muted checkout-mode-hint">{shippingCfg.info}</p>}
-                    {loggedIn && (customer?.addresses?.length ?? 0) > 0 && (
-                      <label className="field-block">
-                        Usar una dirección guardada
-                        <select value={selectedShipId} onChange={(e) => chooseShip(e.target.value)}>
-                          <option value="">➕ Nueva dirección…</option>
+                    {loggedIn && (customer?.addresses?.length ?? 0) > 0 ? (
+                      <>
+                        <div className="addr-pick">
                           {customer!.addresses!.map((a) => (
-                            <option key={a.id} value={a.id}>{(a.label || a.linea1 || 'Dirección')} · {a.cp}</option>
+                            <button key={a.id} type="button" className={`addr-pick-card${selectedShipId === a.id ? ' on' : ''}`} onClick={() => chooseShip(a.id!)}>
+                              <b>{a.label || a.linea1 || 'Dirección'}</b>
+                              <span className="muted">{[a.linea1, a.linea2].filter(Boolean).join(', ')} · {a.cp} {a.ciudad}</span>
+                            </button>
                           ))}
-                        </select>
-                      </label>
+                          <button type="button" className={`addr-pick-card addr-pick-new${selectedShipId === '' ? ' on' : ''}`} onClick={() => chooseShip('')}>
+                            ➕ Otra dirección
+                          </button>
+                        </div>
+                        {selectedShipId === '' && <AddressForm value={shipAddr} onChange={setShipAddr} />}
+                      </>
+                    ) : (
+                      <AddressForm value={shipAddr} onChange={setShipAddr} />
                     )}
-                    <AddressForm value={shipAddr} onChange={setShipAddr} />
                     {shipAddr.cp?.trim() && quote && !quote.allowed && (
                       <p className="recover-error">⚠ No realizamos envíos a ese código postal (Canarias no disponible).</p>
                     )}

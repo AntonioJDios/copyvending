@@ -63,9 +63,43 @@ interface CartState {
   clear: () => void;
 }
 
+// Persist the cart so a page refresh (or coming back from the Redsys redirect)
+// doesn't lose the in-progress order. Files live in R2 by storageKey; the cart
+// only holds their metadata + small thumbnails, so it's safe to store.
+const KEY = 'copisteria/cart/v1';
+function loadCart(): CartProject[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw) as CartProject[];
+  } catch {
+    /* corrupt/unavailable storage → empty cart */
+  }
+  return [];
+}
+function saveCart(items: CartProject[]): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(items));
+  } catch {
+    /* quota exceeded / unavailable → cart just won't persist (non-fatal) */
+  }
+}
+
 export const useCart = create<CartState>()((set) => ({
-  items: [],
-  add: (project) => set((s) => ({ items: [...s.items, project] })),
-  remove: (id) => set((s) => ({ items: s.items.filter((p) => p.id !== id) })),
-  clear: () => set({ items: [] }),
+  items: loadCart(),
+  add: (project) =>
+    set((s) => {
+      const items = [...s.items, project];
+      saveCart(items);
+      return { items };
+    }),
+  remove: (id) =>
+    set((s) => {
+      const items = s.items.filter((p) => p.id !== id);
+      saveCart(items);
+      return { items };
+    }),
+  clear: () => {
+    saveCart([]);
+    set({ items: [] });
+  },
 }));
