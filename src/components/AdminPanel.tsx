@@ -6,6 +6,7 @@ import {
   CARAS,
   COLORS,
   DEFAULT_CATALOG,
+  DEFAULT_PAYMENTS,
   FINISH_LABEL,
   FOLIO_LABEL,
   GROSORES,
@@ -13,7 +14,10 @@ import {
   priceKey,
   type Catalog,
   type ColorOption,
+  type PaymentMethodConfig,
 } from '../domain/catalog';
+
+type AdminTab = 'catalogo' | 'pagos' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
@@ -26,6 +30,7 @@ export function AdminPanel() {
   const setCatalog = useConfigurator((s) => s.setCatalog);
   const [draft, setDraft] = useState<Catalog>(() => structuredClone(catalog));
   const [dirty, setDirty] = useState(false);
+  const [tab, setTab] = useState<AdminTab>('catalogo');
 
   const edit = (fn: (d: Catalog) => void) =>
     setDraft((prev) => {
@@ -53,7 +58,7 @@ export function AdminPanel() {
   return (
     <div className="app admin">
       <header className="topbar">
-        <h1>Administración · catálogo</h1>
+        <h1>Administración</h1>
         <nav className="topnav">
           <a className="btn" href="#pedidos">
             Pedidos
@@ -68,6 +73,17 @@ export function AdminPanel() {
       </header>
 
       <div className="admin-body">
+        <nav className="admin-tabs">
+          <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Catálogo y precios</button>
+          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos</button>
+          <button type="button" className={`admin-tab${tab === 'asistente' ? ' on' : ''}`} onClick={() => setTab('asistente')}>Asistente</button>
+          {API_BASE && (
+            <button type="button" className={`admin-tab${tab === 'herramientas' ? ' on' : ''}`} onClick={() => setTab('herramientas')}>Herramientas</button>
+          )}
+        </nav>
+
+        {tab === 'catalogo' && (
+          <>
         {/* Perfiles rápidos */}
         <PresetsEditor presets={draft.presets} onChange={(presets) => change((d) => { d.presets = presets; })} />
 
@@ -292,8 +308,12 @@ export function AdminPanel() {
         {/* Colores */}
         <ColorEditor title="Colores de anillas" items={draft.ringColors} onChange={(items) => change((d) => { d.ringColors = items; })} />
         <ColorEditor title="Colores de contraportada" items={draft.coverColors} onChange={(items) => change((d) => { d.coverColors = items; })} />
+          </>
+        )}
 
-        {/* Asistente IA */}
+        {tab === 'pagos' && <PaymentsEditor draft={draft} change={change} />}
+
+        {tab === 'asistente' && (
         <section className="card">
           <h2>Asistente (IA)</h2>
           <p className="muted">Controla el chat de ayuda y las sugerencias automáticas al subir documentos.</p>
@@ -332,8 +352,9 @@ export function AdminPanel() {
             );
           })()}
         </section>
+        )}
 
-        {API_BASE && <EmailTestTool />}
+        {tab === 'herramientas' && API_BASE && <EmailTestTool />}
       </div>
 
       <footer className="admin-actions">
@@ -553,6 +574,42 @@ function ColorEditor({ title, items, onChange }: { title: string; items: ColorOp
           + Añadir color
         </button>
       </div>
+    </section>
+  );
+}
+
+/** Payment methods offered at checkout. "Pay at counter" now; Redsys later. */
+function PaymentsEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const p = draft.payments ?? DEFAULT_PAYMENTS;
+  const setLocal = (patch: Partial<PaymentMethodConfig>) =>
+    change((d) => {
+      const cur = d.payments ?? structuredClone(DEFAULT_PAYMENTS);
+      d.payments = { ...cur, local: { ...cur.local, ...patch } };
+    });
+  return (
+    <section className="card">
+      <h2>Métodos de pago</h2>
+      <p className="muted">Cómo pueden pagar tus clientes al tramitar el pedido.</p>
+
+      <div className="pay-method">
+        <label className="chk">
+          <input type="checkbox" checked={p.local.enabled} onChange={(e) => setLocal({ enabled: e.target.checked })} />
+          <b>Pagar al recoger</b> <span className="muted">(en el mostrador)</span>
+        </label>
+        <label className="field-inline">
+          Texto para el cliente
+          <input type="text" maxLength={40} value={p.local.label} onChange={(e) => setLocal({ label: e.target.value })} />
+        </label>
+      </div>
+
+      <div className="pay-method pay-soon">
+        <b>Pago online · tarjeta y Bizum (Redsys)</b>
+        <p className="muted">Próximamente. Se activará aquí con su configuración cuando integremos Redsys.</p>
+      </div>
+
+      {!p.local.enabled && (
+        <p className="muted">⚠ Con "Pagar al recoger" desactivado y sin pago online, los clientes no podrán finalizar el pedido.</p>
+      )}
     </section>
   );
 }

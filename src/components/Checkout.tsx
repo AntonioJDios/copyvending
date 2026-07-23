@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
 import { useAuth } from '../store/useAuth';
+import { useConfigurator } from '../store/useConfigurator';
+import { DEFAULT_PAYMENTS } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { AccountButton } from './AccountButton';
@@ -9,7 +11,7 @@ import { AccountButton } from './AccountButton';
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
-const STEPS = ['Datos', 'Revisar', 'Confirmado'] as const;
+const STEPS = ['Datos', 'Revisar', 'Pago', 'Confirmado'] as const;
 
 function itemName(p: ReturnType<typeof useCart.getState>['items'][number]): string {
   if (p.nombre.trim()) return p.nombre.trim();
@@ -40,6 +42,9 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const requestLink = useAuth((s) => s.requestLink);
   const verifyCode = useAuth((s) => s.verifyCode);
   const loggedIn = !!customer;
+
+  const payments = useConfigurator((s) => s.catalog.payments) ?? DEFAULT_PAYMENTS;
+  const localPay = payments.local ?? DEFAULT_PAYMENTS.local;
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
@@ -91,7 +96,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         total,
         status: 'nuevo',
       });
-      setStep(2);
+      setStep(3);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');
     } finally {
@@ -135,7 +140,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       <header className="topbar">
         <h1>Tramitar pedido</h1>
         <nav className="topnav">
-          {step < 2 && (
+          {step < 3 && (
             <button type="button" className="btn" onClick={step === 0 ? onBack : () => setStep(step - 1)}>
               ← Atrás
             </button>
@@ -319,16 +324,35 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               ))}
             </ul>
             <div className="checkout-total">
-              <span>Total (se paga en el mostrador)</span>
+              <span>Total</span>
               <strong>{eur(total)}</strong>
             </div>
-            <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving}>
-              {saving ? 'Enviando…' : 'Confirmar pedido'}
+            <button type="button" className="btn btn-primary checkout-next" onClick={() => setStep(2)}>
+              Continuar al pago
             </button>
           </section>
         )}
 
         {step === 2 && (
+          <section className="checkout-card">
+            <h2>Pago</h2>
+            {localPay.enabled ? (
+              <>
+                <div className="pay-choice on">
+                  <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
+                  <span className="muted">Pagas <b>{eur(total)}</b> en el mostrador al recoger el pedido.</span>
+                </div>
+                <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving}>
+                  {saving ? 'Enviando…' : 'Confirmar pedido'}
+                </button>
+              </>
+            ) : (
+              <p className="muted">No hay métodos de pago disponibles ahora mismo. Contacta con la copistería.</p>
+            )}
+          </section>
+        )}
+
+        {step === 3 && (
           <section className="checkout-card checkout-done">
             <div className="checkout-check">✓</div>
             <h2>¡Pedido enviado!</h2>

@@ -19,6 +19,20 @@ export interface ColorOption {
   extra?: number;
 }
 
+/** Payment methods offered at checkout (admin-configurable). Extensible: Redsys
+ *  (card / Bizum) will be added here with its own config. */
+export interface PaymentMethodConfig {
+  enabled: boolean;
+  label: string;
+}
+export interface PaymentsConfig {
+  /** Pay in person at the counter when picking up the order. */
+  local: PaymentMethodConfig;
+}
+export const DEFAULT_PAYMENTS: PaymentsConfig = {
+  local: { enabled: true, label: 'Pagar al recoger' },
+};
+
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */
 export interface AssistantConfig {
   /** Show the chat assistant to customers. */
@@ -35,6 +49,8 @@ export interface Catalog {
   presets: Preset[];
   /** AI assistant behaviour (optional; absent = defaults on). */
   assistant?: AssistantConfig;
+  /** Payment methods (optional; absent = only "pay at counter"). */
+  payments?: PaymentsConfig;
   /** Paper sizes offered to the customer. */
   enabledSizes: Size[];
   /** Ring/spiral colors offered when the finish is AnillasColores. */
@@ -109,6 +125,7 @@ export const DEFAULT_CATALOG: Catalog = {
     suggestEnabled: true,
     instructions: '',
   },
+  payments: DEFAULT_PAYMENTS,
   enabledSizes: ['A4', 'A3', 'A5'],
   ringColors: [
     { name: 'Transparente', hex: '#f2f2f2', img: '/anillas/transparente.png', enabled: true },

@@ -1940,6 +1940,59 @@ body {
 .account-orders li strong {
   margin-left: auto;
 }
+/* Pestañas del admin */
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border, #e6e9ee);
+}
+.admin-tab {
+  border: none;
+  background: transparent;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted, #67707a);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.admin-tab:hover {
+  color: var(--text, #1f2933);
+}
+.admin-tab.on {
+  color: var(--brand, #0ea5b7);
+  border-bottom-color: var(--brand, #0ea5b7);
+}
+
+/* Métodos de pago (admin) */
+.pay-method {
+  padding: 12px 0;
+  border-top: 1px solid var(--border, #e6e9ee);
+}
+.pay-method .field-inline {
+  margin-top: 8px;
+}
+.pay-soon {
+  opacity: 0.7;
+}
+
+/* Paso de pago (checkout) */
+.pay-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--brand, #0ea5b7);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.pay-choice-name {
+  font-size: 15px;
+}
+
 .account-head {
   display: flex;
   align-items: flex-start;
