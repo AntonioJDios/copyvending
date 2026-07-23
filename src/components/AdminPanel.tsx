@@ -644,12 +644,22 @@ function PaymentsEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
         </label>
       </div>
 
-      <div className="pay-method pay-soon">
-        <b>Pago online · tarjeta y Bizum (Redsys)</b>
-        <p className="muted">Próximamente. Se activará aquí con su configuración cuando integremos Redsys.</p>
+      <div className="pay-method">
+        <label className="chk">
+          <input
+            type="checkbox"
+            checked={p.redsys?.enabled ?? false}
+            onChange={(e) => change((d) => {
+              const cur = d.payments ?? structuredClone(DEFAULT_PAYMENTS);
+              d.payments = { ...cur, redsys: { enabled: e.target.checked } };
+            })}
+          />
+          <b>Pago online · tarjeta y Bizum (Redsys)</b>
+        </label>
+        <p className="muted">Las credenciales (comercio, terminal, clave, entorno) se configuran en las variables del servidor <code>REDSYS_*</code>. Necesario para el envío a domicilio (exige pago previo).</p>
       </div>
 
-      {!p.local.enabled && (
+      {!p.local.enabled && !(p.redsys?.enabled) && (
         <p className="muted">⚠ Con "Pagar al recoger" desactivado y sin pago online, los clientes no podrán finalizar el pedido.</p>
       )}
     </section>

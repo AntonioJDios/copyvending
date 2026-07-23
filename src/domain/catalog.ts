@@ -28,9 +28,12 @@ export interface PaymentMethodConfig {
 export interface PaymentsConfig {
   /** Pay in person at the counter when picking up the order. */
   local: PaymentMethodConfig;
+  /** Online payment via Redsys (card + Bizum). Credentials live in server env. */
+  redsys?: { enabled: boolean };
 }
 export const DEFAULT_PAYMENTS: PaymentsConfig = {
   local: { enabled: true, label: 'Pagar al recoger' },
+  redsys: { enabled: false },
 };
 
 /** The shop's own identity/contact data, shared by invoices and the privacy

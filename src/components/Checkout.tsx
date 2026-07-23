@@ -7,6 +7,7 @@ import { DEFAULT_PAYMENTS } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
+import { payWithRedsys } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
 
@@ -67,6 +68,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [billingAddr, setBillingAddr] = useState<Address>({});
   const [delivery, setDelivery] = useState<'recoger' | 'envio'>('recoger');
   const [shipAddr, setShipAddr] = useState<Address>({});
+  const [payMethod, setPayMethod] = useState<'local' | 'redsys'>('local');
   const [saving, setSaving] = useState(false);
 
   const billingValid = !!(billingAddr.linea1?.trim() && billingAddr.cp?.trim() && billingAddr.ciudad?.trim());
@@ -78,7 +80,19 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   // Home delivery requires prepayment (no pay-at-counter). Online payment isn't
   // wired yet (Redsys pending), so shipping can't be completed until then.
   const requiresPrepay = shippingOn && delivery === 'envio';
-  const onlinePayAvailable = false; // TODO: enable when Redsys (online pay) is added
+  const redsysOn = !!payments.redsys?.enabled;
+  const canLocal = localPay.enabled && !requiresPrepay; // no pay-at-counter for delivery
+  const canOnline = redsysOn;
+  // Resolved payment method for this order.
+  const payResolved: 'local' | 'redsys' | null = requiresPrepay
+    ? (canOnline ? 'redsys' : null)
+    : payMethod === 'redsys' && canOnline
+      ? 'redsys'
+      : canLocal
+        ? 'local'
+        : canOnline
+          ? 'redsys'
+          : null;
   const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
 
   // Recognise an existing session and prefill from the account.
@@ -101,7 +115,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
   const canContinue = loggedIn || (dataOk && (mode === 'guest' || consent));
 
-  const confirm = async () => {
+  const confirm = async (payVia: 'local' | 'redsys') => {
     if (saving) return;
     setSaving(true);
     try {
@@ -123,12 +137,17 @@ export function Checkout({ onBack }: { onBack: () => void }) {
         total: grandTotal,
         status: 'nuevo',
         paid: false,
-        paymentMethod: 'local',
+        paymentMethod: payVia,
         shippingMethod: shippingOn ? delivery : undefined,
         shippingCost,
       });
       // Remember this billing address as the account's default for next time.
       if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
+      if (payVia === 'redsys') {
+        clear(); // order is created; hand off to Redsys (navigates away)
+        await payWithRedsys(orderId);
+        return;
+      }
       setStep(3);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo enviar el pedido. Inténtalo de nuevo.');
@@ -374,7 +393,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                       <p className="free-ship-hint">🚚 ¡Añade <b>{eur(quote.toFree)}</b> más y el envío te sale <b>gratis</b>!</p>
                     )}
                     {quote?.allowed && quote.free && <p className="free-ship-ok">✓ ¡Enhorabuena, tu envío es gratis!</p>}
-                    <p className="muted">ℹ️ Los envíos requieren <b>pago online</b> (disponible próximamente).</p>
+                    <p className="muted">ℹ️ Los envíos requieren <b>pago online</b>{redsysOn ? ' (tarjeta o Bizum, en el paso siguiente).' : ' (aún no activo).'}</p>
                   </>
                 )}
               </div>
@@ -408,25 +427,44 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               </div>
             )}
 
-            {requiresPrepay ? (
-              onlinePayAvailable ? null /* futuro: métodos de pago online (Redsys) */ : (
+            {payResolved === null ? (
+              requiresPrepay ? (
                 <p className="muted">
-                  🚚 El <b>envío a domicilio</b> requiere <b>pago online</b>, que estará disponible próximamente. Para
-                  finalizar ahora, vuelve atrás y elige <b>Recoger en tienda</b> (pago en el mostrador).
+                  🚚 El <b>envío a domicilio</b> requiere <b>pago online</b>, que no está activo. Vuelve atrás y elige{' '}
+                  <b>Recoger en tienda</b>, o pide a la copistería que active el pago online.
                 </p>
+              ) : (
+                <p className="muted">No hay métodos de pago disponibles ahora mismo. Contacta con la copistería.</p>
               )
-            ) : localPay.enabled ? (
+            ) : (
               <>
-                <div className="pay-choice on">
-                  <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
-                  <span className="muted">Pagas <b>{eur(grandTotal)}</b> en el mostrador al recoger el pedido.</span>
-                </div>
-                <button type="button" className="btn btn-primary checkout-next" onClick={confirm} disabled={saving || (invoicingOn && !billingValid)}>
-                  {saving ? 'Enviando…' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
+                {canLocal && (
+                  <label className={`pay-opt${payResolved === 'local' ? ' on' : ''}`}>
+                    <input type="radio" name="paymethod" checked={payResolved === 'local'} onChange={() => setPayMethod('local')} />
+                    <span>🏪 <b>{localPay.label}</b> · <span className="muted">pagas {eur(grandTotal)} en el mostrador</span></span>
+                  </label>
+                )}
+                {canOnline && (
+                  <label className={`pay-opt${payResolved === 'redsys' ? ' on' : ''}`}>
+                    <input type="radio" name="paymethod" checked={payResolved === 'redsys'} onChange={() => setPayMethod('redsys')} />
+                    <span>💳 <b>Pagar ahora</b> (tarjeta o Bizum) · <span className="muted">{eur(grandTotal)}</span></span>
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary checkout-next"
+                  onClick={() => void confirm(payResolved)}
+                  disabled={saving || (invoicingOn && !billingValid)}
+                >
+                  {saving
+                    ? 'Procesando…'
+                    : invoicingOn && !billingValid
+                      ? 'Completa la dirección de facturación'
+                      : payResolved === 'redsys'
+                        ? 'Pagar ahora'
+                        : 'Confirmar pedido'}
                 </button>
               </>
-            ) : (
-              <p className="muted">No hay métodos de pago disponibles ahora mismo. Contacta con la copistería.</p>
             )}
           </section>
         )}
