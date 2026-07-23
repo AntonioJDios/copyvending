@@ -1927,6 +1927,16 @@ body {
 .account-orders li strong {
   margin-left: auto;
 }
+.account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.account-head h2 {
+  margin: 0 0 4px;
+}
 .account-danger {
   border: 1px solid #f0c9c9;
 }

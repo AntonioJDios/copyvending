@@ -122,11 +122,18 @@ export function Account() {
         ) : customer ? (
           <>
             <section className="checkout-card">
-              <h2>Hola, {customer.nombre} 👋</h2>
-              <p className="muted">
-                {customer.nombre} {customer.apellidos} · {customer.email}
-                {customer.telefono ? ` · ${customer.telefono}` : ''}
-              </p>
+              <div className="account-head">
+                <div>
+                  <h2>Hola, {customer.nombre} 👋</h2>
+                  <p className="muted">
+                    {customer.nombre} {customer.apellidos} · {customer.email}
+                    {customer.telefono ? ` · ${customer.telefono}` : ''}
+                  </p>
+                </div>
+                <button type="button" className="btn" onClick={() => void logout()}>
+                  Cerrar sesión
+                </button>
+              </div>
             </section>
 
             <section className="checkout-card">
