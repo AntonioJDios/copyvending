@@ -197,7 +197,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     setPayError('');
     try {
       await placeOrder('redsys');
-      clear();
+      // No vaciamos el carrito aquí: solo cuando el pago quede confirmado (al
+      // volver a #recoger). Así, si el cliente cancela en la pasarela, no lo pierde.
       await authorizeInsite(orderId, idOper, dsOrder);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'No se pudo procesar el pago.');
@@ -215,7 +216,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     setPayError('');
     try {
       await placeOrder('redsys');
-      clear();
+      // No vaciamos el carrito aquí: solo cuando el pago quede confirmado (al
+      // volver a #recoger). Así, si el cliente cancela en Redsys, no lo pierde.
       await payWithRedsys(orderId, method);
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'No se pudo iniciar el pago.');

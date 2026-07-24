@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '../lib/api';
 import { useConfigurator } from '../store/useConfigurator';
+import { useCart } from '../store/useCart';
 import { AccountButton } from './AccountButton';
 import type { Order, OrderStatus } from '../store/useOrders';
 
@@ -19,6 +20,8 @@ export function RecoverOrder() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [justPaid, setJustPaid] = useState(false);
+  const [paidRetries, setPaidRetries] = useState(0);
+  const clearCart = useCart((s) => s.clear);
   const loadProject = useConfigurator((s) => s.loadProject);
   const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
 
@@ -64,6 +67,23 @@ export function RecoverOrder() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // After returning from the gateway, empty the cart ONLY once the order is
+  // actually paid (never on a cancellation). The Redsys notify webhook marks it
+  // paid server-side; it can lag the redirect, so we re-check a few times.
+  useEffect(() => {
+    if (!justPaid || !order) return;
+    if (order.paid) {
+      clearCart();
+    } else if (paidRetries < 3) {
+      const t = setTimeout(() => {
+        setPaidRetries((r) => r + 1);
+        void lookup(order.id);
+      }, 2500);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [justPaid, order]);
 
   return (
     <div className="app">
