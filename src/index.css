@@ -2302,6 +2302,12 @@ body {
 .coupon-stats-table th.sortable.on { color: var(--brand, #0ea5b7); }
 .coupon-matrix td.zero { color: var(--muted, #aab2bb); }
 
+.coupon-src-toggles {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
 /* Coupon search in the admin */
 .coupon-search {
   width: 100%;

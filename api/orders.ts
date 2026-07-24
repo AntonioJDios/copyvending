@@ -374,6 +374,7 @@ function applySource(cat: PriceCatalog, source: string): PriceCatalog {
 type Coupon = {
   code: string; type: 'percent' | 'fixed'; value: number; active: boolean;
   minSubtotal?: number; maxUses?: number; maxUsesPerCustomer?: number; expiresAt?: number;
+  sources?: string[];
 };
 async function getCoupons(): Promise<Coupon[]> {
   try {
@@ -385,11 +386,12 @@ async function getCoupons(): Promise<Coupon[]> {
 }
 /** Validate a coupon against a products subtotal (+ optional customer email for
  *  the per-customer limit). Returns the € discount to apply. */
-async function validateCoupon(codeRaw: string, subtotal: number, email?: string): Promise<{ ok: boolean; discount: number; code?: string; reason?: string }> {
+async function validateCoupon(codeRaw: string, subtotal: number, email?: string, source?: string): Promise<{ ok: boolean; discount: number; code?: string; reason?: string }> {
   const code = String(codeRaw || '').trim().toUpperCase();
   if (!code) return { ok: false, discount: 0, reason: 'Introduce un código' };
   const c = (await getCoupons()).find((x) => String(x.code || '').trim().toUpperCase() === code);
   if (!c || !c.active) return { ok: false, discount: 0, reason: 'Cupón no válido' };
+  if (source && Array.isArray(c.sources) && !c.sources.includes(source)) return { ok: false, discount: 0, reason: 'Cupón no válido para esta fuente' };
   if (c.expiresAt && Date.now() > Number(c.expiresAt)) return { ok: false, discount: 0, reason: 'Cupón caducado' };
   if (c.minSubtotal && subtotal < Number(c.minSubtotal)) {
     return { ok: false, discount: 0, reason: `Mínimo ${Number(c.minSubtotal).toFixed(2).replace('.', ',')} € para este cupón` };
@@ -451,7 +453,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Validate a coupon (public preview for the checkout: never lists codes).
       if (req.query.coupon !== undefined) {
         const q = (k: string) => (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined));
-        const v = await validateCoupon(q('coupon') || '', Number(q('subtotal')) || 0, q('email'));
+        const v = await validateCoupon(q('coupon') || '', Number(q('subtotal')) || 0, q('email'), q('source') || 'online');
         return res.status(200).json(v);
       }
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
@@ -521,7 +523,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let couponDiscount = 0;
       if ((sourceMods.coupons ?? true) && typeof o.couponCode === 'string' && o.couponCode.trim()) {
         const email = (o.customer as { email?: string } | undefined)?.email;
-        const v = await validateCoupon(o.couponCode, itemsSubtotal, email);
+        const v = await validateCoupon(o.couponCode, itemsSubtotal, email, source);
         if (v.ok) {
           couponCode = v.code ?? null;
           couponDiscount = v.discount;

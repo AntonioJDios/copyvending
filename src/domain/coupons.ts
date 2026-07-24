@@ -20,6 +20,9 @@ export interface Coupon {
   maxUsesPerCustomer?: number;
   /** Expiry (ms timestamp). Undefined = never expires. */
   expiresAt?: number;
+  /** Sources where the coupon is valid (Web/Papelería). Absent = both. Email
+   *  never uses coupons. */
+  sources?: ('online' | 'mostrador')[];
   createdAt?: number;
 }
 
@@ -30,6 +33,7 @@ export const NEW_COUPON: Omit<Coupon, 'code'> = {
   minSubtotal: 0,
   maxUses: 0,
   maxUsesPerCustomer: 0,
+  sources: ['online', 'mostrador'],
 };
 
 /** € discount for a products subtotal (rounded to cents, never above the subtotal). */

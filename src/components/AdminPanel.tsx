@@ -424,12 +424,7 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'cupones' && (
-          <>
-            <SourceToggles draft={draft} change={change} mod="coupons" label="Cupones" />
-            <CouponsEditor />
-          </>
-        )}
+        {tab === 'cupones' && <CouponsEditor />}
 
         {tab === 'asistente' && (
         <>
@@ -1148,6 +1143,28 @@ function CouponsEditor() {
                 <input type="checkbox" checked={c.active} onChange={(e) => update(i, { active: e.target.checked })} />
                 Activo
               </label>
+              <div className="field-inline">
+                Fuentes (dónde aplica)
+                <span className="coupon-src-toggles">
+                  {(['online', 'mostrador'] as const).map((s) => {
+                    const list = c.sources ?? ['online', 'mostrador'];
+                    return (
+                      <label key={s} className="chk">
+                        <input
+                          type="checkbox"
+                          checked={list.includes(s)}
+                          onChange={(e) => {
+                            const base = c.sources ?? ['online', 'mostrador'];
+                            const next = e.target.checked ? Array.from(new Set([...base, s])) : base.filter((x) => x !== s);
+                            update(i, { sources: next as ('online' | 'mostrador')[] });
+                          }}
+                        />
+                        {s === 'online' ? 'Web' : 'Papelería'}
+                      </label>
+                    );
+                  })}
+                </span>
+              </div>
             </div>
             <div className="coupon-meta">
               <span className="muted">

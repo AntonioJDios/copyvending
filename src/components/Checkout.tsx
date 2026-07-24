@@ -162,7 +162,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     setCouponBusy(true);
     setCouponError('');
     try {
-      const r = await validateCouponRemote(c, total, email.trim().toLowerCase() || undefined);
+      const r = await validateCouponRemote(c, total, email.trim().toLowerCase() || undefined, CURRENT_SOURCE);
       if (r.ok) {
         setCouponApplied({ code: r.code ?? c, discount: r.discount });
         setCouponError('');

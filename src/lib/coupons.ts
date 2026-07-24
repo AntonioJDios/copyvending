@@ -35,10 +35,11 @@ export interface CouponCheck {
 
 /** Ask the server to validate a code for a given products subtotal (never trusts
  *  the client; the same check re-runs when the order is placed). */
-export async function validateCouponRemote(code: string, subtotal: number, email?: string): Promise<CouponCheck> {
+export async function validateCouponRemote(code: string, subtotal: number, email?: string, source?: string): Promise<CouponCheck> {
   if (!API_BASE) return { ok: false, discount: 0, reason: 'Sin conexión' };
   const params = new URLSearchParams({ coupon: code, subtotal: String(subtotal) });
   if (email) params.set('email', email);
+  if (source) params.set('source', source);
   const res = await fetch(`${API_BASE}/orders?${params.toString()}`);
   if (!res.ok) return { ok: false, discount: 0, reason: `Error ${res.status}` };
   return (await res.json()) as CouponCheck;
