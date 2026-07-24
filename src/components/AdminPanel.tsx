@@ -924,6 +924,7 @@ function CouponsEditor() {
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState('');
+  const [visible, setVisible] = useState(12);
   const orders = useOrders((s) => s.orders);
   const fetchOrders = useOrders((s) => s.fetchOrders);
 
@@ -949,7 +950,13 @@ function CouponsEditor() {
     setList((l) => l.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
     setSaved(false);
   };
-  const add = () => { setList((l) => [...l, { code: '', ...NEW_COUPON, createdAt: Date.now() }]); setSaved(false); };
+  const add = () => {
+    // Prepend so the new (empty) coupon is always visible at the top, even with
+    // pagination or an active search.
+    setList((l) => [{ code: '', ...NEW_COUPON, createdAt: Date.now() }, ...l]);
+    setFilter('');
+    setSaved(false);
+  };
   const removeAt = (i: number) => { setList((l) => l.filter((_, idx) => idx !== i)); setSaved(false); };
 
   const dateToInput = (ts?: number) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
@@ -981,6 +988,10 @@ function CouponsEditor() {
     );
   }
 
+  // Keep real indices (edit/delete operate by index) while filtering + paginating.
+  const matches = list.map((c, i) => ({ c, i })).filter(({ c }) => !filter || c.code.toUpperCase().includes(filter.toUpperCase()));
+  const shown = matches.slice(0, visible);
+
   return (
     <section className="card">
       <h2>Cupones de descuento</h2>
@@ -995,8 +1006,7 @@ function CouponsEditor() {
           onChange={(e) => setFilter(e.target.value)}
         />
       )}
-      {list.map((c, i) => {
-        if (filter && !c.code.toUpperCase().includes(filter.toUpperCase())) return null;
+      {shown.map(({ c, i }) => {
         const u = usage(c.code);
         return (
           <div className="coupon-row" key={i}>
@@ -1042,11 +1052,21 @@ function CouponsEditor() {
                 Usos: <b>{u.total}</b>
                 {c.maxUses ? ` / ${c.maxUses}` : ''} · este mes: <b>{u.month}</b>
               </span>
-              <button type="button" className="chip chip-danger" onClick={() => removeAt(i)}>Eliminar</button>
+              <span className="coupon-meta-actions">
+                {c.code.trim() && (
+                  <a className="chip" href={`#estadisticas/cupon/${encodeURIComponent(c.code.trim().toUpperCase())}`}>📊 Estadística</a>
+                )}
+                <button type="button" className="chip chip-danger" onClick={() => removeAt(i)}>Eliminar</button>
+              </span>
             </div>
           </div>
         );
       })}
+      {matches.length > visible && (
+        <button type="button" className="btn coupon-more" onClick={() => setVisible((v) => v + 12)}>
+          Ver más ({matches.length - visible})
+        </button>
+      )}
       <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" className="chip" onClick={add}>+ Añadir cupón</button>
         <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={saving}>

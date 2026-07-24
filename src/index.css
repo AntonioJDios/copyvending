@@ -2230,6 +2230,18 @@ body {
   flex-wrap: wrap;
   margin-top: 10px;
 }
+.coupon-meta-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.coupon-meta-actions a.chip {
+  text-decoration: none;
+}
+.coupon-more {
+  margin: 4px 0 8px;
+}
 
 /* Coupon field in the checkout */
 .coupon-box {

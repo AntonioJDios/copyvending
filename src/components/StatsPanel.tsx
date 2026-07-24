@@ -65,7 +65,12 @@ export function StatsPanel() {
   const [metric, setMetric] = useState<Metric>('revenue');
   const [compare, setCompare] = useState(false);
   const [dailyDays, setDailyDays] = useState(90);
-  const [statsTab, setStatsTab] = useState<'resumen' | 'config' | 'cupones'>('resumen');
+  // Deep link like #estadisticas/cupon/CODE opens the Coupons tab focused on it.
+  const initialCoupon = (() => {
+    const m = window.location.hash.match(/#estadisticas\/cupon\/(.+)$/i);
+    return m ? decodeURIComponent(m[1].split(/[?&]/)[0]).trim().toUpperCase() : '';
+  })();
+  const [statsTab, setStatsTab] = useState<'resumen' | 'config' | 'cupones'>(initialCoupon ? 'cupones' : 'resumen');
 
   useEffect(() => {
     void fetchOrders();
@@ -285,7 +290,7 @@ export function StatsPanel() {
               </>
             )}
 
-            {statsTab === 'cupones' && <CouponStats orders={orders} source={source} />}
+            {statsTab === 'cupones' && <CouponStats orders={orders} source={source} initialCoupon={initialCoupon} />}
           </>
         )}
       </div>
@@ -449,11 +454,11 @@ function SortTh({ k, sort, onSort, children }: { k: CSort; sort: CSort; onSort: 
 
 /** Coupons dashboard: total discount given away, evolution by month, a sortable
  *  per-coupon ranking and a coupon×month usage matrix. */
-function CouponStats({ orders, source }: { orders: Order[]; source: string }) {
+function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; source: string; initialCoupon?: string }) {
   const [months, setMonths] = useState(6);
   const [cmetric, setCmetric] = useState<'discount' | 'uses'>('discount');
   const [sort, setSort] = useState<CSort>('uses');
-  const [selected, setSelected] = useState(''); // '' = all coupons
+  const [selected, setSelected] = useState(initialCoupon); // '' = all coupons
   const [find, setFind] = useState('');
   const data = useMemo(() => couponAnalytics(orders, months, source), [orders, months, source]);
 
