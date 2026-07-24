@@ -65,6 +65,7 @@ export function StatsPanel() {
   const [metric, setMetric] = useState<Metric>('revenue');
   const [compare, setCompare] = useState(false);
   const [dailyDays, setDailyDays] = useState(90);
+  const [statsTab, setStatsTab] = useState<'resumen' | 'config' | 'cupones'>('resumen');
 
   useEffect(() => {
     void fetchOrders();
@@ -196,82 +197,95 @@ export function StatsPanel() {
           <p className="muted" style={{ padding: 20 }}>{loading ? 'Cargando pedidos…' : 'Aún no hay pedidos para analizar.'}</p>
         ) : (
           <>
-            {/* KPIs */}
-            <div className="stats-kpis">
-              <Kpi label="Facturación (IVA incl.)" value={eur(data.totals.revenue)} strong />
-              <Kpi label="Base imponible" value={eur(base)} />
-              <Kpi label={`IVA (${Math.round(VAT_RATE * 100)}%)`} value={eur(vat)} accent />
-              <Kpi label="Pedidos" value={int(data.totals.orders)} />
-              <Kpi label="Ticket medio" value={eur(ticket)} />
-            </div>
+            <nav className="admin-tabs stats-tabs">
+              <button type="button" className={`admin-tab${statsTab === 'resumen' ? ' on' : ''}`} onClick={() => setStatsTab('resumen')}>Resumen</button>
+              <button type="button" className={`admin-tab${statsTab === 'config' ? ' on' : ''}`} onClick={() => setStatsTab('config')}>Configuraciones</button>
+              <button type="button" className={`admin-tab${statsTab === 'cupones' ? ' on' : ''}`} onClick={() => setStatsTab('cupones')}>Cupones</button>
+            </nav>
 
-            {/* Tendencia del periodo */}
-            <section className="card">
-              <h2>Evolución · {metric === 'revenue' ? 'ventas' : 'pedidos'} {unit === 'day' ? 'por día' : 'por mes'}</h2>
-              <TrendChart points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
-            </section>
-
-            {/* Evolución diaria (ventana propia) */}
-            <section className="card">
-              <div className="stats-card-head">
-                <h2>Evolución diaria · {metric === 'revenue' ? 'ventas' : 'pedidos'}</h2>
-                <div className="dayline-ctls">
-                  <label className="stats-cmp sm">
-                    <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
-                    Comparar periodo anterior
-                  </label>
-                  <div className="seg-toggle sm">
-                    {[30, 90, 180, 365].map((d) => (
-                      <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
-                    ))}
-                  </div>
+            {statsTab === 'resumen' && (
+              <>
+                {/* KPIs */}
+                <div className="stats-kpis">
+                  <Kpi label="Facturación (IVA incl.)" value={eur(data.totals.revenue)} strong />
+                  <Kpi label="Base imponible" value={eur(base)} />
+                  <Kpi label={`IVA (${Math.round(VAT_RATE * 100)}%)`} value={eur(vat)} accent />
+                  <Kpi label="Pedidos" value={int(data.totals.orders)} />
+                  <Kpi label="Ticket medio" value={eur(ticket)} />
                 </div>
-              </div>
-              <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
-            </section>
 
-            {/* Cupones de descuento */}
-            <CouponStats orders={orders} source={source} />
-
-            {/* Combinaciones más frecuentes */}
-            <section className="card">
-              <h2>Combinaciones de papel más pedidas</h2>
-              <p className="muted">Tamaño · color · caras · gramaje (sin encuadernación) que más {metric === 'revenue' ? 'facturan' : 'se piden'} en el periodo.</p>
-              <Breakdown buckets={combos} metric={metric} labelOf={(k) => k} />
-            </section>
-
-            {/* Desgloses */}
-            <div className="stats-cols">
-              {source === 'all' && (
+                {/* Tendencia del periodo */}
                 <section className="card">
-                  <h2>Por origen del pedido</h2>
-                  <Breakdown buckets={data.bySource} metric={metric} labelOf={(k) => SOURCE_LABEL[k] ?? cap(k)} />
+                  <h2>Evolución · {metric === 'revenue' ? 'ventas' : 'pedidos'} {unit === 'day' ? 'por día' : 'por mes'}</h2>
+                  <TrendChart points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
                 </section>
-              )}
-              <section className="card">
-                <h2>Por tipo de artículo</h2>
-                <Breakdown buckets={data.byType} metric={metric} labelOf={(k) => TYPE_LABEL[k] ?? cap(k)} />
-              </section>
-            </div>
 
-            <section className="card">
-              <h2>Por configuración de impresión</h2>
-              <p className="muted">{metric === 'revenue' ? 'Facturación' : 'Nº de proyectos'} por cada opción (trabajos de copias/impresión).</p>
-              <div className="stats-cols">
-                <Breakdown title="Color" buckets={data.byConfig.color} metric={metric} labelOf={(k) => (k === 'BN' ? 'Blanco y negro' : 'Color')} />
-                <Breakdown title="Tamaño" buckets={data.byConfig.size} metric={metric} labelOf={(k) => SIZE_LABEL[k as keyof typeof SIZE_LABEL] ?? k} />
-                <Breakdown title="Gramaje" buckets={data.byConfig.grosor} metric={metric} labelOf={(k) => `${k} g`} />
-                <Breakdown title="Encuadernación" buckets={data.byConfig.acabado} metric={metric} labelOf={(k) => FINISH_LABEL[k as keyof typeof FINISH_LABEL] ?? k} />
-                <Breakdown title="Caras" buckets={data.byConfig.dobleCara} metric={metric} labelOf={(k) => (k === '1' ? 'Doble cara' : 'Una cara')} />
-                <Breakdown title="Nº de copias" buckets={data.byCopies} metric={metric} labelOf={(k) => k} />
-              </div>
-            </section>
+                {/* Evolución diaria (ventana propia) */}
+                <section className="card">
+                  <div className="stats-card-head">
+                    <h2>Evolución diaria · {metric === 'revenue' ? 'ventas' : 'pedidos'}</h2>
+                    <div className="dayline-ctls">
+                      <label className="stats-cmp sm">
+                        <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+                        Comparar periodo anterior
+                      </label>
+                      <div className="seg-toggle sm">
+                        {[30, 90, 180, 365].map((d) => (
+                          <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
+                </section>
 
-            <p className="muted stats-note">
-              IVA incluido en los precios al {Math.round(VAT_RATE * 100)}%; base y cuota calculadas para el modelo 303.
-              {source !== 'all' && ` Datos filtrados por origen: ${SOURCE_LABEL[source] ?? cap(source)}.`}{' '}
-              El histórico analizado son los últimos pedidos cargados; los periodos recientes están completos.
-            </p>
+                <p className="muted stats-note">
+                  IVA incluido en los precios al {Math.round(VAT_RATE * 100)}%; base y cuota calculadas para el modelo 303.
+                  {source !== 'all' && ` Datos filtrados por origen: ${SOURCE_LABEL[source] ?? cap(source)}.`}{' '}
+                  El histórico analizado son los últimos pedidos cargados; los periodos recientes están completos.
+                </p>
+              </>
+            )}
+
+            {statsTab === 'config' && (
+              <>
+                {/* Combinaciones más frecuentes */}
+                <section className="card">
+                  <h2>Combinaciones de papel más pedidas</h2>
+                  <p className="muted">Tamaño · color · caras · gramaje (sin encuadernación) que más {metric === 'revenue' ? 'facturan' : 'se piden'} en el periodo.</p>
+                  <Breakdown buckets={combos} metric={metric} labelOf={(k) => k} />
+                </section>
+
+                {/* Desgloses */}
+                <div className="stats-cols">
+                  {source === 'all' && (
+                    <section className="card">
+                      <h2>Por origen del pedido</h2>
+                      <Breakdown buckets={data.bySource} metric={metric} labelOf={(k) => SOURCE_LABEL[k] ?? cap(k)} />
+                    </section>
+                  )}
+                  <section className="card">
+                    <h2>Por tipo de artículo</h2>
+                    <Breakdown buckets={data.byType} metric={metric} labelOf={(k) => TYPE_LABEL[k] ?? cap(k)} />
+                  </section>
+                </div>
+
+                <section className="card">
+                  <h2>Por configuración de impresión</h2>
+                  <p className="muted">{metric === 'revenue' ? 'Facturación' : 'Nº de proyectos'} por cada opción (trabajos de copias/impresión).</p>
+                  <div className="stats-cols">
+                    <Breakdown title="Color" buckets={data.byConfig.color} metric={metric} labelOf={(k) => (k === 'BN' ? 'Blanco y negro' : 'Color')} />
+                    <Breakdown title="Tamaño" buckets={data.byConfig.size} metric={metric} labelOf={(k) => SIZE_LABEL[k as keyof typeof SIZE_LABEL] ?? k} />
+                    <Breakdown title="Gramaje" buckets={data.byConfig.grosor} metric={metric} labelOf={(k) => `${k} g`} />
+                    <Breakdown title="Encuadernación" buckets={data.byConfig.acabado} metric={metric} labelOf={(k) => FINISH_LABEL[k as keyof typeof FINISH_LABEL] ?? k} />
+                    <Breakdown title="Caras" buckets={data.byConfig.dobleCara} metric={metric} labelOf={(k) => (k === '1' ? 'Doble cara' : 'Una cara')} />
+                    <Breakdown title="Nº de copias" buckets={data.byCopies} metric={metric} labelOf={(k) => k} />
+                  </div>
+                </section>
+              </>
+            )}
+
+            {statsTab === 'cupones' && <CouponStats orders={orders} source={source} />}
           </>
         )}
       </div>
@@ -439,6 +453,8 @@ function CouponStats({ orders, source }: { orders: Order[]; source: string }) {
   const [months, setMonths] = useState(6);
   const [cmetric, setCmetric] = useState<'discount' | 'uses'>('discount');
   const [sort, setSort] = useState<CSort>('uses');
+  const [selected, setSelected] = useState(''); // '' = all coupons
+  const [find, setFind] = useState('');
   const data = useMemo(() => couponAnalytics(orders, months, source), [orders, months, source]);
 
   const monthsToggle = (
@@ -461,19 +477,31 @@ function CouponStats({ orders, source }: { orders: Order[]; source: string }) {
     );
   }
 
-  const rows: CouponRow[] = [...data.rows].sort((a, b) => b[sort] - a[sort]);
+  // Coupon in focus for the chart + KPIs ('' = all coupons combined).
+  const sel = selected ? data.rows.find((r) => r.code === selected) ?? null : null;
+  const rowsAll: CouponRow[] = [...data.rows].sort((a, b) => b[sort] - a[sort]);
+  // Table/matrix rows: the single selected one, else the search-filtered list.
+  const rows: CouponRow[] = sel ? [sel] : find ? rowsAll.filter((r) => r.code.includes(find.toUpperCase())) : rowsAll;
   const monthLbl = (mk: string) => { const [, m] = mk.split('-').map(Number); return MONTHS[m - 1]; };
-  const pts: SeriesPoint[] = data.monthly.map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }));
+  // Chart series: the selected coupon's own months, else the overall series.
+  const pts: SeriesPoint[] = sel
+    ? data.months.map((mk) => ({ period: mk, revenue: sel.byMonth[mk]?.discount ?? 0, orders: sel.byMonth[mk]?.uses ?? 0 }))
+    : data.monthly.map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }));
   const cval = (p: SeriesPoint) => (cmetric === 'discount' ? p.revenue : p.orders);
   const cfmt = (n: number) => (cmetric === 'discount' ? eur0(n) : int(n));
   const cmax = Math.max(1, ...pts.map(cval));
   const cellVal = (v?: { uses: number; discount: number }) => (v ? (cmetric === 'discount' ? v.discount : v.uses) : 0);
   const pct = data.totals.ordersTotal > 0 ? Math.round((data.totals.ordersWithCoupon / data.totals.ordersTotal) * 100) : 0;
+  // KPI values: for the selected coupon, else the totals.
+  const kUses = sel ? sel.uses : data.totals.ordersWithCoupon;
+  const kDiscount = sel ? sel.discount : data.totals.discount;
+  const kRevenue = sel ? sel.revenue : data.totals.revenue;
+  const kAvg = sel ? sel.avgOrder : data.totals.ordersWithCoupon > 0 ? data.totals.revenue / data.totals.ordersWithCoupon : 0;
 
   return (
     <section className="card">
       <div className="stats-card-head">
-        <h2>Cupones de descuento</h2>
+        <h2>Cupones de descuento{sel ? ` · ${sel.code}` : ''}</h2>
         <div className="dayline-ctls">
           <div className="seg-toggle sm">
             <button type="button" className={cmetric === 'discount' ? 'on' : ''} onClick={() => setCmetric('discount')}>Descuento €</button>
@@ -483,15 +511,36 @@ function CouponStats({ orders, source }: { orders: Order[]; source: string }) {
         </div>
       </div>
 
-      <div className="stats-kpis">
-        <Kpi label="Descuento total (dejado de ganar)" value={eur(data.totals.discount)} accent />
-        <Kpi label="Pedidos con cupón" value={`${int(data.totals.ordersWithCoupon)} · ${pct}%`} />
-        <Kpi label="Ingresos con cupón" value={eur(data.totals.revenue)} />
-        <Kpi label="Ticket medio con cupón" value={eur(data.totals.ordersWithCoupon > 0 ? data.totals.revenue / data.totals.ordersWithCoupon : 0)} />
+      {/* Selector de cupón: sin selección = todos; con selección = solo ese. */}
+      <div className="coupon-select-row">
+        <select value={selected} onChange={(e) => setSelected(e.target.value)}>
+          <option value="">Todos los cupones</option>
+          {data.rows.map((r) => (
+            <option key={r.code} value={r.code}>{r.code}</option>
+          ))}
+        </select>
+        {sel && <button type="button" className="chip" onClick={() => setSelected('')}>✕ Ver todos</button>}
       </div>
 
-      <h3>Evolución · {cmetric === 'discount' ? 'descuento' : 'usos'} por mes</h3>
+      <div className="stats-kpis">
+        <Kpi label={sel ? 'Descuento (dejado de ganar)' : 'Descuento total (dejado de ganar)'} value={eur(kDiscount)} accent />
+        <Kpi label="Pedidos con cupón" value={sel ? int(kUses) : `${int(kUses)} · ${pct}%`} />
+        <Kpi label="Ingresos con cupón" value={eur(kRevenue)} />
+        <Kpi label="Ticket medio con cupón" value={eur(kAvg)} />
+      </div>
+
+      <h3>Evolución · {cmetric === 'discount' ? 'descuento' : 'usos'} por mes {sel ? `· ${sel.code}` : '· todos'}</h3>
       <TrendChart points={pts} max={cmax} unit="month" value={cval} fmt={cfmt} />
+
+      {!sel && data.rows.length > 1 && (
+        <input
+          className="coupon-search"
+          type="search"
+          placeholder="🔎 Buscar cupón por código…"
+          value={find}
+          onChange={(e) => setFind(e.target.value)}
+        />
+      )}
 
       <h3>Por cupón</h3>
       <div className="coupon-stats-wrap">

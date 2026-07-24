@@ -986,7 +986,7 @@ function CouponsEditor() {
       <h2>Cupones de descuento</h2>
       <p className="muted">Los usos se cuentan sobre los pedidos reales. El descuento se aplica al subtotal de productos (antes del envío) y se valida en el servidor.</p>
       {list.length === 0 && <p className="muted">Aún no hay cupones. Añade el primero abajo.</p>}
-      {list.length > 5 && (
+      {list.length > 1 && (
         <input
           className="coupon-search"
           type="search"
