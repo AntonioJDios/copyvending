@@ -1967,6 +1967,37 @@ body {
   border-bottom-color: var(--brand, #0ea5b7);
 }
 
+/* Backoffice header + tabs on small screens (no burger here, so the nav
+ * wraps under the title and the tabs scroll horizontally instead of piling up). */
+@media (max-width: 820px) {
+  .admin .topbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .admin .topnav {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .admin .topnav .btn {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .admin-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+  .admin-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 10px 12px;
+  }
+}
+
 /* Métodos de pago (admin) */
 .pay-method {
   padding: 12px 0;
