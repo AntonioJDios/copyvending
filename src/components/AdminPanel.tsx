@@ -60,7 +60,7 @@ function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostra
   );
 }
 
-type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
+type AdminTab = 'producto' | 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
@@ -155,7 +155,8 @@ export function AdminPanel() {
 
       <div className="admin-body">
         <nav className="admin-tabs">
-          <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Catálogo y precios</button>
+          <button type="button" className={`admin-tab${tab === 'producto' ? ' on' : ''}`} onClick={() => setTab('producto')}>Producto</button>
+          <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Precios</button>
           <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y facturación</button>
           <button type="button" className={`admin-tab${tab === 'envios' ? ' on' : ''}`} onClick={() => setTab('envios')}>Envíos</button>
           {API_BASE && (
@@ -167,22 +168,10 @@ export function AdminPanel() {
           )}
         </nav>
 
-        {tab === 'catalogo' && (
+        {tab === 'producto' && (
           <>
-        {/* Selector de source para los PRECIOS (lo demás es común) */}
-        <section className="card src-price-bar">
-          <div className="stats-card-head">
-            <h2>💶 Tarifa que estás editando</h2>
-            <div className="seg-toggle sm">
-              {(['online', 'mostrador', 'email'] as SourceKey[]).map((s) => (
-                <button key={s} type="button" className={priceSrc === s ? 'on' : ''} onClick={() => pickSrc(s)}>{SRC_LABEL[s]}</button>
-              ))}
-            </div>
-          </div>
-          <p className="muted">
-            Los perfiles, tamaños, gramajes y los colores de anillas/contraportadas son <b>los mismos</b> en Web, Papelería y Email.
-            Lo que cambias abajo (<b>precios</b> por página, encuadernación, suplementos, taza/chapa y el € de cada color) es la tarifa de <b>{SRC_LABEL[priceSrc]}</b>.
-          </p>
+        <section className="card">
+          <p className="muted">Estas opciones son <b>comunes</b> a Web, Papelería y Email (los precios se ponen en la pestaña “Precios”).</p>
         </section>
 
         {/* Perfiles rápidos */}
@@ -190,7 +179,7 @@ export function AdminPanel() {
 
         {/* Tamaños y gramajes */}
         <section className="card">
-          <h2>Tamaños y gramajes</h2>
+          <h2>Tamaños y gramajes aceptados</h2>
           <div className="admin-sizes">
             {ALL_SIZES.map((size) => {
               const enabled = draft.enabledSizes.includes(size);
@@ -233,6 +222,26 @@ export function AdminPanel() {
               );
             })}
           </div>
+        </section>
+          </>
+        )}
+
+        {tab === 'catalogo' && (
+          <>
+        {/* Selector de canal para los PRECIOS (lo demás es común) */}
+        <section className="card src-price-bar">
+          <div className="stats-card-head">
+            <h2>💶 Tarifa que estás editando</h2>
+            <div className="seg-toggle sm">
+              {(['online', 'mostrador', 'email'] as SourceKey[]).map((s) => (
+                <button key={s} type="button" className={priceSrc === s ? 'on' : ''} onClick={() => pickSrc(s)}>{SRC_LABEL[s]}</button>
+              ))}
+            </div>
+          </div>
+          <p className="muted">
+            Los perfiles, tamaños, gramajes y los colores de anillas/contraportadas son <b>los mismos</b> en Web, Papelería y Email.
+            Lo que cambias abajo (<b>precios</b> por página, encuadernación, suplementos, taza/chapa y el € de cada color) es la tarifa de <b>{SRC_LABEL[priceSrc]}</b>.
+          </p>
         </section>
 
         {/* Secciones de PRECIO (dependen del canal). key={priceSrc} → se
