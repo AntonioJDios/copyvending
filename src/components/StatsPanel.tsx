@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOrders, type Order } from '../store/useOrders';
-import { aggregate, couponAnalytics, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { aggregate, couponAnalytics, couponDaily, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
@@ -313,7 +313,7 @@ function Kpi({ label, value, delta, strong, accent }: { label: string; value: st
 }
 
 function TrendChart({
-  points, max, unit, value, fmt, title, total, muted,
+  points, max, unit, value, fmt, title, total, muted, onSelect,
 }: {
   points: SeriesPoint[];
   max: number;
@@ -323,6 +323,8 @@ function TrendChart({
   title?: string;
   total?: string;
   muted?: boolean;
+  /** When set, columns are clickable (e.g. drill a month into daily). */
+  onSelect?: (period: string) => void;
 }) {
   return (
     <div className="trend-wrap">
@@ -333,7 +335,12 @@ function TrendChart({
       )}
       <div className={`trend${muted ? ' trend-prev' : ''}`} role="img" aria-label={title ? `Evolución ${title}` : 'Evolución del periodo'}>
         {points.map((p) => (
-          <div key={p.period} className="trend-col" title={`${p.period}: ${fmt(value(p))}`}>
+          <div
+            key={p.period}
+            className={`trend-col${onSelect ? ' clickable' : ''}`}
+            title={`${p.period}: ${fmt(value(p))}`}
+            onClick={onSelect ? () => onSelect(p.period) : undefined}
+          >
             <span className="trend-bar" style={{ height: `${Math.max(2, (value(p) / max) * 100)}%` }} />
             <span className="trend-tick">{tick(p.period, unit)}</span>
           </div>
@@ -459,7 +466,7 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
   const [cmetric, setCmetric] = useState<'discount' | 'uses'>('discount');
   const [sort, setSort] = useState<CSort>('uses');
   const [selected, setSelected] = useState(initialCoupon); // '' = all coupons
-  const [find, setFind] = useState('');
+  const [drillMonth, setDrillMonth] = useState(''); // 'YYYY-MM' → daily breakdown
   const data = useMemo(() => couponAnalytics(orders, months, source), [orders, months, source]);
 
   const monthsToggle = (
@@ -485,8 +492,8 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
   // Coupon in focus for the chart + KPIs ('' = all coupons combined).
   const sel = selected ? data.rows.find((r) => r.code === selected) ?? null : null;
   const rowsAll: CouponRow[] = [...data.rows].sort((a, b) => b[sort] - a[sort]);
-  // Table/matrix rows: the single selected one, else the search-filtered list.
-  const rows: CouponRow[] = sel ? [sel] : find ? rowsAll.filter((r) => r.code.includes(find.toUpperCase())) : rowsAll;
+  // Table/matrix rows: the single selected coupon, else the full ranking.
+  const rows: CouponRow[] = sel ? [sel] : rowsAll;
   const monthLbl = (mk: string) => { const [, m] = mk.split('-').map(Number); return MONTHS[m - 1]; };
   // Chart series: the selected coupon's own months, else the overall series.
   const pts: SeriesPoint[] = sel
@@ -497,6 +504,11 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
   const cmax = Math.max(1, ...pts.map(cval));
   const cellVal = (v?: { uses: number; discount: number }) => (v ? (cmetric === 'discount' ? v.discount : v.uses) : 0);
   const pct = data.totals.ordersTotal > 0 ? Math.round((data.totals.ordersWithCoupon / data.totals.ordersTotal) * 100) : 0;
+  // Daily drill-down for the clicked month (respects the selected coupon).
+  const dailyPts: SeriesPoint[] = drillMonth
+    ? couponDaily(orders, drillMonth, source, sel?.code ?? '').map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }))
+    : [];
+  const dailyMax = Math.max(1, ...dailyPts.map(cval));
   // KPI values: for the selected coupon, else the totals.
   const kUses = sel ? sel.uses : data.totals.ordersWithCoupon;
   const kDiscount = sel ? sel.discount : data.totals.discount;
@@ -516,14 +528,9 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
         </div>
       </div>
 
-      {/* Selector de cupón: sin selección = todos; con selección = solo ese. */}
+      {/* Selector de cupón (búsqueda; no precarga todos): sin selección = todos. */}
       <div className="coupon-select-row">
-        <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-          <option value="">Todos los cupones</option>
-          {data.rows.map((r) => (
-            <option key={r.code} value={r.code}>{r.code}</option>
-          ))}
-        </select>
+        <CouponPicker codes={data.rows.map((r) => r.code)} value={selected} onChange={setSelected} />
         {sel && <button type="button" className="chip" onClick={() => setSelected('')}>✕ Ver todos</button>}
       </div>
 
@@ -534,17 +541,20 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
         <Kpi label="Ticket medio con cupón" value={eur(kAvg)} />
       </div>
 
-      <h3>Evolución · {cmetric === 'discount' ? 'descuento' : 'usos'} por mes {sel ? `· ${sel.code}` : '· todos'}</h3>
-      <TrendChart points={pts} max={cmax} unit="month" value={cval} fmt={cfmt} />
-
-      {!sel && data.rows.length > 1 && (
-        <input
-          className="coupon-search"
-          type="search"
-          placeholder="🔎 Buscar cupón por código…"
-          value={find}
-          onChange={(e) => setFind(e.target.value)}
-        />
+      <div className="stats-card-head">
+        <h3>
+          Evolución · {cmetric === 'discount' ? 'descuento' : 'usos'} {drillMonth ? `· ${periodLabel(drillMonth)}` : 'por mes'}
+          {sel ? ` · ${sel.code}` : ''}
+        </h3>
+        {drillMonth && <button type="button" className="chip" onClick={() => setDrillMonth('')}>← Volver a meses</button>}
+      </div>
+      {drillMonth ? (
+        <TrendChart points={dailyPts} max={dailyMax} unit="day" value={cval} fmt={cfmt} />
+      ) : (
+        <>
+          <TrendChart points={pts} max={cmax} unit="month" value={cval} fmt={cfmt} onSelect={setDrillMonth} />
+          <p className="muted stats-hint">Pulsa un mes para ver el detalle diario.</p>
+        </>
       )}
 
       <h3>Por cupón</h3>
@@ -596,5 +606,56 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
         </table>
       </div>
     </section>
+  );
+}
+
+/** Searchable coupon selector (combobox). Does NOT preload all options — filters
+ *  as you type and caps the visible list, so it scales to hundreds of coupons. */
+function CouponPicker({ codes, value, onChange }: { codes: string[]; value: string; onChange: (c: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const matches = q ? codes.filter((c) => c.includes(q.toUpperCase())) : codes;
+  const shown = matches.slice(0, 30);
+  const pick = (c: string) => { onChange(c); setOpen(false); setQ(''); };
+
+  return (
+    <div className="coupon-picker" ref={ref}>
+      <button type="button" className="coupon-picker-btn" onClick={() => setOpen((o) => !o)}>
+        <span>{value || 'Todos los cupones'}</span>
+        <span className="cp-caret">▾</span>
+      </button>
+      {open && (
+        <div className="coupon-picker-pop">
+          <input
+            autoFocus
+            type="search"
+            placeholder="Buscar código…"
+            value={q}
+            onChange={(e) => setQ(e.target.value.toUpperCase())}
+          />
+          <ul>
+            <li>
+              <button type="button" className={!value ? 'on' : ''} onClick={() => pick('')}>Todos los cupones</button>
+            </li>
+            {shown.map((c) => (
+              <li key={c}>
+                <button type="button" className={value === c ? 'on' : ''} onClick={() => pick(c)}>{c}</button>
+              </li>
+            ))}
+            {shown.length === 0 && <li className="cp-empty">Sin resultados</li>}
+            {matches.length > shown.length && <li className="cp-more">…y {matches.length - shown.length} más — afina la búsqueda</li>}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

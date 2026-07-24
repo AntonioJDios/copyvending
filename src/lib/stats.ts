@@ -182,6 +182,33 @@ export function couponAnalytics(orders: Order[], monthsBack: number, source = 'a
   return { months, rows, totals, monthly };
 }
 
+/** Daily coupon series for a single month ('YYYY-MM'), seeded for every day.
+ *  Optionally scoped to one coupon `code` and/or `source`. */
+export function couponDaily(orders: Order[], month: string, source = 'all', code = ''): { period: string; uses: number; discount: number }[] {
+  const [y, m] = month.split('-').map(Number);
+  const days = new Date(y, m, 0).getDate();
+  const series: { period: string; uses: number; discount: number }[] = [];
+  const idx = new Map<string, { period: string; uses: number; discount: number }>();
+  for (let d = 1; d <= days; d++) {
+    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const pt = { period: key, uses: 0, discount: 0 };
+    series.push(pt);
+    idx.set(key, pt);
+  }
+  const scoped = source === 'all' ? orders : orders.filter((o) => o.source === source);
+  const want = code.trim().toUpperCase();
+  for (const o of scoped) {
+    const c = (o.couponCode ?? '').trim().toUpperCase();
+    if (!c || (want && c !== want)) continue;
+    const pt = idx.get(dayKey(o.createdAt));
+    if (pt) {
+      pt.uses += 1;
+      pt.discount += Number(o.couponDiscount) || 0;
+    }
+  }
+  return series;
+}
+
 /**
  * Aggregate orders into the dashboard model. Breakdowns are scoped to
  * [fromMs, toMs]; the monthly series always spans the whole list (for the trend).
