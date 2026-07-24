@@ -8,6 +8,7 @@ import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
 import { validateCouponRemote } from '../lib/coupons';
+import { CURRENT_SOURCE } from '../lib/source';
 import { payWithRedsys, authorizeInsite, getRedsysConfig, type RedsysConfig } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
@@ -192,7 +193,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
     await addOrder({
       id: orderId,
       createdAt: Date.now(),
-      source: 'mostrador',
+      source: CURRENT_SOURCE,
       customer: { ...data, accountId, billing, shipping: shippingUsed },
       items: items.map((p) => ({ ...p })),
       total: grandTotal,

@@ -91,6 +91,29 @@ export interface AssistantConfig {
   instructions: string;
 }
 
+/** The three fixed sources: Web (online), Papelería (mostrador) and Email. */
+export type SourceKey = 'online' | 'mostrador' | 'email';
+
+/** Per-source PRICE overrides. Any field absent → falls back to the base value.
+ *  The colour SETS (ring/cover) are shared; only their € surcharge varies here. */
+export interface SourcePricing {
+  pagePrices?: Record<string, number>;
+  bindingPrices?: Record<string, number>;
+  colorSurcharge?: Record<string, number>;
+  laminateSurcharge?: Record<string, number>;
+  coverColorSurcharge?: number;
+  perforatePrice?: number;
+  holesPrice?: number;
+  stickerPrice?: number;
+  noMarginsPrice?: number;
+  extraFolioPrice?: number;
+  mugPrice?: number;
+  badgePrice?: number;
+  /** € surcharge per ring/cover colour, by colour name. */
+  ringExtras?: Record<string, number>;
+  coverExtras?: Record<string, number>;
+}
+
 export interface Catalog {
   version: 6;
   /** Quick-start profiles shown above the options. */
@@ -138,6 +161,32 @@ export interface Catalog {
   mugPrice: number;
   /** Unit price for a personalised Ø58 mm badge. */
   badgePrice: number;
+  /** Per-source price overrides (absent → every source uses the base prices). */
+  sources?: Partial<Record<SourceKey, SourcePricing>>;
+}
+
+/** Effective catalog for a source: base prices with that source's overrides
+ *  applied (prices + ring/cover € surcharge only; the rest is shared). */
+export function catalogForSource(catalog: Catalog, source: SourceKey): Catalog {
+  const o = catalog.sources?.[source];
+  if (!o) return catalog;
+  return {
+    ...catalog,
+    pagePrices: { ...catalog.pagePrices, ...(o.pagePrices ?? {}) },
+    bindingPrices: { ...catalog.bindingPrices, ...(o.bindingPrices ?? {}) },
+    colorSurcharge: { ...catalog.colorSurcharge, ...(o.colorSurcharge ?? {}) },
+    laminateSurcharge: { ...catalog.laminateSurcharge, ...(o.laminateSurcharge ?? {}) },
+    coverColorSurcharge: o.coverColorSurcharge ?? catalog.coverColorSurcharge,
+    perforatePrice: o.perforatePrice ?? catalog.perforatePrice,
+    holesPrice: o.holesPrice ?? catalog.holesPrice,
+    stickerPrice: o.stickerPrice ?? catalog.stickerPrice,
+    noMarginsPrice: o.noMarginsPrice ?? catalog.noMarginsPrice,
+    extraFolioPrice: o.extraFolioPrice ?? catalog.extraFolioPrice,
+    mugPrice: o.mugPrice ?? catalog.mugPrice,
+    badgePrice: o.badgePrice ?? catalog.badgePrice,
+    ringColors: catalog.ringColors.map((c) => ({ ...c, extra: o.ringExtras?.[c.name] ?? c.extra })),
+    coverColors: catalog.coverColors.map((c) => ({ ...c, extra: o.coverExtras?.[c.name] ?? c.extra })),
+  } as Catalog;
 }
 
 export const ALL_SIZES: Size[] = ['A4', 'A3', 'A5'];

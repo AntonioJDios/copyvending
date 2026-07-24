@@ -208,6 +208,11 @@ type PriceCatalog = {
   badgePrice: number;
   ringColors?: ColorOpt[];
   coverColors?: ColorOpt[];
+  sources?: Record<string, SourcePriceOverride>;
+};
+type SourcePriceOverride = Partial<Omit<PriceCatalog, 'sources' | 'ringColors' | 'coverColors'>> & {
+  ringExtras?: Record<string, number>;
+  coverExtras?: Record<string, number>;
 };
 const FALLBACK: PriceCatalog = {
   pagePrices: {
@@ -338,6 +343,29 @@ async function getCatalog(): Promise<PriceCatalog> {
   return FALLBACK;
 }
 
+/** Effective price catalog for an order's source (mirror of catalogForSource). */
+function applySource(cat: PriceCatalog, source: string): PriceCatalog {
+  const o = cat.sources?.[source];
+  if (!o) return cat;
+  return {
+    ...cat,
+    pagePrices: { ...cat.pagePrices, ...(o.pagePrices ?? {}) },
+    bindingPrices: { ...cat.bindingPrices, ...(o.bindingPrices ?? {}) },
+    colorSurcharge: { ...cat.colorSurcharge, ...(o.colorSurcharge ?? {}) },
+    laminateSurcharge: { ...cat.laminateSurcharge, ...(o.laminateSurcharge ?? {}) },
+    coverColorSurcharge: o.coverColorSurcharge ?? cat.coverColorSurcharge,
+    perforatePrice: o.perforatePrice ?? cat.perforatePrice,
+    holesPrice: o.holesPrice ?? cat.holesPrice,
+    stickerPrice: o.stickerPrice ?? cat.stickerPrice,
+    noMarginsPrice: o.noMarginsPrice ?? cat.noMarginsPrice,
+    extraFolioPrice: o.extraFolioPrice ?? cat.extraFolioPrice,
+    mugPrice: o.mugPrice ?? cat.mugPrice,
+    badgePrice: o.badgePrice ?? cat.badgePrice,
+    ringColors: (cat.ringColors ?? []).map((c) => ({ ...c, extra: o.ringExtras?.[c.name] ?? c.extra })),
+    coverColors: (cat.coverColors ?? []).map((c) => ({ ...c, extra: o.coverExtras?.[c.name] ?? c.extra })),
+  };
+}
+
 // ── Coupons ─────────────────────────────────────────────────────────
 // Definitions live in settings key='coupons'; usage is derived by counting the
 // orders that stored each code, so limits are always accurate (no separate
@@ -457,9 +485,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
-      // Anti-fraud: recompute totals server-side with the Neon catalog; the
-      // client-sent price is never trusted.
-      const catalog = await getCatalog();
+      // Anti-fraud: recompute totals server-side with the Neon catalog for THIS
+      // order's source; the client-sent price is never trusted.
+      const catalog = applySource(await getCatalog(), typeof o.source === 'string' ? o.source : 'mostrador');
       const items = Array.isArray(o.items) ? o.items : [];
       let serverTotal = 0;
       const pricedItems = items.map((it) => {
@@ -572,7 +600,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const id = queryId(req);
       const body = req.body as { items?: Record<string, unknown>[]; item?: Record<string, unknown> };
       if (!id || (!Array.isArray(body.items) && !body.item)) return res.status(400).json({ error: 'faltan datos' });
-      const cur = (await sql`select status, items from orders where id = ${id}`) as { status: string; items: Record<string, unknown>[] }[];
+      const cur = (await sql`select status, items, source from orders where id = ${id}`) as { status: string; items: Record<string, unknown>[]; source: string }[];
       if (cur.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
       if (cur[0].status !== 'nuevo') {
         return res.status(409).json({ error: 'El pedido ya está en proceso y no se puede modificar.' });
@@ -594,7 +622,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         items = body.items as Record<string, unknown>[];
       }
 
-      const catalog = await getCatalog();
+      const catalog = applySource(await getCatalog(), cur[0].source || 'mostrador');
       let serverTotal = 0;
       const priced = items.map((it) => {
         const t = itemTotal(it, catalog);

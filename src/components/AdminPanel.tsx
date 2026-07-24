@@ -23,7 +23,11 @@ import {
   type Catalog,
   type ColorOption,
   type PaymentMethodConfig,
+  type SourceKey,
+  type SourcePricing,
 } from '../domain/catalog';
+
+const SRC_LABEL: Record<SourceKey, string> = { online: 'Web', mostrador: 'Papelería', email: 'Email' };
 
 type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
@@ -44,11 +48,12 @@ function fileToDataUrl(file: File): Promise<string> {
 const num = (v: string) => (v === '' ? 0 : Number(v));
 
 export function AdminPanel() {
-  const catalog = useConfigurator((s) => s.catalog);
+  const catalog = useConfigurator((s) => s.rawCatalog);
   const setCatalog = useConfigurator((s) => s.setCatalog);
   const [draft, setDraft] = useState<Catalog>(() => structuredClone(catalog));
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<AdminTab>('catalogo');
+  const [priceSrc, setPriceSrc] = useState<SourceKey>('online');
 
   const edit = (fn: (d: Catalog) => void) =>
     setDraft((prev) => {
@@ -60,6 +65,28 @@ export function AdminPanel() {
     edit(fn);
     setDirty(true);
   };
+
+  // ── Precios POR SOURCE: leen (override de la source ?? base) y escriben en
+  //    draft.sources[priceSrc]. Perfiles/tamaños/colores son comunes (no aquí). ──
+  const so = () => draft.sources?.[priceSrc];
+  const setSrc = (fn: (o: SourcePricing) => void) =>
+    change((d) => {
+      const src = (d.sources ??= {});
+      const o = (src[priceSrc] ??= {});
+      fn(o);
+    });
+  type RecField = 'pagePrices' | 'bindingPrices' | 'colorSurcharge' | 'laminateSurcharge';
+  type ScField = 'coverColorSurcharge' | 'perforatePrice' | 'holesPrice' | 'stickerPrice' | 'noMarginsPrice' | 'extraFolioPrice' | 'mugPrice' | 'badgePrice';
+  const gRec = (f: RecField, k: string): number =>
+    (so() as Record<RecField, Record<string, number>> | undefined)?.[f]?.[k] ?? (draft[f] as Record<string, number>)[k] ?? 0;
+  const sRec = (f: RecField, k: string, v: number) =>
+    setSrc((o) => { const rec = ((o as Record<string, Record<string, number>>)[f] ??= {}); rec[k] = v; });
+  const gSc = (f: ScField): number => ((so() as Record<ScField, number> | undefined)?.[f]) ?? (draft[f] as number);
+  const sSc = (f: ScField, v: number) => setSrc((o) => { (o as Record<string, number>)[f] = v; });
+  const gRing = (name: string, base: number) => so()?.ringExtras?.[name] ?? base;
+  const sRing = (name: string, v: number) => setSrc((o) => { (o.ringExtras ??= {})[name] = v; });
+  const gCover = (name: string, base: number) => so()?.coverExtras?.[name] ?? base;
+  const sCover = (name: string, v: number) => setSrc((o) => { (o.coverExtras ??= {})[name] = v; });
 
   const save = () => {
     saveCatalog(draft);
@@ -106,6 +133,22 @@ export function AdminPanel() {
 
         {tab === 'catalogo' && (
           <>
+        {/* Selector de source para los PRECIOS (lo demás es común) */}
+        <section className="card src-price-bar">
+          <div className="stats-card-head">
+            <h2>💶 Precios por source</h2>
+            <div className="seg-toggle sm">
+              {(['online', 'mostrador', 'email'] as SourceKey[]).map((s) => (
+                <button key={s} type="button" className={priceSrc === s ? 'on' : ''} onClick={() => setPriceSrc(s)}>{SRC_LABEL[s]}</button>
+              ))}
+            </div>
+          </div>
+          <p className="muted">
+            Perfiles rápidos, tamaños, gramajes y los colores de anillas/contraportadas son <b>comunes</b> a todas las sources.
+            Los <b>precios</b> (por página, encuadernación, suplementos, taza/chapa y el € de cada color) son los de <b>{SRC_LABEL[priceSrc]}</b>.
+          </p>
+        </section>
+
         {/* Perfiles rápidos */}
         <PresetsEditor presets={draft.presets} onChange={(presets) => change((d) => { d.presets = presets; })} />
 
@@ -184,8 +227,8 @@ export function AdminPanel() {
                                 type="number"
                                 step="0.001"
                                 min="0"
-                                value={draft.pagePrices[k]}
-                                onChange={(e) => change((d) => { d.pagePrices[k] = num(e.target.value); })}
+                                value={gRec('pagePrices', k)}
+                                onChange={(e) => sRec('pagePrices', k, num(e.target.value))}
                               />
                             </td>
                           ) : (
@@ -235,8 +278,8 @@ export function AdminPanel() {
                       type="number"
                       step="0.01"
                       min="0"
-                      value={draft.bindingPrices[f]}
-                      onChange={(e) => change((d) => { d.bindingPrices[f] = num(e.target.value); })}
+                      value={gRec('bindingPrices', f)}
+                      onChange={(e) => sRec('bindingPrices', f, num(e.target.value))}
                     />
                   </td>
                   <td>
@@ -283,53 +326,53 @@ export function AdminPanel() {
             {ALL_SIZES.map((s) => (
               <label key={`col-${s}`} className="field-inline">
                 Color/cara {s}
-                <input type="number" step="0.01" min="0" value={draft.colorSurcharge[s as Size]} onChange={(e) => change((d) => { d.colorSurcharge[s as Size] = num(e.target.value); })} />
+                <input type="number" step="0.01" min="0" value={gRec('colorSurcharge', s)} onChange={(e) => sRec('colorSurcharge', s, num(e.target.value))} />
               </label>
             ))}
             {ALL_SIZES.map((s) => (
               <label key={`lam-${s}`} className="field-inline">
                 Plastificar/folio {s}
-                <input type="number" step="0.01" min="0" value={draft.laminateSurcharge[s as Size]} onChange={(e) => change((d) => { d.laminateSurcharge[s as Size] = num(e.target.value); })} />
+                <input type="number" step="0.01" min="0" value={gRec('laminateSurcharge', s)} onChange={(e) => sRec('laminateSurcharge', s, num(e.target.value))} />
               </label>
             ))}
             <label className="field-inline">
               Portada a color
-              <input type="number" step="0.01" min="0" value={draft.coverColorSurcharge} onChange={(e) => change((d) => { d.coverColorSurcharge = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('coverColorSurcharge')} onChange={(e) => sSc('coverColorSurcharge', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Perforado
-              <input type="number" step="0.01" min="0" value={draft.perforatePrice} onChange={(e) => change((d) => { d.perforatePrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('perforatePrice')} onChange={(e) => sSc('perforatePrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Agujeros
-              <input type="number" step="0.01" min="0" value={draft.holesPrice} onChange={(e) => change((d) => { d.holesPrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('holesPrice')} onChange={(e) => sSc('holesPrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Pegatinas
-              <input type="number" step="0.01" min="0" value={draft.stickerPrice} onChange={(e) => change((d) => { d.stickerPrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('stickerPrice')} onChange={(e) => sSc('stickerPrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Sin márgenes
-              <input type="number" step="0.01" min="0" value={draft.noMarginsPrice} onChange={(e) => change((d) => { d.noMarginsPrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('noMarginsPrice')} onChange={(e) => sSc('noMarginsPrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Folio en blanco (delante/detrás)
-              <input type="number" step="0.01" min="0" value={draft.extraFolioPrice} onChange={(e) => change((d) => { d.extraFolioPrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('extraFolioPrice')} onChange={(e) => sSc('extraFolioPrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Taza personalizada (ud.)
-              <input type="number" step="0.01" min="0" value={draft.mugPrice} onChange={(e) => change((d) => { d.mugPrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('mugPrice')} onChange={(e) => sSc('mugPrice', num(e.target.value))} />
             </label>
             <label className="field-inline">
               Chapa Ø58 mm (ud.)
-              <input type="number" step="0.01" min="0" value={draft.badgePrice} onChange={(e) => change((d) => { d.badgePrice = num(e.target.value); })} />
+              <input type="number" step="0.01" min="0" value={gSc('badgePrice')} onChange={(e) => sSc('badgePrice', num(e.target.value))} />
             </label>
           </div>
         </section>
 
         {/* Colores */}
-        <ColorEditor title="Colores de anillas" items={draft.ringColors} onChange={(items) => change((d) => { d.ringColors = items; })} />
-        <ColorEditor title="Colores de contraportada" items={draft.coverColors} onChange={(items) => change((d) => { d.coverColors = items; })} />
+        <ColorEditor title="Colores de anillas" items={draft.ringColors} onChange={(items) => change((d) => { d.ringColors = items; })} extraOf={(c) => gRing(c.name, c.extra ?? 0)} onExtra={(c, v) => sRing(c.name, v)} />
+        <ColorEditor title="Colores de contraportada" items={draft.coverColors} onChange={(items) => change((d) => { d.coverColors = items; })} extraOf={(c) => gCover(c.name, c.extra ?? 0)} onExtra={(c, v) => sCover(c.name, v)} />
           </>
         )}
 
@@ -573,7 +616,7 @@ function EmailTestTool() {
   );
 }
 
-function ColorEditor({ title, items, onChange }: { title: string; items: ColorOption[]; onChange: (items: ColorOption[]) => void }) {
+function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: string; items: ColorOption[]; onChange: (items: ColorOption[]) => void; extraOf?: (c: ColorOption) => number; onExtra?: (c: ColorOption, v: number) => void }) {
   const patch = (i: number, p: Partial<ColorOption>) => onChange(items.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const uploadImg = async (i: number, file?: File) => {
     if (!file) return;
@@ -618,8 +661,12 @@ function ColorEditor({ title, items, onChange }: { title: string; items: ColorOp
                 type="number"
                 step="0.01"
                 min="0"
-                value={c.extra ?? 0}
-                onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, extra: num(e.target.value) } : x)))}
+                value={extraOf ? extraOf(c) : c.extra ?? 0}
+                onChange={(e) => {
+                  const v = num(e.target.value);
+                  if (onExtra) onExtra(c, v);
+                  else onChange(items.map((x, j) => (j === i ? { ...x, extra: v } : x)));
+                }}
               />
             </label>
             <button type="button" className="chip chip-danger" onClick={() => onChange(items.filter((_, j) => j !== i))}>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { DEFAULT_CATALOG, type Catalog } from '../domain/catalog';
+import { DEFAULT_CATALOG, catalogForSource, type Catalog } from '../domain/catalog';
+import { CURRENT_SOURCE } from '../lib/source';
 import { normalize } from '../domain/rules';
 import type { Configuracion, DocFile } from '../domain/types';
 import type { CartProject } from './useCart';
@@ -48,7 +49,11 @@ export const DEFAULT_CONFIG: Configuracion = {
 };
 
 interface ConfiguratorState {
+  /** Effective catalog for THIS front's source (prices already resolved). Used
+   *  by the configurator + pricing. */
   catalog: Catalog;
+  /** Raw catalog with all sources' overrides — edited by the admin. */
+  rawCatalog: Catalog;
   config: Configuracion;
   files: DocFile[];
   copias: number;
@@ -97,10 +102,12 @@ interface ConfiguratorState {
   setEditingOrderId: (id: string | null) => void;
 }
 
-const initialCatalog = loadCatalog();
+const initialRaw = loadCatalog();
+const initialCatalog = catalogForSource(initialRaw, CURRENT_SOURCE);
 
 export const useConfigurator = create<ConfiguratorState>()((set) => ({
   catalog: initialCatalog,
+  rawCatalog: initialRaw,
   config: DEFAULT_CONFIG,
   files: [],
   copias: 1,
@@ -114,7 +121,8 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
 
-  setCatalog: (catalog) => set((s) => ({ catalog, config: normalize(s.config, catalog) })),
+  // Admin saves the RAW catalog; derive the effective one for this front.
+  setCatalog: (raw) => set((s) => { const catalog = catalogForSource(raw, CURRENT_SOURCE); return { rawCatalog: raw, catalog, config: normalize(s.config, catalog) }; }),
   setColorAnillas: (colorAnillas) => set({ colorAnillas }),
   setColorContraportada: (colorContraportada) => set({ colorContraportada }),
 
@@ -187,7 +195,8 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
       const remote = (await (await fetch(`${API_BASE}/catalog`)).json()) as Catalog | null;
       if (remote && remote.version === 6) {
         localStorage.setItem(CATALOG_KEY, JSON.stringify(remote));
-        set((s) => ({ catalog: remote, config: normalize(s.config, remote) }));
+        const catalog = catalogForSource(remote, CURRENT_SOURCE);
+        set((s) => ({ rawCatalog: remote, catalog, config: normalize(s.config, catalog) }));
       } else if (!remote) {
         // Neon has no catalog yet → seed it with the current one so every device
         // (and the server pricing) shares the same catalog.
