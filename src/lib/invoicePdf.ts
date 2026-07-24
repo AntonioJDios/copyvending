@@ -97,6 +97,13 @@ export async function downloadInvoice(order: Order, shop: BusinessConfig): Promi
     y -= 4;
   }
 
+  if (order.couponDiscount && order.couponDiscount > 0) {
+    need(18);
+    text(`Descuento${order.couponCode ? ` (${order.couponCode})` : ''}`, M, 10, bold);
+    right(`- ${money(order.couponDiscount)}`, REtotal, 10);
+    y -= 17;
+  }
+
   if (order.shippingCost && order.shippingCost > 0) {
     need(18);
     text('Envío a domicilio', M, 10, bold);
@@ -105,7 +112,8 @@ export async function downloadInvoice(order: Order, shop: BusinessConfig): Promi
     y -= 17;
   }
 
-  // Totals.
+  // Totals (base/IVA derived from order.total, which already reflects the
+  // coupon discount, so the breakdown stays consistent).
   need(64);
   y -= 6;
   page.drawLine({ start: { x: W - M - 220, y }, end: { x: W - M, y }, thickness: 0.5, color: grey });

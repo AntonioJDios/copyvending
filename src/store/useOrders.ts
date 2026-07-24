@@ -26,6 +26,9 @@ export interface Order {
   shippedAt?: number;
   /** Whether a GLS label PDF is stored server-side for this order. */
   hasLabel?: boolean;
+  /** Applied discount coupon (code + € discount), if any. */
+  couponCode?: string;
+  couponDiscount?: number;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }

@@ -7,6 +7,7 @@ import { DEFAULT_PAYMENTS, DEFAULT_PAY_MATRIX } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
+import { validateCouponRemote } from '../lib/coupons';
 import { payWithRedsys, authorizeInsite, getRedsysConfig, type RedsysConfig } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
@@ -80,13 +81,19 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [redsysConfig, setRedsysConfig] = useState<RedsysConfig | null>(null);
   const [payError, setPayError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number } | null>(null);
+  const [couponError, setCouponError] = useState('');
+  const [couponBusy, setCouponBusy] = useState(false);
   // Stable Redsys order number for the InSite form (must match the authorisation).
   const dsOrder = useMemo(() => (String(Date.now()).slice(-10) + Math.floor(10 + Math.random() * 89)).slice(0, 12), []);
 
   const billingValid = !!(billingAddr.linea1?.trim() && billingAddr.cp?.trim() && billingAddr.ciudad?.trim());
   const quote = shippingOn && delivery === 'envio' && shippingCfg ? shippingQuote(shippingCfg, shipAddr.cp ?? '', total) : null;
   const shippingCost = quote?.cost ?? 0;
-  const grandTotal = total + shippingCost;
+  // Coupon discount applies to the products subtotal, BEFORE shipping.
+  const couponDiscount = couponApplied ? Math.min(couponApplied.discount, total) : 0;
+  const grandTotal = Math.max(0, total - couponDiscount) + shippingCost;
   const shipValid = !!(shipAddr.linea1?.trim() && shipAddr.cp?.trim() && shipAddr.ciudad?.trim());
   const deliveryOk = !shippingOn || delivery === 'recoger' || (!!quote && quote.allowed && shipValid);
   // Payment methods allowed for this delivery mode (admin matrix).
@@ -147,6 +154,32 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const dataOk = nombre.trim().length > 0 && apellidos.trim().length > 0 && isEmail(email) && telefono.trim().length >= 6;
   const canContinue = loggedIn || (dataOk && (mode === 'guest' || consent));
 
+  const applyCoupon = async () => {
+    const c = couponInput.trim().toUpperCase();
+    if (!c || couponBusy) return;
+    setCouponBusy(true);
+    setCouponError('');
+    try {
+      const r = await validateCouponRemote(c, total, email.trim().toLowerCase() || undefined);
+      if (r.ok) {
+        setCouponApplied({ code: r.code ?? c, discount: r.discount });
+        setCouponError('');
+      } else {
+        setCouponApplied(null);
+        setCouponError(r.reason || 'Cupón no válido');
+      }
+    } catch {
+      setCouponError('No se pudo validar el cupón.');
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+  const removeCoupon = () => {
+    setCouponApplied(null);
+    setCouponInput('');
+    setCouponError('');
+  };
+
   // Create the order in the backend (idempotent by id). Returns nothing; the
   // caller decides what to do next (finish / go to Redsys).
   const placeOrder = async (payVia: 'local' | 'redsys') => {
@@ -168,6 +201,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       paymentMethod: payVia,
       shippingMethod: shippingOn ? delivery : undefined,
       shippingCost,
+      couponCode: couponApplied?.code,
+      couponDiscount: couponApplied ? couponDiscount : undefined,
     });
     if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
     if (loggedIn && shippingUsed && shipValid) void setDefaultShipping(shippingUsed).catch(() => {});
@@ -482,6 +517,45 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                     {onlineOnly && <p className="muted">ℹ️ El envío se paga <b>online</b> (tarjeta o Bizum) en el paso siguiente.</p>}
                   </>
                 )}
+              </div>
+            )}
+
+            {hasBackend && (
+              <div className="checkout-coupon">
+                {couponApplied ? (
+                  <div className="checkout-total checkout-subline">
+                    <span>
+                      🏷️ Cupón <b>{couponApplied.code}</b>{' '}
+                      <button
+                        type="button"
+                        onClick={removeCoupon}
+                        style={{ background: 'none', border: 'none', color: 'var(--brand, #0ea5b7)', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit' }}
+                      >
+                        quitar
+                      </button>
+                    </span>
+                    <span>−{eur(couponDiscount)}</span>
+                  </div>
+                ) : (
+                  <div className="coupon-box">
+                    <input
+                      type="text"
+                      placeholder="Código de descuento"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void applyCoupon();
+                        }
+                      }}
+                    />
+                    <button type="button" className="chip" onClick={() => void applyCoupon()} disabled={couponBusy || !couponInput.trim()}>
+                      {couponBusy ? '…' : 'Aplicar'}
+                    </button>
+                  </div>
+                )}
+                {couponError && <p className="coupon-error">{couponError}</p>}
               </div>
             )}
 

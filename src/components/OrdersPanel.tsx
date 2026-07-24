@@ -178,6 +178,12 @@ function OrderCard({ order }: { order: Order }) {
           </span>
         </div>
       )}
+      {order.couponCode && (
+        <div className="order-customer">
+          🏷️ <b>Cupón {order.couponCode}</b>
+          {order.couponDiscount ? <span className="muted"> · −{eur(order.couponDiscount)}</span> : null}
+        </div>
+      )}
 
       {open && (
         <>

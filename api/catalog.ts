@@ -61,7 +61,7 @@ function ensureSchema(): Promise<void> {
 //                 requests it. Its `guid` credential is WRITE-ONLY: it is stored
 //                 but never returned by GET (we return `hasGuid` instead), so it
 //                 can't leak to the browser.
-const ALLOWED_KEYS = new Set(['catalog', 'gls']);
+const ALLOWED_KEYS = new Set(['catalog', 'gls', 'coupons']);
 function keyOf(req: VercelRequest): string {
   const k = Array.isArray(req.query.key) ? req.query.key[0] : req.query.key;
   return k && ALLOWED_KEYS.has(k) ? k : 'catalog';

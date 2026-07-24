@@ -319,6 +319,8 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists tracking text`;
       await db()`alter table orders add column if not exists shipped_at bigint`;
       await db()`alter table orders add column if not exists label text`;
+      await db()`alter table orders add column if not exists coupon_code text`;
+      await db()`alter table orders add column if not exists coupon_discount double precision default 0`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -336,12 +338,53 @@ async function getCatalog(): Promise<PriceCatalog> {
   return FALLBACK;
 }
 
+// ── Coupons ─────────────────────────────────────────────────────────
+// Definitions live in settings key='coupons'; usage is derived by counting the
+// orders that stored each code, so limits are always accurate (no separate
+// counter to drift). Validation runs server-side (authoritative, anti-fraud).
+type Coupon = {
+  code: string; type: 'percent' | 'fixed'; value: number; active: boolean;
+  minSubtotal?: number; maxUses?: number; maxUsesPerCustomer?: number; expiresAt?: number;
+};
+async function getCoupons(): Promise<Coupon[]> {
+  try {
+    const rows = (await db()`select value from settings where key = 'coupons'`) as { value: Coupon[] }[];
+    return Array.isArray(rows[0]?.value) ? rows[0].value : [];
+  } catch {
+    return [];
+  }
+}
+/** Validate a coupon against a products subtotal (+ optional customer email for
+ *  the per-customer limit). Returns the € discount to apply. */
+async function validateCoupon(codeRaw: string, subtotal: number, email?: string): Promise<{ ok: boolean; discount: number; code?: string; reason?: string }> {
+  const code = String(codeRaw || '').trim().toUpperCase();
+  if (!code) return { ok: false, discount: 0, reason: 'Introduce un código' };
+  const c = (await getCoupons()).find((x) => String(x.code || '').trim().toUpperCase() === code);
+  if (!c || !c.active) return { ok: false, discount: 0, reason: 'Cupón no válido' };
+  if (c.expiresAt && Date.now() > Number(c.expiresAt)) return { ok: false, discount: 0, reason: 'Cupón caducado' };
+  if (c.minSubtotal && subtotal < Number(c.minSubtotal)) {
+    return { ok: false, discount: 0, reason: `Mínimo ${Number(c.minSubtotal).toFixed(2).replace('.', ',')} € para este cupón` };
+  }
+  if (c.maxUses && Number(c.maxUses) > 0) {
+    const r = (await db()`select count(*)::int as n from orders where upper(coupon_code) = ${code}`) as { n: number }[];
+    if ((r[0]?.n ?? 0) >= Number(c.maxUses)) return { ok: false, discount: 0, reason: 'Este cupón ya no está disponible' };
+  }
+  if (c.maxUsesPerCustomer && Number(c.maxUsesPerCustomer) > 0 && email) {
+    const r = (await db()`select count(*)::int as n from orders where upper(coupon_code) = ${code} and lower(customer->>'email') = ${email.toLowerCase()}`) as { n: number }[];
+    if ((r[0]?.n ?? 0) >= Number(c.maxUsesPerCustomer)) return { ok: false, discount: 0, reason: 'Ya has usado este cupón' };
+  }
+  const raw = c.type === 'percent' ? subtotal * (Number(c.value) || 0) / 100 : Number(c.value) || 0;
+  const discount = Math.max(0, Math.min(Math.round(raw * 100) / 100, subtotal));
+  return { ok: true, discount, code };
+}
+
 interface OrderRow {
   id: string; created_at: string | number; source: string; customer: unknown;
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
   paid?: boolean; payment_method?: string | null;
   shipping_method?: string | null; shipping_cost?: string | number | null;
   tracking?: string | null; shipped_at?: string | number | null; has_label?: boolean;
+  coupon_code?: string | null; coupon_discount?: string | number | null;
 }
 function mapRow(r: OrderRow) {
   return {
@@ -351,6 +394,7 @@ function mapRow(r: OrderRow) {
     shippingMethod: r.shipping_method ?? undefined, shippingCost: r.shipping_cost != null ? Number(r.shipping_cost) : undefined,
     tracking: r.tracking ?? undefined, shippedAt: r.shipped_at != null ? Number(r.shipped_at) : undefined,
     hasLabel: !!r.has_label,
+    couponCode: r.coupon_code ?? undefined, couponDiscount: r.coupon_discount != null ? Number(r.coupon_discount) : undefined,
   };
 }
 
@@ -375,6 +419,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const id = queryId(req);
+      // Validate a coupon (public preview for the checkout: never lists codes).
+      if (req.query.coupon !== undefined) {
+        const q = (k: string) => (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined));
+        const v = await validateCoupon(q('coupon') || '', Number(q('subtotal')) || 0, q('email'));
+        return res.status(200).json(v);
+      }
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
       // list/detail payloads because it's large. Admin only.
       if (id && req.query.label !== undefined) {
@@ -386,7 +436,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Single order by code stays public (customers look up their own pickup).
       if (id) {
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
@@ -394,7 +444,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Full list exposes every customer's data → admin only.
       if (!requireAdmin(req, res)) return;
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -403,7 +453,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const o = req.body as {
         id?: string; createdAt?: number; source?: string; customer?: unknown;
         items?: Record<string, unknown>[]; total?: number; status?: string;
-        paid?: boolean; paymentMethod?: string; shippingMethod?: string;
+        paid?: boolean; paymentMethod?: string; shippingMethod?: string; couponCode?: string;
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
@@ -432,7 +482,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const threshold = Number(ship.freeThreshold) || 0;
         shippingCost = threshold > 0 && itemsSubtotal >= threshold ? 0 : base;
       }
-      serverTotal = Math.round((itemsSubtotal + shippingCost) * 100) / 100;
+
+      // Coupon (validated + applied server-side; discount on the products
+      // subtotal, BEFORE shipping). Invalid/expired/exhausted → simply ignored.
+      let couponCode: string | null = null;
+      let couponDiscount = 0;
+      if (typeof o.couponCode === 'string' && o.couponCode.trim()) {
+        const email = (o.customer as { email?: string } | undefined)?.email;
+        const v = await validateCoupon(o.couponCode, itemsSubtotal, email);
+        if (v.ok) {
+          couponCode = v.code ?? null;
+          couponDiscount = v.discount;
+        }
+      }
+      const discountedSubtotal = Math.max(0, Math.round((itemsSubtotal - couponDiscount) * 100) / 100);
+      serverTotal = Math.round((discountedSubtotal + shippingCost) * 100) / 100;
 
       // Email orders intentionally arrive with total 0 (priced here), so a
       // difference there isn't a client mismatch — only flag client sources.
@@ -440,13 +504,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${o.source ?? 'mostrador'},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null},
-                ${shippingMethod}, ${shippingCost})
+                ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount})
         on conflict (id) do nothing`;
-      return res.status(201).json({ ok: true, total: serverTotal, priceMismatch: mismatch });
+      return res.status(201).json({ ok: true, total: serverTotal, priceMismatch: mismatch, couponCode, couponDiscount });
     }
 
     if (req.method === 'PATCH') {

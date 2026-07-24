@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSettings } from '../lib/glsSettings';
+import { loadCoupons, saveCoupons } from '../lib/coupons';
+import { NEW_COUPON, type Coupon, type CouponType } from '../domain/coupons';
+import { useOrders } from '../store/useOrders';
 import {
   ALL_FINISHES,
   ALL_FOLIOS,
@@ -22,7 +25,7 @@ import {
   type PaymentMethodConfig,
 } from '../domain/catalog';
 
-type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'asistente' | 'herramientas';
+type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
@@ -92,6 +95,9 @@ export function AdminPanel() {
           <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Catálogo y precios</button>
           <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y facturación</button>
           <button type="button" className={`admin-tab${tab === 'envios' ? ' on' : ''}`} onClick={() => setTab('envios')}>Envíos</button>
+          {API_BASE && (
+            <button type="button" className={`admin-tab${tab === 'cupones' ? ' on' : ''}`} onClick={() => setTab('cupones')}>Cupones</button>
+          )}
           <button type="button" className={`admin-tab${tab === 'asistente' ? ' on' : ''}`} onClick={() => setTab('asistente')}>Asistente</button>
           {API_BASE && (
             <button type="button" className={`admin-tab${tab === 'herramientas' ? ' on' : ''}`} onClick={() => setTab('herramientas')}>Herramientas</button>
@@ -341,6 +347,8 @@ export function AdminPanel() {
             <GlsEditor />
           </>
         )}
+
+        {tab === 'cupones' && <CouponsEditor />}
 
         {tab === 'asistente' && (
         <section className="card">
@@ -900,6 +908,138 @@ function GlsEditor() {
       <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
         <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={saving}>
           {saving ? 'Guardando…' : 'Guardar GLS'}
+        </button>
+        {saved && <span className="muted">✓ Guardado</span>}
+        {err && <span className="price-flag">{err}</span>}
+      </div>
+    </section>
+  );
+}
+
+/** Discount coupons: CRUD + usage report (uses counted from real orders). */
+function CouponsEditor() {
+  const [list, setList] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState('');
+  const orders = useOrders((s) => s.orders);
+  const fetchOrders = useOrders((s) => s.fetchOrders);
+
+  useEffect(() => {
+    let alive = true;
+    loadCoupons()
+      .then((c) => { if (alive) setList(c); })
+      .catch(() => { /* keep empty */ })
+      .finally(() => { if (alive) setLoading(false); });
+    void fetchOrders(); // usage is derived from orders
+    return () => { alive = false; };
+  }, [fetchOrders]);
+
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+  const usage = (code: string) => {
+    const c = code.trim().toUpperCase();
+    if (!c) return { total: 0, month: 0 };
+    const used = orders.filter((o) => (o.couponCode ?? '').toUpperCase() === c);
+    return { total: used.length, month: used.filter((o) => o.createdAt >= monthStart).length };
+  };
+
+  const update = (i: number, patch: Partial<Coupon>) => {
+    setList((l) => l.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+    setSaved(false);
+  };
+  const add = () => { setList((l) => [...l, { code: '', ...NEW_COUPON, createdAt: Date.now() }]); setSaved(false); };
+  const removeAt = (i: number) => { setList((l) => l.filter((_, idx) => idx !== i)); setSaved(false); };
+
+  const dateToInput = (ts?: number) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
+  const inputToDate = (s: string) => (s ? new Date(s + 'T23:59:59').getTime() : undefined);
+
+  const onSave = async () => {
+    const clean = list.map((c) => ({ ...c, code: c.code.trim().toUpperCase() })).filter((c) => c.code);
+    const codes = clean.map((c) => c.code);
+    if (new Set(codes).size !== codes.length) { setErr('Hay códigos repetidos.'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      await saveCoupons(clean);
+      setList(clean);
+      setSaved(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo guardar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="card">
+        <h2>Cupones de descuento</h2>
+        <p className="muted">Cargando…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card">
+      <h2>Cupones de descuento</h2>
+      <p className="muted">Los usos se cuentan sobre los pedidos reales. El descuento se aplica al subtotal de productos (antes del envío) y se valida en el servidor.</p>
+      {list.length === 0 && <p className="muted">Aún no hay cupones. Añade el primero abajo.</p>}
+      {list.map((c, i) => {
+        const u = usage(c.code);
+        return (
+          <div className="coupon-row" key={i}>
+            <div className="admin-grid">
+              <label className="field-inline">
+                Código
+                <input value={c.code} onChange={(e) => update(i, { code: e.target.value.toUpperCase() })} placeholder="HOLA10" />
+              </label>
+              <label className="field-inline">
+                Tipo
+                <select value={c.type} onChange={(e) => update(i, { type: e.target.value as CouponType })}>
+                  <option value="percent">Porcentaje (%)</option>
+                  <option value="fixed">Importe fijo (€)</option>
+                </select>
+              </label>
+              <label className="field-inline">
+                {c.type === 'percent' ? 'Descuento (%)' : 'Descuento (€)'}
+                <input type="number" step="0.01" min="0" value={c.value} onChange={(e) => update(i, { value: num(e.target.value) })} />
+              </label>
+              <label className="field-inline">
+                Mínimo pedido (€)
+                <input type="number" step="0.01" min="0" value={c.minSubtotal ?? 0} onChange={(e) => update(i, { minSubtotal: num(e.target.value) })} />
+              </label>
+              <label className="field-inline">
+                Límite total (0 = ∞)
+                <input type="number" step="1" min="0" value={c.maxUses ?? 0} onChange={(e) => update(i, { maxUses: num(e.target.value) })} />
+              </label>
+              <label className="field-inline">
+                Límite por cliente (0 = ∞)
+                <input type="number" step="1" min="0" value={c.maxUsesPerCustomer ?? 0} onChange={(e) => update(i, { maxUsesPerCustomer: num(e.target.value) })} />
+              </label>
+              <label className="field-inline">
+                Caduca
+                <input type="date" value={dateToInput(c.expiresAt)} onChange={(e) => update(i, { expiresAt: inputToDate(e.target.value) })} />
+              </label>
+              <label className="chk" style={{ alignSelf: 'end' }}>
+                <input type="checkbox" checked={c.active} onChange={(e) => update(i, { active: e.target.checked })} />
+                Activo
+              </label>
+            </div>
+            <div className="coupon-meta">
+              <span className="muted">
+                Usos: <b>{u.total}</b>
+                {c.maxUses ? ` / ${c.maxUses}` : ''} · este mes: <b>{u.month}</b>
+              </span>
+              <button type="button" className="chip chip-danger" onClick={() => removeAt(i)}>Eliminar</button>
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="chip" onClick={add}>+ Añadir cupón</button>
+        <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={saving}>
+          {saving ? 'Guardando…' : 'Guardar cupones'}
         </button>
         {saved && <span className="muted">✓ Guardado</span>}
         {err && <span className="price-flag">{err}</span>}
