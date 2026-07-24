@@ -3089,23 +3089,38 @@ body {
 .color-editor {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 420px;
+  gap: 8px;
+  max-width: 640px;
 }
 .color-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
 }
 .color-upload {
   cursor: pointer;
   flex: 0 0 auto;
 }
+.color-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  align-items: center;
+}
+.icon-chip {
+  padding: 6px 9px;
+  line-height: 1;
+}
 .color-row input[type='text'] {
   flex: 1;
+  min-width: 130px;
   font: inherit;
-  padding: 5px 8px;
+  padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
 }

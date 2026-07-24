@@ -698,15 +698,6 @@ function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: stri
             ) : (
               <input type="color" value={c.hex} onChange={(e) => patch(i, { hex: e.target.value })} />
             )}
-            <label className="chip color-upload" title="Subir imagen del color">
-              📷
-              <input type="file" accept="image/*" hidden onChange={(e) => void uploadImg(i, e.target.files?.[0])} />
-            </label>
-            {c.img && (
-              <button type="button" className="chip" title="Quitar imagen (volver a color)" onClick={() => patch(i, { img: undefined })}>
-                ✕ img
-              </button>
-            )}
             <input type="text" value={c.name} onChange={(e) => patch(i, { name: e.target.value })} />
             <label className="color-extra" title="Suplemento por este color (€)">
               +€
@@ -722,9 +713,20 @@ function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: stri
                 }}
               />
             </label>
-            <button type="button" className="chip chip-danger" onClick={() => onChange(items.filter((_, j) => j !== i))}>
-              ✕
-            </button>
+            <span className="color-actions">
+              <label className="chip icon-chip color-upload" title="Subir imagen del color">
+                📷
+                <input type="file" accept="image/*" hidden onChange={(e) => void uploadImg(i, e.target.files?.[0])} />
+              </label>
+              {c.img && (
+                <button type="button" className="chip icon-chip" title="Quitar imagen (volver a color)" onClick={() => patch(i, { img: undefined })}>
+                  🚫
+                </button>
+              )}
+              <button type="button" className="chip icon-chip chip-danger" title="Eliminar color" onClick={() => onChange(items.filter((_, j) => j !== i))}>
+                🗑
+              </button>
+            </span>
           </div>
         ))}
         <button type="button" className="chip" onClick={() => onChange([...items, { name: 'Nuevo color', hex: '#cccccc', enabled: true, extra: 0 }])}>
