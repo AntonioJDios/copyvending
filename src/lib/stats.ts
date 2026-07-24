@@ -111,6 +111,77 @@ export function seriesBy(orders: Order[], from: number, to: number, unit: Unit, 
   return [...map.values()].sort((a, b) => a.period.localeCompare(b.period));
 }
 
+// ── Coupons ─────────────────────────────────────────────────────────
+export interface CouponRow {
+  code: string;
+  uses: number;
+  /** Total € given away by this coupon. */
+  discount: number;
+  /** Gross revenue (IVA incl.) of the orders that used it. */
+  revenue: number;
+  /** Average order value for orders using it (revenue / uses). */
+  avgOrder: number;
+  /** Per-month breakdown, keyed 'YYYY-MM'. */
+  byMonth: Record<string, { uses: number; discount: number }>;
+}
+export interface CouponAnalytics {
+  /** Month keys in the window (chronological) — columns for the matrix + chart. */
+  months: string[];
+  rows: CouponRow[];
+  totals: { uses: number; discount: number; revenue: number; ordersWithCoupon: number; ordersTotal: number };
+  /** Overall series for the evolution chart. */
+  monthly: { period: string; uses: number; discount: number }[];
+}
+
+/** Coupon usage over the last `monthsBack` months (by source). Uses are counted
+ *  from the orders that stored each code, so the numbers match reality. */
+export function couponAnalytics(orders: Order[], monthsBack: number, source = 'all'): CouponAnalytics {
+  const scoped = source === 'all' ? orders : orders.filter((o) => o.source === source);
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    months.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1).getTime()));
+  }
+  const windowStart = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1).getTime();
+
+  const rowMap = new Map<string, CouponRow>();
+  const monthly = months.map((period) => ({ period, uses: 0, discount: 0 }));
+  const monthlyIdx = new Map(monthly.map((m) => [m.period, m]));
+  const totals = { uses: 0, discount: 0, revenue: 0, ordersWithCoupon: 0, ordersTotal: 0 };
+
+  for (const o of scoped) {
+    if (o.createdAt < windowStart) continue;
+    totals.ordersTotal += 1;
+    const code = (o.couponCode ?? '').trim().toUpperCase();
+    if (!code) continue;
+    const disc = Number(o.couponDiscount) || 0;
+    const rev = Number(o.total) || 0;
+    const mk = monthKey(o.createdAt);
+    let row = rowMap.get(code);
+    if (!row) {
+      row = { code, uses: 0, discount: 0, revenue: 0, avgOrder: 0, byMonth: {} };
+      rowMap.set(code, row);
+    }
+    row.uses += 1;
+    row.discount += disc;
+    row.revenue += rev;
+    const bm = row.byMonth[mk] ?? { uses: 0, discount: 0 };
+    bm.uses += 1;
+    bm.discount += disc;
+    row.byMonth[mk] = bm;
+    const mm = monthlyIdx.get(mk);
+    if (mm) { mm.uses += 1; mm.discount += disc; }
+    totals.uses += 1;
+    totals.discount += disc;
+    totals.revenue += rev;
+  }
+  totals.ordersWithCoupon = totals.uses;
+  const rows = [...rowMap.values()]
+    .map((r) => ({ ...r, avgOrder: r.uses > 0 ? r.revenue / r.uses : 0 }))
+    .sort((a, b) => b.uses - a.uses);
+  return { months, rows, totals, monthly };
+}
+
 /**
  * Aggregate orders into the dashboard model. Breakdowns are scoped to
  * [fromMs, toMs]; the monthly series always spans the whole list (for the trend).

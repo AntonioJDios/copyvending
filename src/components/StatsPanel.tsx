@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useOrders } from '../store/useOrders';
-import { aggregate, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type SeriesPoint, type Unit } from '../lib/stats';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useOrders, type Order } from '../store/useOrders';
+import { aggregate, couponAnalytics, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
@@ -230,6 +230,9 @@ export function StatsPanel() {
               <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
             </section>
 
+            {/* Cupones de descuento */}
+            <CouponStats orders={orders} source={source} />
+
             {/* Combinaciones más frecuentes */}
             <section className="card">
               <h2>Combinaciones de papel más pedidas</h2>
@@ -416,5 +419,128 @@ function Breakdown({ title, buckets, metric, labelOf }: { title?: string; bucket
         );
       })}
     </div>
+  );
+}
+
+type CSort = 'uses' | 'discount' | 'revenue' | 'avgOrder';
+
+function SortTh({ k, sort, onSort, children }: { k: CSort; sort: CSort; onSort: (k: CSort) => void; children: ReactNode }) {
+  return (
+    <th className={`sortable${sort === k ? ' on' : ''}`} onClick={() => onSort(k)}>
+      {children}
+      {sort === k ? ' ▾' : ''}
+    </th>
+  );
+}
+
+/** Coupons dashboard: total discount given away, evolution by month, a sortable
+ *  per-coupon ranking and a coupon×month usage matrix. */
+function CouponStats({ orders, source }: { orders: Order[]; source: string }) {
+  const [months, setMonths] = useState(6);
+  const [cmetric, setCmetric] = useState<'discount' | 'uses'>('discount');
+  const [sort, setSort] = useState<CSort>('uses');
+  const data = useMemo(() => couponAnalytics(orders, months, source), [orders, months, source]);
+
+  const monthsToggle = (
+    <div className="seg-toggle sm">
+      {[6, 12, 24].map((m) => (
+        <button key={m} type="button" className={months === m ? 'on' : ''} onClick={() => setMonths(m)}>{m}m</button>
+      ))}
+    </div>
+  );
+
+  if (data.totals.uses === 0) {
+    return (
+      <section className="card">
+        <div className="stats-card-head">
+          <h2>Cupones de descuento</h2>
+          {monthsToggle}
+        </div>
+        <p className="muted">No se ha usado ningún cupón en los últimos {months} meses{source !== 'all' ? ' para esta fuente' : ''}.</p>
+      </section>
+    );
+  }
+
+  const rows: CouponRow[] = [...data.rows].sort((a, b) => b[sort] - a[sort]);
+  const monthLbl = (mk: string) => { const [, m] = mk.split('-').map(Number); return MONTHS[m - 1]; };
+  const pts: SeriesPoint[] = data.monthly.map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }));
+  const cval = (p: SeriesPoint) => (cmetric === 'discount' ? p.revenue : p.orders);
+  const cfmt = (n: number) => (cmetric === 'discount' ? eur0(n) : int(n));
+  const cmax = Math.max(1, ...pts.map(cval));
+  const cellVal = (v?: { uses: number; discount: number }) => (v ? (cmetric === 'discount' ? v.discount : v.uses) : 0);
+  const pct = data.totals.ordersTotal > 0 ? Math.round((data.totals.ordersWithCoupon / data.totals.ordersTotal) * 100) : 0;
+
+  return (
+    <section className="card">
+      <div className="stats-card-head">
+        <h2>Cupones de descuento</h2>
+        <div className="dayline-ctls">
+          <div className="seg-toggle sm">
+            <button type="button" className={cmetric === 'discount' ? 'on' : ''} onClick={() => setCmetric('discount')}>Descuento €</button>
+            <button type="button" className={cmetric === 'uses' ? 'on' : ''} onClick={() => setCmetric('uses')}>Usos</button>
+          </div>
+          {monthsToggle}
+        </div>
+      </div>
+
+      <div className="stats-kpis">
+        <Kpi label="Descuento total (dejado de ganar)" value={eur(data.totals.discount)} accent />
+        <Kpi label="Pedidos con cupón" value={`${int(data.totals.ordersWithCoupon)} · ${pct}%`} />
+        <Kpi label="Ingresos con cupón" value={eur(data.totals.revenue)} />
+        <Kpi label="Ticket medio con cupón" value={eur(data.totals.ordersWithCoupon > 0 ? data.totals.revenue / data.totals.ordersWithCoupon : 0)} />
+      </div>
+
+      <h3>Evolución · {cmetric === 'discount' ? 'descuento' : 'usos'} por mes</h3>
+      <TrendChart points={pts} max={cmax} unit="month" value={cval} fmt={cfmt} />
+
+      <h3>Por cupón</h3>
+      <div className="coupon-stats-wrap">
+        <table className="coupon-stats-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <SortTh k="uses" sort={sort} onSort={setSort}>Usos</SortTh>
+              <SortTh k="discount" sort={sort} onSort={setSort}>Descuento</SortTh>
+              <SortTh k="revenue" sort={sort} onSort={setSort}>Ingresos</SortTh>
+              <SortTh k="avgOrder" sort={sort} onSort={setSort}>Ticket medio</SortTh>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.code}>
+                <td><b>{r.code}</b></td>
+                <td>{int(r.uses)}</td>
+                <td>{eur(r.discount)}</td>
+                <td>{eur(r.revenue)}</td>
+                <td>{eur(r.avgOrder)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Uso por meses · {cmetric === 'discount' ? '€ descuento' : 'usos'}</h3>
+      <div className="coupon-stats-wrap">
+        <table className="coupon-stats-table coupon-matrix">
+          <thead>
+            <tr>
+              <th>Cupón</th>
+              {data.months.map((mk) => <th key={mk}>{monthLbl(mk)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.code}>
+                <td><b>{r.code}</b></td>
+                {data.months.map((mk) => {
+                  const n = cellVal(r.byMonth[mk]);
+                  return <td key={mk} className={n ? 'has' : 'zero'}>{n ? cfmt(n) : '·'}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

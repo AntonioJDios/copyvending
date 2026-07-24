@@ -2256,6 +2256,51 @@ body {
   font-size: 13px;
 }
 
+/* Coupon statistics tables */
+.coupon-stats-wrap {
+  overflow-x: auto;
+  margin: 4px 0 6px;
+}
+.coupon-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 420px;
+}
+.coupon-stats-table th,
+.coupon-stats-table td {
+  padding: 7px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border, #e6e9ee);
+  white-space: nowrap;
+}
+.coupon-stats-table th:first-child,
+.coupon-stats-table td:first-child {
+  text-align: left;
+}
+.coupon-stats-table thead th {
+  color: var(--muted, #67707a);
+  font-weight: 600;
+}
+.coupon-stats-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.coupon-stats-table th.sortable:hover { color: var(--text, #1f2933); }
+.coupon-stats-table th.sortable.on { color: var(--brand, #0ea5b7); }
+.coupon-matrix td.zero { color: var(--muted, #aab2bb); }
+
+/* Coupon search in the admin */
+.coupon-search {
+  width: 100%;
+  max-width: 320px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border, #d8dde3);
+  border-radius: 8px;
+  font: inherit;
+}
+
 .account-head {
   display: flex;
   align-items: flex-start;

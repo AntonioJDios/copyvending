@@ -923,6 +923,7 @@ function CouponsEditor() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
+  const [filter, setFilter] = useState('');
   const orders = useOrders((s) => s.orders);
   const fetchOrders = useOrders((s) => s.fetchOrders);
 
@@ -985,7 +986,17 @@ function CouponsEditor() {
       <h2>Cupones de descuento</h2>
       <p className="muted">Los usos se cuentan sobre los pedidos reales. El descuento se aplica al subtotal de productos (antes del envío) y se valida en el servidor.</p>
       {list.length === 0 && <p className="muted">Aún no hay cupones. Añade el primero abajo.</p>}
+      {list.length > 5 && (
+        <input
+          className="coupon-search"
+          type="search"
+          placeholder="🔎 Buscar cupón por código…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      )}
       {list.map((c, i) => {
+        if (filter && !c.code.toUpperCase().includes(filter.toUpperCase())) return null;
         const u = usage(c.code);
         return (
           <div className="coupon-row" key={i}>
