@@ -2425,6 +2425,20 @@ body {
 .src-price-bar {
   border-left: 3px solid var(--brand, #0ea5b7);
 }
+.source-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(14, 165, 183, 0.12);
+  color: var(--brand, #0ea5b7);
+  letter-spacing: 0;
+  align-self: center;
+}
+.source-badge.src-mostrador {
+  background: rgba(180, 110, 0, 0.14);
+  color: #b26a00;
+}
 
 .account-head {
   display: flex;

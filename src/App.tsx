@@ -17,6 +17,7 @@ import { CartPage } from './components/CartPage';
 import { CartButton } from './components/CartButton';
 import { AccountButton } from './components/AccountButton';
 import { AdminGate } from './components/AdminGate';
+import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
 // main configurator bundle).
@@ -108,7 +109,12 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Copistería</h1>
+        <h1>
+          Copistería
+          <span className={`source-badge src-${CURRENT_SOURCE}`}>
+            {CURRENT_SOURCE === 'mostrador' ? '🏪 Papelería' : '🌐 Web'}
+          </span>
+        </h1>
         <nav className="topnav">
           <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
             {hasBackend && (
