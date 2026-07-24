@@ -62,6 +62,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const invoicingOn = !!invoicing?.enabled;
   const shippingCfg = useConfigurator((s) => s.catalog.shipping);
   const shippingOn = !!shippingCfg?.enabled;
+  const couponsOn = (useConfigurator((s) => s.catalog.couponsEnabled) ?? true) && hasBackend;
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
@@ -521,7 +522,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               </div>
             )}
 
-            {hasBackend && (
+            {couponsOn && (
               <div className="checkout-coupon">
                 {couponApplied ? (
                   <div className="checkout-total checkout-subline">

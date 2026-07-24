@@ -2415,6 +2415,17 @@ body {
   font-size: 12px;
 }
 
+/* Per-source module toggles + price-source bar (admin) */
+.src-toggles {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.src-price-bar {
+  border-left: 3px solid var(--brand, #0ea5b7);
+}
+
 .account-head {
   display: flex;
   align-items: flex-start;

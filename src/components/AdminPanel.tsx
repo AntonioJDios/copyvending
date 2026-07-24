@@ -24,10 +24,40 @@ import {
   type ColorOption,
   type PaymentMethodConfig,
   type SourceKey,
+  type SourceModules,
   type SourcePricing,
 } from '../domain/catalog';
 
 const SRC_LABEL: Record<SourceKey, string> = { online: 'Web', mostrador: 'Papelería', email: 'Email' };
+
+/** Per-source on/off toggles for a shared module (default: follows the global). */
+function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostrador', 'email'] }: {
+  draft: Catalog;
+  change: (fn: (d: Catalog) => void) => void;
+  mod: keyof SourceModules;
+  label: string;
+  sources?: SourceKey[];
+}) {
+  const get = (s: SourceKey) => draft.sources?.[s]?.modules?.[mod] ?? true;
+  const set = (s: SourceKey, v: boolean) =>
+    change((d) => {
+      const src = (d.sources ??= {});
+      const o = (src[s] ??= {});
+      (o.modules ??= {})[mod] = v;
+    });
+  return (
+    <section className="card">
+      <h3 style={{ margin: '0 0 8px' }}>{label} · activar por fuente</h3>
+      <div className="src-toggles">
+        {sources.map((s) => (
+          <label key={s} className="chk">
+            <input type="checkbox" checked={get(s)} onChange={(e) => set(s, e.target.checked)} /> {SRC_LABEL[s]}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 type AdminTab = 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
@@ -380,20 +410,30 @@ export function AdminPanel() {
           <>
             <BusinessEditor draft={draft} change={change} />
             <PaymentsEditor draft={draft} change={change} />
+            <SourceToggles draft={draft} change={change} mod="payments" label="Pago en local" />
             <InvoicingEditor draft={draft} change={change} />
+            <SourceToggles draft={draft} change={change} mod="invoicing" label="Facturación" />
           </>
         )}
 
         {tab === 'envios' && (
           <>
             <ShippingEditor draft={draft} change={change} />
+            <SourceToggles draft={draft} change={change} mod="shipping" label="Envíos" sources={['online', 'mostrador']} />
             <GlsEditor />
           </>
         )}
 
-        {tab === 'cupones' && <CouponsEditor />}
+        {tab === 'cupones' && (
+          <>
+            <SourceToggles draft={draft} change={change} mod="coupons" label="Cupones" />
+            <CouponsEditor />
+          </>
+        )}
 
         {tab === 'asistente' && (
+        <>
+        <SourceToggles draft={draft} change={change} mod="assistant" label="Asistente" sources={['online', 'mostrador']} />
         <section className="card">
           <h2>Asistente (IA)</h2>
           <p className="muted">Controla el chat de ayuda y las sugerencias automáticas al subir documentos.</p>
@@ -432,9 +472,22 @@ export function AdminPanel() {
             );
           })()}
         </section>
+        </>
         )}
 
-        {tab === 'herramientas' && API_BASE && <EmailTestTool />}
+        {tab === 'herramientas' && API_BASE && (
+          <>
+            <section className="card">
+              <h2>Entrada de pedidos por email</h2>
+              <label className="chk">
+                <input type="checkbox" checked={draft.emailEnabled !== false} onChange={(e) => change((d) => { d.emailEnabled = e.target.checked; })} />
+                Leer el buzón de email y crear pedidos
+              </label>
+              <p className="muted">Si lo desactivas, el backoffice deja de leer el correo (la fuente Email queda apagada). No afecta a Web ni Papelería.</p>
+            </section>
+            <EmailTestTool />
+          </>
+        )}
       </div>
 
       <footer className="admin-actions">

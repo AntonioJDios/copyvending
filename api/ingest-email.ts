@@ -111,7 +111,7 @@ function colorAfter(text: string, keyword: string, options: string[]): string | 
 
 /** Shop settings from the Neon catalog: ring/cover colour names + the owner's
  *  free-text assistant instructions. */
-async function getShopSettings(): Promise<{ ring: string[]; cover: string[]; instructions: string }> {
+async function getShopSettings(): Promise<{ ring: string[]; cover: string[]; instructions: string; emailEnabled: boolean }> {
   const fallback = {
     ring: ['Transparente', 'Negro', 'Verde Menta', 'Amarillo Golden', 'Turquesa', 'Rosa Pastel', 'Azul Pastel', 'Lila', 'Azul Purpurina'],
     cover: [
@@ -119,6 +119,7 @@ async function getShopSettings(): Promise<{ ring: string[]; cover: string[]; ins
       'Plástico Azul Pastel', 'Plástico Naranja Pastel', 'Plástico Rosa Pastel', 'Plástico Lila Pastel',
     ],
     instructions: '',
+    emailEnabled: true,
   };
   try {
     const rows = (await db()`select value from settings where key = 'catalog'`) as {
@@ -126,14 +127,17 @@ async function getShopSettings(): Promise<{ ring: string[]; cover: string[]; ins
         ringColors?: { name: string; enabled?: boolean }[];
         coverColors?: { name: string; enabled?: boolean }[];
         assistant?: { instructions?: string };
+        emailEnabled?: boolean;
       };
     }[];
     const c = rows[0]?.value;
     if (c) {
+      const emailEnabled = c.emailEnabled !== false;
       const ring = (c.ringColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
       const cover = (c.coverColors || []).filter((x) => x.enabled !== false).map((x) => x.name);
       const instructions = c.assistant?.instructions || '';
-      if (ring.length) return { ring, cover: cover.length ? cover : fallback.cover, instructions };
+      if (ring.length) return { ring, cover: cover.length ? cover : fallback.cover, instructions, emailEnabled };
+      return { ...fallback, emailEnabled };
     }
   } catch {
     /* settings missing → fallback */
@@ -568,7 +572,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(r.http).json(r.body);
     }
 
-    // Gmail mode: read the inbox and process new messages.
+    // Gmail mode: read the inbox and process new messages. Skipped if the owner
+    // turned the email source off from the panel.
+    if (!settings.emailEnabled) return res.status(200).json({ skipped: 'La entrada por email está desactivada.' });
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
       return res.status(400).json({ error: 'Falta GMAIL_USER / GMAIL_APP_PASSWORD (o envía un email en el cuerpo para probar).' });
     }

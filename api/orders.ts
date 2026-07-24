@@ -213,6 +213,7 @@ type PriceCatalog = {
 type SourcePriceOverride = Partial<Omit<PriceCatalog, 'sources' | 'ringColors' | 'coverColors'>> & {
   ringExtras?: Record<string, number>;
   coverExtras?: Record<string, number>;
+  modules?: { payments?: boolean; invoicing?: boolean; shipping?: boolean; coupons?: boolean; assistant?: boolean };
 };
 const FALLBACK: PriceCatalog = {
   pagePrices: {
@@ -487,7 +488,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Anti-fraud: recompute totals server-side with the Neon catalog for THIS
       // order's source; the client-sent price is never trusted.
-      const catalog = applySource(await getCatalog(), typeof o.source === 'string' ? o.source : 'mostrador');
+      const source = typeof o.source === 'string' ? o.source : 'mostrador';
+      const base = await getCatalog();
+      const catalog = applySource(base, source);
+      const sourceMods = base.sources?.[source]?.modules ?? {};
       const items = Array.isArray(o.items) ? o.items : [];
       let serverTotal = 0;
       const pricedItems = items.map((it) => {
@@ -503,19 +507,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let shippingMethod = o.shippingMethod === 'envio' ? 'envio' : 'recoger';
       let shippingCost = 0;
       if (shippingMethod === 'envio') {
-        if (!ship?.enabled) return res.status(400).json({ error: 'Los envíos no están disponibles' });
+        if (!ship || !(sourceMods.shipping ?? ship.enabled)) return res.status(400).json({ error: 'Los envíos no están disponibles' });
         const zone = zoneForCP(cust.shipping?.cp ?? '');
         if (!zone || zone === 'noservido') return res.status(400).json({ error: 'No realizamos envíos a ese código postal' });
-        const base = zone === 'baleares' ? Number(ship.baleares) || 0 : Number(ship.peninsula) || 0;
+        const shipBase = zone === 'baleares' ? Number(ship.baleares) || 0 : Number(ship.peninsula) || 0;
         const threshold = Number(ship.freeThreshold) || 0;
-        shippingCost = threshold > 0 && itemsSubtotal >= threshold ? 0 : base;
+        shippingCost = threshold > 0 && itemsSubtotal >= threshold ? 0 : shipBase;
       }
 
       // Coupon (validated + applied server-side; discount on the products
       // subtotal, BEFORE shipping). Invalid/expired/exhausted → simply ignored.
       let couponCode: string | null = null;
       let couponDiscount = 0;
-      if (typeof o.couponCode === 'string' && o.couponCode.trim()) {
+      if ((sourceMods.coupons ?? true) && typeof o.couponCode === 'string' && o.couponCode.trim()) {
         const email = (o.customer as { email?: string } | undefined)?.email;
         const v = await validateCoupon(o.couponCode, itemsSubtotal, email);
         if (v.ok) {

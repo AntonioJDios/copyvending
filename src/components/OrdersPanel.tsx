@@ -331,7 +331,8 @@ export function OrdersPanel() {
   const pullInbox = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (API_BASE) {
+      const emailOn = useConfigurator.getState().catalog.emailEnabled ?? true;
+      if (API_BASE && emailOn) {
         try {
           await fetch(`${API_BASE}/ingest-email`, { method: 'POST' });
         } catch {

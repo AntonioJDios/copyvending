@@ -94,6 +94,15 @@ export interface AssistantConfig {
 /** The three fixed sources: Web (online), Papelería (mostrador) and Email. */
 export type SourceKey = 'online' | 'mostrador' | 'email';
 
+/** Per-source ON/OFF of the shared modules (absent → follows the global config). */
+export interface SourceModules {
+  payments?: boolean;
+  invoicing?: boolean;
+  shipping?: boolean;
+  coupons?: boolean;
+  assistant?: boolean;
+}
+
 /** Per-source PRICE overrides. Any field absent → falls back to the base value.
  *  The colour SETS (ring/cover) are shared; only their € surcharge varies here. */
 export interface SourcePricing {
@@ -112,6 +121,8 @@ export interface SourcePricing {
   /** € surcharge per ring/cover colour, by colour name. */
   ringExtras?: Record<string, number>;
   coverExtras?: Record<string, number>;
+  /** Per-source module on/off. */
+  modules?: SourceModules;
 }
 
 export interface Catalog {
@@ -163,30 +174,42 @@ export interface Catalog {
   badgePrice: number;
   /** Per-source price overrides (absent → every source uses the base prices). */
   sources?: Partial<Record<SourceKey, SourcePricing>>;
+  /** Whether coupons apply for THIS source — set by catalogForSource (effective). */
+  couponsEnabled?: boolean;
+  /** Global: whether the email order source is active at all (not per-source). */
+  emailEnabled?: boolean;
 }
 
-/** Effective catalog for a source: base prices with that source's overrides
- *  applied (prices + ring/cover € surcharge only; the rest is shared). */
+/** Effective catalog for a source: base with that source's PRICE overrides and
+ *  its MODULE on/off applied (prices, ring/cover € and enabled flags). The rest
+ *  (sizes, colours, presets…) is shared. */
 export function catalogForSource(catalog: Catalog, source: SourceKey): Catalog {
   const o = catalog.sources?.[source];
-  if (!o) return catalog;
-  return {
+  const m = o?.modules;
+  const eff: Catalog = {
     ...catalog,
-    pagePrices: { ...catalog.pagePrices, ...(o.pagePrices ?? {}) },
-    bindingPrices: { ...catalog.bindingPrices, ...(o.bindingPrices ?? {}) },
-    colorSurcharge: { ...catalog.colorSurcharge, ...(o.colorSurcharge ?? {}) },
-    laminateSurcharge: { ...catalog.laminateSurcharge, ...(o.laminateSurcharge ?? {}) },
-    coverColorSurcharge: o.coverColorSurcharge ?? catalog.coverColorSurcharge,
-    perforatePrice: o.perforatePrice ?? catalog.perforatePrice,
-    holesPrice: o.holesPrice ?? catalog.holesPrice,
-    stickerPrice: o.stickerPrice ?? catalog.stickerPrice,
-    noMarginsPrice: o.noMarginsPrice ?? catalog.noMarginsPrice,
-    extraFolioPrice: o.extraFolioPrice ?? catalog.extraFolioPrice,
-    mugPrice: o.mugPrice ?? catalog.mugPrice,
-    badgePrice: o.badgePrice ?? catalog.badgePrice,
-    ringColors: catalog.ringColors.map((c) => ({ ...c, extra: o.ringExtras?.[c.name] ?? c.extra })),
-    coverColors: catalog.coverColors.map((c) => ({ ...c, extra: o.coverExtras?.[c.name] ?? c.extra })),
+    pagePrices: { ...catalog.pagePrices, ...(o?.pagePrices ?? {}) },
+    bindingPrices: { ...catalog.bindingPrices, ...(o?.bindingPrices ?? {}) },
+    colorSurcharge: { ...catalog.colorSurcharge, ...(o?.colorSurcharge ?? {}) },
+    laminateSurcharge: { ...catalog.laminateSurcharge, ...(o?.laminateSurcharge ?? {}) },
+    coverColorSurcharge: o?.coverColorSurcharge ?? catalog.coverColorSurcharge,
+    perforatePrice: o?.perforatePrice ?? catalog.perforatePrice,
+    holesPrice: o?.holesPrice ?? catalog.holesPrice,
+    stickerPrice: o?.stickerPrice ?? catalog.stickerPrice,
+    noMarginsPrice: o?.noMarginsPrice ?? catalog.noMarginsPrice,
+    extraFolioPrice: o?.extraFolioPrice ?? catalog.extraFolioPrice,
+    mugPrice: o?.mugPrice ?? catalog.mugPrice,
+    badgePrice: o?.badgePrice ?? catalog.badgePrice,
+    ringColors: catalog.ringColors.map((c) => ({ ...c, extra: o?.ringExtras?.[c.name] ?? c.extra })),
+    coverColors: catalog.coverColors.map((c) => ({ ...c, extra: o?.coverExtras?.[c.name] ?? c.extra })),
+    couponsEnabled: m?.coupons ?? catalog.couponsEnabled ?? true,
   } as Catalog;
+  // Resolve the shared modules' enabled flag for this source (default: follow global).
+  if (catalog.payments?.local) eff.payments = { ...catalog.payments, local: { ...catalog.payments.local, enabled: m?.payments ?? catalog.payments.local.enabled } };
+  if (catalog.invoicing) eff.invoicing = { ...catalog.invoicing, enabled: m?.invoicing ?? catalog.invoicing.enabled };
+  if (catalog.shipping) eff.shipping = { ...catalog.shipping, enabled: m?.shipping ?? catalog.shipping.enabled };
+  if (catalog.assistant) eff.assistant = { ...catalog.assistant, enabled: m?.assistant ?? catalog.assistant.enabled };
+  return eff;
 }
 
 export const ALL_SIZES: Size[] = ['A4', 'A3', 'A5'];
