@@ -29,6 +29,7 @@ import {
 } from '../domain/catalog';
 
 const SRC_LABEL: Record<SourceKey, string> = { online: 'Web', mostrador: 'Papelería', email: 'Email' };
+const SRC_ORDER: SourceKey[] = ['online', 'mostrador', 'email'];
 
 /** Per-source on/off toggles for a shared module (default: follows the global). */
 function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostrador', 'email'] }: {
@@ -47,7 +48,7 @@ function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostra
     });
   return (
     <section className="card">
-      <h3 style={{ margin: '0 0 8px' }}>{label} · activar por fuente</h3>
+      <h3 style={{ margin: '0 0 8px' }}>{label} · activar por canal</h3>
       <div className="src-toggles">
         {sources.map((s) => (
           <label key={s} className="chk">
@@ -84,6 +85,11 @@ export function AdminPanel() {
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<AdminTab>('catalogo');
   const [priceSrc, setPriceSrc] = useState<SourceKey>('online');
+  const [slideDir, setSlideDir] = useState<'r' | 'l'>('r');
+  const pickSrc = (s: SourceKey) => {
+    setSlideDir(SRC_ORDER.indexOf(s) >= SRC_ORDER.indexOf(priceSrc) ? 'r' : 'l');
+    setPriceSrc(s);
+  };
 
   const edit = (fn: (d: Catalog) => void) =>
     setDraft((prev) => {
@@ -166,16 +172,16 @@ export function AdminPanel() {
         {/* Selector de source para los PRECIOS (lo demás es común) */}
         <section className="card src-price-bar">
           <div className="stats-card-head">
-            <h2>💶 Precios por source</h2>
+            <h2>💶 Tarifa que estás editando</h2>
             <div className="seg-toggle sm">
               {(['online', 'mostrador', 'email'] as SourceKey[]).map((s) => (
-                <button key={s} type="button" className={priceSrc === s ? 'on' : ''} onClick={() => setPriceSrc(s)}>{SRC_LABEL[s]}</button>
+                <button key={s} type="button" className={priceSrc === s ? 'on' : ''} onClick={() => pickSrc(s)}>{SRC_LABEL[s]}</button>
               ))}
             </div>
           </div>
           <p className="muted">
-            Perfiles rápidos, tamaños, gramajes y los colores de anillas/contraportadas son <b>comunes</b> a todas las sources.
-            Los <b>precios</b> (por página, encuadernación, suplementos, taza/chapa y el € de cada color) son los de <b>{SRC_LABEL[priceSrc]}</b>.
+            Los perfiles, tamaños, gramajes y los colores de anillas/contraportadas son <b>los mismos</b> en Web, Papelería y Email.
+            Lo que cambias abajo (<b>precios</b> por página, encuadernación, suplementos, taza/chapa y el € de cada color) es la tarifa de <b>{SRC_LABEL[priceSrc]}</b>.
           </p>
         </section>
 
@@ -229,9 +235,12 @@ export function AdminPanel() {
           </div>
         </section>
 
+        {/* Secciones de PRECIO (dependen del canal). key={priceSrc} → se
+            re-monta y desliza al cambiar de canal, para que se note el cambio. */}
+        <div key={priceSrc} className={`price-slide slide-${slideDir}`}>
         {/* Precios por página */}
         <section className="card">
-          <h2>Precio por página impresa (€)</h2>
+          <h2>Precio por página impresa (€) · {SRC_LABEL[priceSrc]}</h2>
           <p className="muted">Por combinación tamaño · gramaje · color · caras.</p>
           {ALL_SIZES.map((size) => (
             <div key={size} className="price-table">
@@ -403,6 +412,7 @@ export function AdminPanel() {
         {/* Colores */}
         <ColorEditor title="Colores de anillas" items={draft.ringColors} onChange={(items) => change((d) => { d.ringColors = items; })} extraOf={(c) => gRing(c.name, c.extra ?? 0)} onExtra={(c, v) => sRing(c.name, v)} />
         <ColorEditor title="Colores de contraportada" items={draft.coverColors} onChange={(items) => change((d) => { d.coverColors = items; })} extraOf={(c) => gCover(c.name, c.extra ?? 0)} onExtra={(c, v) => sCover(c.name, v)} />
+        </div>
           </>
         )}
 
@@ -665,6 +675,7 @@ function EmailTestTool() {
 }
 
 function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: string; items: ColorOption[]; onChange: (items: ColorOption[]) => void; extraOf?: (c: ColorOption) => number; onExtra?: (c: ColorOption, v: number) => void }) {
+  const [open, setOpen] = useState(false);
   const patch = (i: number, p: Partial<ColorOption>) => onChange(items.map((x, j) => (j === i ? { ...x, ...p } : x)));
   const uploadImg = async (i: number, file?: File) => {
     if (!file) return;
@@ -678,8 +689,12 @@ function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: stri
   };
   return (
     <section className="card">
-      <h2>{title}</h2>
-      <div className="color-editor">
+      <button type="button" className="collapse-head" onClick={() => setOpen((o) => !o)}>
+        <h2 style={{ margin: 0 }}>{title} <span className="muted" style={{ fontWeight: 400 }}>({items.length})</span></h2>
+        <span className="collapse-caret">{open ? '▾ ocultar' : '▸ editar'}</span>
+      </button>
+      {open && (
+      <div className="color-editor" style={{ marginTop: 12 }}>
         {items.map((c, i) => (
           <div key={i} className={`color-row${c.enabled === false ? ' color-off' : ''}`}>
             <input
@@ -728,6 +743,7 @@ function ColorEditor({ title, items, onChange, extraOf, onExtra }: { title: stri
           + Añadir color
         </button>
       </div>
+      )}
     </section>
   );
 }
@@ -1144,7 +1160,7 @@ function CouponsEditor() {
                 Activo
               </label>
               <div className="field-inline">
-                Fuentes (dónde aplica)
+                Canales (dónde aplica)
                 <span className="coupon-src-toggles">
                   {(['online', 'mostrador'] as const).map((s) => {
                     const list = c.sources ?? ['online', 'mostrador'];
