@@ -62,14 +62,39 @@ const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // ── Cargar dumps ──
 const customers = parse('prstshp_customer.sql', 'prstshp_customer', ['id_customer', 'firstname', 'lastname', 'email', 'active', 'deleted', 'newsletter', 'optin', 'date_add']);
 const orders = parse('prstshp_orders.sql', 'prstshp_orders', ['id_order', 'id_customer', 'total_paid_tax_incl', 'total_paid', 'date_add', 'valid']);
-const addresses = parse('prstshp_address.sql', 'prstshp_address', ['id_customer', 'phone', 'phone_mobile', 'deleted']);
+const addresses = parse('prstshp_address.sql', 'prstshp_address', [
+  'id_address', 'id_customer', 'alias', 'lastname', 'firstname', 'address1', 'address2', 'postcode', 'city', 'phone', 'phone_mobile', 'vat_number', 'dni', 'active', 'deleted',
+]);
+
+const clip = (s, n) => { const v = (s || '').trim(); return v ? v.slice(0, n) : undefined; };
+function toAddr(a) {
+  const linea1 = clip(a.address1, 120);
+  if (!linea1) return null;
+  return {
+    id: 'psa-' + a.id_address,
+    label: clip(a.alias, 60),
+    nombre: `${(a.firstname || '').trim()} ${(a.lastname || '').trim()}`.trim().slice(0, 120) || undefined,
+    nif: clip(a.dni || a.vat_number, 20),
+    linea1,
+    linea2: clip(a.address2, 120),
+    cp: clip(a.postcode, 12),
+    ciudad: clip(a.city, 64),
+    telefono: clip(a.phone_mobile || a.phone, 30),
+  };
+}
 
 const phoneByCust = new Map();
+const addrByCust = new Map(); // id_customer → Address[]
 for (const a of addresses) {
-  if (a.deleted === '1') continue;
+  if (a.deleted === '1' || a.active === '0') continue;
   const id = Number(a.id_customer);
   const ph = (a.phone_mobile || a.phone || '').trim();
   if (ph && !phoneByCust.has(id)) phoneByCust.set(id, ph.slice(0, 30));
+  const ad = toAddr(a);
+  if (!ad) continue;
+  const list = addrByCust.get(id) || [];
+  if (list.length < 10) list.push(ad);
+  addrByCust.set(id, list);
 }
 const buyerIds = new Set(orders.map((o) => Number(o.id_customer)));
 const fullCust = new Map(); // id → {nombre,apellidos,email} para poner nombre al pedido
@@ -87,6 +112,7 @@ for (const c of customers) {
   const rec = {
     id: 'ps-' + c.id_customer, email, nombre: (c.firstname || '').trim().slice(0, 120), apellidos: (c.lastname || '').trim().slice(0, 120),
     telefono: phoneByCust.get(Number(c.id_customer)) || '', consent, createdAt: toMs(c.date_add),
+    addresses: (addrByCust.get(Number(c.id_customer)) || []).slice(),
   };
   const prev = byEmail.get(email);
   if (!prev) byEmail.set(email, rec);
@@ -96,9 +122,15 @@ for (const c of customers) {
     if (!prev.apellidos && rec.apellidos) prev.apellidos = rec.apellidos;
     if (!prev.telefono && rec.telefono) prev.telefono = rec.telefono;
     if (rec.createdAt < prev.createdAt) prev.createdAt = rec.createdAt;
+    for (const ad of rec.addresses) if (prev.addresses.length < 10 && !prev.addresses.some((x) => x.id === ad.id)) prev.addresses.push(ad);
   }
 }
 const custRows = [...byEmail.values()];
+// La 1ª dirección de cada cliente = predeterminada de envío y facturación.
+for (const r of custRows) {
+  r.addresses.forEach((a, i) => { a.defaultShipping = i === 0; a.defaultBilling = i === 0; });
+}
+const withAddr = custRows.filter((r) => r.addresses.length > 0).length;
 
 // ── Pedidos a importar (válidos) ──
 const orderRows = [];
@@ -113,7 +145,7 @@ for (const o of orders) {
   });
 }
 
-console.log(`Clientes a importar: ${custRows.length} (con consentimiento: ${custRows.filter((r) => r.consent).length})`);
+console.log(`Clientes a importar: ${custRows.length} (con consentimiento: ${custRows.filter((r) => r.consent).length} · con dirección: ${withAddr})`);
 console.log(`Pedidos a importar:  ${orderRows.length} · importe ${orderRows.reduce((s, o) => s + o.total, 0).toFixed(2)} €`);
 console.log('Ejemplos cliente:', custRows.slice(0, 2).map((r) => `${r.email} (${r.nombre})`).join(' · '));
 
@@ -150,14 +182,15 @@ const now = Date.now();
 await chunkInsert(
   'customers',
   custRows,
-  ['id', 'email', 'nombre', 'apellidos', 'telefono', 'privacy_consent', 'consent_at', 'policy_version', 'marketing_consent', 'created_at', 'updated_at'],
-  [], // sin casts
-  (r) => [r.id, r.email, r.nombre, r.apellidos, r.telefono || null, true, r.createdAt, 'prestashop-import', r.consent, r.createdAt, now],
+  ['id', 'email', 'nombre', 'apellidos', 'telefono', 'privacy_consent', 'consent_at', 'policy_version', 'marketing_consent', 'addresses', 'created_at', 'updated_at'],
+  ['', '', '', '', '', '', '', '', '', '::jsonb', '', ''], // addresses es jsonb
+  (r) => [r.id, r.email, r.nombre, r.apellidos, r.telefono || null, true, r.createdAt, 'prestashop-import', r.consent, JSON.stringify(r.addresses || []), r.createdAt, now],
   `on conflict (email) do update set
      marketing_consent = customers.marketing_consent or excluded.marketing_consent,
      nombre = coalesce(nullif(customers.nombre, ''), excluded.nombre),
      apellidos = coalesce(nullif(customers.apellidos, ''), excluded.apellidos),
-     telefono = coalesce(nullif(customers.telefono, ''), excluded.telefono)`
+     telefono = coalesce(nullif(customers.telefono, ''), excluded.telefono),
+     addresses = case when customers.addresses is null or customers.addresses = '[]'::jsonb then excluded.addresses else customers.addresses end`
 );
 await chunkInsert(
   'orders',
