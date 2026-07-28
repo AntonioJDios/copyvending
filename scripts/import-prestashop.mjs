@@ -13,6 +13,8 @@ import { neon } from '@neondatabase/serverless';
 
 const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
+const ORDERS_ONLY = args.includes('--orders-only');
+const CUSTOMERS_ONLY = args.includes('--customers-only');
 const DIR = (args.find((a) => a.startsWith('--dir=')) || '--dir=C:/Users/ajmn/Downloads').slice(6).replace(/\/?$/, '/');
 
 // ── Parser de dump MySQL (phpMyAdmin: INSERT ... (cols) VALUES (...),(...);) ──
@@ -40,6 +42,7 @@ function parse(file, table, want) {
           if (ch === "'") { str = false; i++; continue; }
           cur += ch; i++; continue;
         }
+        if ((ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') && cur === '') { i++; continue; } // saltar espacio antes del valor
         if (ch === "'") { str = true; isStr = true; i++; continue; }
         if (ch === ',') { vals.push(isStr ? unesc(cur) : cur.trim() === 'NULL' ? null : cur.trim()); cur = ''; isStr = false; i++; continue; }
         if (ch === ')') { vals.push(isStr ? unesc(cur) : cur.trim() === 'NULL' ? null : cur.trim()); cur = ''; isStr = false; i++; break; }
@@ -56,7 +59,7 @@ function parse(file, table, want) {
   }
   return rows;
 }
-const toMs = (s) => { const t = new Date(String(s || '').replace(' ', 'T')).getTime(); return Number.isFinite(t) ? t : Date.now(); };
+const toMs = (s) => { const t = new Date(String(s || '').trim().replace(' ', 'T')).getTime(); return Number.isFinite(t) ? t : Date.now(); };
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ── Cargar dumps ──
@@ -156,7 +159,9 @@ for (const o of orders) {
 }
 
 console.log(`Clientes a importar: ${custRows.length} (con consentimiento: ${custRows.filter((r) => r.consent).length} · con dirección: ${withAddr} · con provincia: ${withProv})`);
-console.log(`Pedidos a importar:  ${orderRows.length} · importe ${orderRows.reduce((s, o) => s + o.total, 0).toFixed(2)} €`);
+const dmin = orderRows.reduce((a, o) => Math.min(a, o.created_at), Infinity);
+const dmax = orderRows.reduce((a, o) => Math.max(a, o.created_at), 0);
+console.log(`Pedidos a importar:  ${orderRows.length} · importe ${orderRows.reduce((s, o) => s + o.total, 0).toFixed(2)} € · fechas ${new Date(dmin).toISOString().slice(0, 10)} → ${new Date(dmax).toISOString().slice(0, 10)}`);
 console.log('Ejemplos cliente:', custRows.slice(0, 2).map((r) => `${r.email} (${r.nombre})`).join(' · '));
 
 if (!COMMIT) {
@@ -189,7 +194,7 @@ async function chunkInsert(table, rows, cols, casts, rowToParams, conflict) {
 console.log('\nEscribiendo en Neon…');
 await sql.query('alter table customers add column if not exists marketing_consent boolean default false');
 const now = Date.now();
-await chunkInsert(
+if (!ORDERS_ONLY) await chunkInsert(
   'customers',
   custRows,
   ['id', 'email', 'nombre', 'apellidos', 'telefono', 'privacy_consent', 'consent_at', 'policy_version', 'marketing_consent', 'addresses', 'created_at', 'updated_at'],
@@ -202,12 +207,12 @@ await chunkInsert(
      telefono = coalesce(nullif(customers.telefono, ''), excluded.telefono),
      addresses = case when customers.addresses is null or customers.addresses = '[]'::jsonb then excluded.addresses else customers.addresses end`
 );
-await chunkInsert(
+if (!CUSTOMERS_ONLY) await chunkInsert(
   'orders',
   orderRows,
   ['id', 'created_at', 'source', 'customer', 'items', 'total', 'status', 'paid', 'payment_method', 'shipping_method', 'shipping_cost', 'price_mismatch'],
   ['', '', '', '::jsonb', '::jsonb', '', '', '', '', '', '', ''], // customer + items son jsonb
   (r) => [r.id, r.created_at, 'online', JSON.stringify(r.customer), '[]', r.total, 'entregado', true, 'prestashop', null, 0, false],
-  'on conflict (id) do nothing'
+  'on conflict (id) do update set created_at = excluded.created_at, total = excluded.total, customer = excluded.customer'
 );
 console.log('✅ Importación completada.');
