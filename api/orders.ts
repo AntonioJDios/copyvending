@@ -38,6 +38,18 @@ const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
+// "Ready for pickup" notice (pickup orders only). Best-effort via the shop Gmail.
+async function sendReadyMail(to: string, nombre: string, orderId: string): Promise<void> {
+  if (!GMAIL_USER || !GMAIL_PASS || !to) return;
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_PASS } });
+  await t.sendMail({
+    from: `${SHOP_NAME} <${GMAIL_USER}>`,
+    to,
+    subject: `Tu pedido ${orderId} ya está listo para recoger 📦`,
+    text: `Hola ${nombre}:\n\n¡Buenas noticias! Tu pedido ${orderId} ya está preparado. Puedes pasar a recogerlo cuando quieras.\n\nDetalles y estado:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por confiar en ${SHOP_NAME}.`,
+  });
+}
+
 // Order-received confirmation (web orders only). Best-effort via the shop Gmail.
 async function sendOrderMail(to: string, nombre: string, orderId: string, total: number): Promise<void> {
   if (!GMAIL_USER || !GMAIL_PASS || !to) return;
@@ -631,7 +643,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true, tracking: g.tracking, shippedAt: now, hasLabel: !!g.label, trackUrl: `${GLS_TRACK_URL}${g.tracking}` });
       }
 
-      if (typeof body.status === 'string') await sql`update orders set status = ${body.status} where id = ${id}`;
+      if (typeof body.status === 'string') {
+        // Avisar "Listo para recoger" al pasar a 'listo' (solo recogida, solo si
+        // cambia de estado — evita reenvíos al reclicar).
+        if (body.status === 'listo') {
+          const r = (await sql`select status, customer, shipping_method from orders where id = ${id}`) as { status: string; customer: { email?: string; nombre?: string } | null; shipping_method: string | null }[];
+          await sql`update orders set status = ${body.status} where id = ${id}`;
+          const row = r[0];
+          if (row && row.status !== 'listo' && row.shipping_method !== 'envio' && row.customer?.email) {
+            try {
+              await sendReadyMail(row.customer.email, row.customer.nombre ?? '', id);
+            } catch {
+              /* email opcional */
+            }
+          }
+        } else {
+          await sql`update orders set status = ${body.status} where id = ${id}`;
+        }
+      }
       if (typeof body.paid === 'boolean') {
         await sql`update orders set paid = ${body.paid}, payment_method = ${body.paymentMethod ?? 'local'} where id = ${id}`;
       }
