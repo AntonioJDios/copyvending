@@ -3,14 +3,16 @@ import { DEFAULT_VAT_PERCENT, type BusinessConfig } from '../domain/catalog';
 import { projectDisplayName, projectSpecLines } from '../domain/orderSpec';
 
 /**
- * Simple document PDF: shop fiscal header, customer billing data, line items with
+ * Purchase document for the customer: shop header, billing data, line items with
  * their configuration, VAT breakdown and payment status.
  *
- * ⚠️ NOT a legally valid invoice. Two reasons, both pending a decision with the
- * shop's accountant (see docs/facturacion-verifactu.md):
- *   - the number is the order code, not a gap-free sequential series;
- *   - it does not comply with Verifactu.
- * Treat it as a receipt/proforma for the customer.
+ * This is deliberately NOT an invoice (decision taken 2026-07-28, see
+ * docs/facturacion-verifactu.md): it does not comply with Verifactu and its number
+ * is the order code, not a gap-free fiscal series. So it is issued as:
+ *   - TICKET  when the order is paid  → proof of purchase;
+ *   - ALBARÁN when it is not          → delivery/handover note, payment pending.
+ * A customer who needs an actual invoice must be issued one by the shop's own
+ * invoicing software.
  */
 const money = (n: number) => `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
@@ -45,7 +47,7 @@ export async function downloadInvoice(order: Order, shop: BusinessConfig, vatPer
   };
 
   const paid = !!order.paid;
-  const title = paid ? 'FACTURA' : 'FACTURA PROFORMA';
+  const title = paid ? 'TICKET' : 'ALBARÁN';
   const d = new Date(order.createdAt);
   const billing = order.customer.billing;
 
@@ -144,17 +146,18 @@ export async function downloadInvoice(order: Order, shop: BusinessConfig, vatPer
   }
   y -= 16;
   if (!paid) {
-    text('Documento proforma; no válido como factura hasta que se complete el pago.', M, 8, font, grey);
+    text('Albarán de entrega: el importe queda pendiente de pago.', M, 8, font, grey);
     y -= 11;
   }
-  text('IVA incluido en los precios. Documento simplificado, sin validez Verifactu.', M, 8, font, grey);
+  // Say plainly what this document is not, so nobody files it as an invoice.
+  text('IVA incluido en los precios. Este documento no es una factura; si la necesitas, solicítala.', M, 8, font, grey);
 
   const bytes = await doc.save();
   const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${paid ? 'factura' : 'proforma'}-${order.id}.pdf`;
+  a.download = `${paid ? 'ticket' : 'albaran'}-${order.id}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

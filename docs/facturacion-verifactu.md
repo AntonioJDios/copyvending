@@ -1,9 +1,14 @@
-# Facturación y Verifactu — situación y decisión pendiente
+# Facturación y Verifactu — situación y decisión tomada
 
-> **Para qué es este documento:** llevárselo al asesor fiscal y volver con una
-> decisión. Describe exactamente qué emite hoy el sistema, qué le falta para ser
-> una factura válida y las tres opciones posibles. **No soy asesor fiscal**: lo
-> que sigue es la descripción técnica honesta de lo que hay, no un dictamen.
+> **DECISIÓN (28-07-2026): opción A.** El sistema **no emite facturas**. Emite
+> **TICKET** cuando el pedido está pagado y **ALBARÁN** cuando no. Si un cliente
+> necesita factura, se la emite la copistería con su propio programa de
+> facturación. Ya está aplicado en el código.
+>
+> El resto del documento se conserva como contexto para el asesor: describe qué
+> emite el sistema, por qué no es una factura y qué haría falta si algún día se
+> quiere cambiar de opción. **No soy asesor fiscal**: es la descripción técnica
+> honesta de lo que hay, no un dictamen.
 
 ---
 
@@ -60,9 +65,15 @@ peor que no entregar nada.
 - La sección del panel se ha renombrado a **"Documentos de cobro"** para no dar a
   entender que emite facturas.
 
-Lo que **no** se ha tocado a propósito: la numeración y el título del documento.
-Ambas cosas dependen de la decisión de abajo, y construirlas antes sería trabajo
-que puede sobrar.
+**Aplicado también el 28-07-2026, al tomar la decisión (opción A):**
+
+- El documento ya **no se titula "FACTURA"**: es **TICKET** si está pagado y
+  **ALBARÁN** si no, y el PDF dice explícitamente que no es una factura.
+- El fichero descargado se llama `ticket-P-XXXX.pdf` / `albaran-P-XXXX.pdf`.
+- En el panel y en el checkout se habla de tickets/albaranes, no de facturas.
+- **No se ha construido serie de numeración**: un ticket/albarán no fiscal no la
+  necesita, y construirla sería trabajo que solo sirve para la opción B. Se sigue
+  usando el código del pedido como referencia, que es trazable.
 
 ## 4. Las tres opciones
 

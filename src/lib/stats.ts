@@ -59,6 +59,83 @@ function copiesRange(n: number): string {
   return '51+ copias';
 }
 
+/** One grouped row of the server's per-configuration aggregation. */
+export interface ItemAggRow {
+  kind: string | null;
+  size: string | null;
+  color: string | null;
+  grosor: string | null;
+  acabado: string | null;
+  doble_cara: string | null;
+  copias: string | null;
+  count: number;
+  revenue: number;
+}
+
+/** The configuration breakdowns, as consumed by the Configuraciones tab. */
+export interface ConfigStats {
+  byType: Bucket[];
+  byConfig: { color: Bucket[]; size: Bucket[]; grosor: Bucket[]; acabado: Bucket[]; dobleCara: Bucket[] };
+  byCombo: Bucket[];
+  byCopies: Bucket[];
+}
+
+/**
+ * Pivot the server's grouped rows into the same buckets `aggregate` builds from
+ * local orders — same labels and same rules, so the figures mean exactly what they
+ * meant before, only now over the whole history instead of the last 2000 orders.
+ *
+ * Each row already carries `count` (how many items shared that configuration), so
+ * buckets accumulate by count, not by one per row.
+ */
+export function pivotItemAgg(rows: ItemAggRow[]): ConfigStats {
+  const type = new Map<string, Bucket>();
+  const color = new Map<string, Bucket>();
+  const size = new Map<string, Bucket>();
+  const grosor = new Map<string, Bucket>();
+  const acabado = new Map<string, Bucket>();
+  const dobleCara = new Map<string, Bucket>();
+  const combo = new Map<string, Bucket>();
+  const copies = new Map<string, Bucket>();
+
+  const add = (m: Map<string, Bucket>, key: string, revenue: number, count: number) => {
+    const b = m.get(key);
+    if (b) {
+      b.revenue += revenue;
+      b.count += count;
+    } else {
+      m.set(key, { key, revenue, count });
+    }
+  };
+
+  for (const r of rows) {
+    const n = Number(r.count) || 0;
+    const rev = Number(r.revenue) || 0;
+    add(type, r.kind ?? 'copias', rev, n);
+    // Only print jobs have a print configuration (mugs/badges don't).
+    if ((r.kind ?? 'copias') !== 'copias') continue;
+    if (r.color) add(color, r.color, rev, n);
+    if (r.size) add(size, r.size, rev, n);
+    if (r.grosor) add(grosor, String(r.grosor), rev, n);
+    if (r.acabado) add(acabado, r.acabado, rev, n);
+    if (r.doble_cara) add(dobleCara, r.doble_cara, rev, n);
+    if (r.size && r.color && r.doble_cara && r.grosor) {
+      // Paper combination: size · colour · sides · grammage (finishing excluded),
+      // same label the local aggregation produces.
+      const label = `${r.size} · ${r.color === 'BN' ? 'B/N' : 'Color'} · ${r.doble_cara === '1' ? '2 caras' : '1 cara'} · ${r.grosor}g`;
+      add(combo, label, rev, n);
+    }
+    add(copies, copiesRange(Number(r.copias) || 1), rev, n);
+  }
+
+  return {
+    byType: sorted(type),
+    byConfig: { color: sorted(color), size: sorted(size), grosor: sorted(grosor), acabado: sorted(acabado), dobleCara: sorted(dobleCara) },
+    byCombo: sorted(combo),
+    byCopies: sorted(copies),
+  };
+}
+
 /** 'YYYY-MM' del pedido en hora local (la del navegador del dueño ≈ Europe/Madrid). */
 export function monthKey(ms: number): string {
   const d = new Date(ms);

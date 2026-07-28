@@ -185,7 +185,7 @@ export function AdminPanel() {
         <nav className="admin-tabs">
           <button type="button" className={`admin-tab${tab === 'producto' ? ' on' : ''}`} onClick={() => setTab('producto')}>Producto</button>
           <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Precios</button>
-          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y facturación</button>
+          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y documentos</button>
           <button type="button" className={`admin-tab${tab === 'envios' ? ' on' : ''}`} onClick={() => setTab('envios')}>Envíos</button>
           {API_BASE && (
             <button type="button" className={`admin-tab${tab === 'cupones' ? ' on' : ''}`} onClick={() => setTab('cupones')}>Cupones</button>
@@ -459,7 +459,7 @@ export function AdminPanel() {
             <PaymentsEditor draft={draft} change={change} />
             <SourceToggles draft={draft} change={change} mod="payments" label="Pago en local" />
             <InvoicingEditor draft={draft} change={change} />
-            <SourceToggles draft={draft} change={change} mod="invoicing" label="Facturación" />
+            <SourceToggles draft={draft} change={change} mod="invoicing" label="Tickets y albaranes" />
           </>
         )}
 
@@ -954,7 +954,7 @@ function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
   return (
     <section className="card">
       <h2>Datos del negocio</h2>
-      <p className="muted">Se usan en las facturas y en la política de privacidad.</p>
+      <p className="muted">Se usan en los tickets/albaranes y en la política de privacidad.</p>
       <div className="admin-grid">
         <label className="field-inline">
           Nombre / razón social
@@ -983,14 +983,14 @@ function InvoicingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: C
   const set = (patch: Partial<typeof inv>) => change((d) => { d.invoicing = { ...DEFAULT_INVOICING, ...d.invoicing, ...patch }; });
   return (
     <section className="card">
-      <h2>Documentos de cobro</h2>
+      <h2>Tickets y albaranes</h2>
       <p className="muted">
-        Genera un documento descargable por pedido (proforma o justificante según el pago) con los datos del negocio de
+        Genera un documento descargable por pedido (ticket si está pagado, albarán si no) con los datos del negocio de
         arriba.
       </p>
       <label className="chk">
         <input type="checkbox" checked={inv.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        Activar la generación de documentos
+        Activar la generación de tickets y albaranes
       </label>
       <div className="admin-grid" style={{ marginTop: 12 }}>
         <label className="field-inline">
@@ -1014,9 +1014,8 @@ function InvoicingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: C
       )}
       {inv.enabled && (
         <p className="muted">
-          ⚠ <b>Estos documentos NO son facturas con validez legal:</b> el número es el código del pedido (no una serie
-          correlativa) y no cumplen Verifactu. Consúltalo con tu asesor antes de usarlos como factura — hay un resumen
-          de la situación en <code>docs/facturacion-verifactu.md</code>.
+          Se emite <b>TICKET</b> si el pedido está pagado y <b>ALBARÁN</b> si no. <b>No son facturas</b> y el propio
+          documento lo dice: si un cliente necesita factura, emítesela con tu programa de facturación.
         </p>
       )}
     </section>

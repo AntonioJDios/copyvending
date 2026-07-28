@@ -1,5 +1,6 @@
 import { API_BASE } from './api';
 import { getAdminToken } from './adminToken';
+import type { ItemAggRow } from './stats';
 
 export interface AggResult {
   totals: { revenue: number; orders: number };
@@ -18,4 +19,16 @@ export async function fetchAgg(from: number, to: number, unit: 'day' | 'month', 
   const res = await fetch(`${API_BASE}/orders?${p.toString()}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
   if (!res.ok) return null;
   return (await res.json()) as AggResult;
+}
+
+/** Per-configuration aggregation (unnests the order items in SQL), also over the
+ *  full history. Feeds the Configuraciones tab. Admin-only. */
+export async function fetchItemAgg(from: number, to: number, source: string): Promise<ItemAggRow[] | null> {
+  if (!API_BASE) return null;
+  const t = getAdminToken();
+  const p = new URLSearchParams({ items: '1', from: String(from), to: String(to), source });
+  const res = await fetch(`${API_BASE}/orders?${p.toString()}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) return null;
+  const d = (await res.json()) as { rows?: ItemAggRow[] };
+  return Array.isArray(d.rows) ? d.rows : [];
 }

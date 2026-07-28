@@ -506,6 +506,19 @@ export function orderStateFrom(
   };
 }
 
+/** One row of the per-configuration aggregation (see the `items` GET mode). */
+interface ItemAggRow {
+  kind: string | null;
+  size: string | null;
+  color: string | null;
+  grosor: string | null;
+  acabado: string | null;
+  doble_cara: string | null;
+  copias: string | null;
+  count: number;
+  revenue: number;
+}
+
 interface OrderRow {
   id: string; created_at: string | number; source: string; customer: unknown;
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
@@ -596,6 +609,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           from orders where (${src} = 'all' or source = ${src}) order by period`) as { period: string }[];
         const totals = series.reduce((a, r) => ({ revenue: a.revenue + r.revenue, orders: a.orders + r.orders }), { revenue: 0, orders: 0 });
         return res.status(200).json({ totals, series, bySource, allMonths: monthsRows.map((m) => m.period) });
+      }
+      // Breakdown by print CONFIGURATION over the full history. Needs the detail
+      // of each item, so it unnests the items jsonb and groups in SQL — otherwise
+      // the client would have to do it over the 2000 orders it can hold, which
+      // silently under-reports anything older. Admin.
+      if (req.query.items !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const qi = (k: string) => (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined));
+        const from = Number(qi('from')) || 0;
+        const to = Number(qi('to')) || Number.MAX_SAFE_INTEGER;
+        const src = qi('source') || 'all';
+        // `total` is written by us as a number, but historical/imported rows may
+        // carry anything — a bad value must not abort the whole query, so it is
+        // only cast when it actually looks numeric.
+        const rows = (await sql`
+          select
+            it->>'kind'                                  as kind,
+            it->'config'->>'size'                        as size,
+            it->'config'->>'color'                       as color,
+            it->'config'->>'grosor'                      as grosor,
+            it->'config'->>'acabado'                     as acabado,
+            it->'config'->>'dobleCara'                   as doble_cara,
+            coalesce(it->>'copias', it->>'cantidad')      as copias,
+            count(*)::int                                as count,
+            coalesce(sum(case when it->>'total' ~ '^-?[0-9]+(\.[0-9]+)?$' then (it->>'total')::float8 else 0 end), 0)::float8 as revenue
+          from orders o, jsonb_array_elements(o.items) as it
+          where o.created_at >= ${from} and o.created_at <= ${to} and (${src} = 'all' or o.source = ${src})
+          group by 1, 2, 3, 4, 5, 6, 7`) as ItemAggRow[];
+        return res.status(200).json({ rows });
       }
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
       // list/detail payloads because it's large. Admin only.

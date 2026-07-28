@@ -308,7 +308,7 @@ function OrderCard({ order }: { order: Order }) {
               </button>
               {invoicingOn && (
                 <button type="button" className="chip" onClick={() => void downloadInvoice(order, business, vatPercent)}>
-                  🧾 {order.paid ? 'Factura' : 'Proforma'}
+                  🧾 {order.paid ? 'Ticket' : 'Albarán'}
                 </button>
               )}
               <button type="button" className="chip chip-danger" onClick={onDelete}>

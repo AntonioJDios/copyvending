@@ -13,6 +13,16 @@ const BASE = `https://${ACCOUNT}.r2.cloudflarestorage.com/${BUCKET}`;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
+/**
+ * Key for the file capabilities. Optional: falls back to ADMIN_SECRET.
+ *
+ * Setting it decouples revocation — rotating the backoffice password/secret then
+ * no longer invalidates the file tokens stored in customers' carts and orders.
+ * ⚠️ Changing this value (including setting it for the first time) invalidates
+ * every capability already issued: the shop keeps full access with its admin
+ * token, but customers can't reopen the files of orders placed before the change.
+ */
+const FILE_SECRET = process.env.FILE_SECRET || ADMIN_SECRET;
 
 function safeEq(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -46,7 +56,7 @@ function isAdmin(req: VercelRequest): boolean {
  * manage their own files and nobody else's.
  */
 const projectToken = (projectId: string) =>
-  createHmac('sha256', ADMIN_SECRET || 'insecure-dev-secret').update(`proj.${projectId}`).digest('base64url');
+  createHmac('sha256', FILE_SECRET || 'insecure-dev-secret').update(`proj.${projectId}`).digest('base64url');
 
 /** The `<projectId>` segment of a `jobs/<projectId>/<file>` key, if any. */
 function projectOf(key: string): string | null {

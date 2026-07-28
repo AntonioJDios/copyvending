@@ -585,7 +585,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
             {invoicingOn && (
               <div className="checkout-billing">
                 <h3 className="addr-title">🧾 Dirección de facturación</h3>
-                <p className="muted">La usaremos para tu factura. {loggedIn ? 'Se guardará como predeterminada.' : ''}</p>
+                <p className="muted">La usaremos para tu ticket. {loggedIn ? 'Se guardará como predeterminada.' : ''}</p>
                 <AddressForm value={billingAddr} onChange={setBillingAddr} showNif />
               </div>
             )}

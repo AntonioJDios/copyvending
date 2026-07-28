@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOrders, type Order } from '../store/useOrders';
-import { aggregate, couponAnalytics, couponDaily, monthKey, seedFromAgg, seriesBy, splitVat, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { aggregate, couponAnalytics, couponDaily, monthKey, pivotItemAgg, seedFromAgg, seriesBy, splitVat, type Bucket, type ConfigStats, type CouponRow, type ItemAggRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { vatRateOf } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
 import { AdminLogoutButton } from './AdminLogoutButton';
-import { fetchAgg, type AggResult } from '../lib/statsApi';
+import { fetchAgg, fetchItemAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
@@ -241,9 +241,30 @@ export function StatsPanel() {
   const ticket = totals.orders > 0 ? totals.revenue / totals.orders : 0;
   const bySourceBuckets: Bucket[] = agg?.bySource ?? data.bySource;
 
+  // Configuration breakdowns for the SELECTED PERIOD, aggregated in SQL over the
+  // whole history (the local `orders` list only holds the latest 2000, which would
+  // quietly under-report anything older).
+  const [itemAgg, setItemAgg] = useState<ItemAggRow[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchItemAgg(range.from, range.to, source)
+      .then((r) => { if (alive) setItemAgg(r); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [range.from, range.to, source]);
+
+  // Server data when available; otherwise fall back to what this browser holds.
+  const cfgStats: ConfigStats = useMemo(
+    () =>
+      itemAgg
+        ? pivotItemAgg(itemAgg)
+        : { byType: data.byType, byConfig: data.byConfig, byCombo: data.byCombo, byCopies: data.byCopies },
+    [itemAgg, data]
+  );
+
   const combos = useMemo(
-    () => [...data.byCombo].sort((a, b) => (metric === 'revenue' ? b.revenue - a.revenue : b.count - a.count)).slice(0, 10),
-    [data.byCombo, metric]
+    () => [...cfgStats.byCombo].sort((a, b) => (metric === 'revenue' ? b.revenue - a.revenue : b.count - a.count)).slice(0, 10),
+    [cfgStats.byCombo, metric]
   );
 
   const exportPdf = () => {
@@ -436,7 +457,7 @@ export function StatsPanel() {
                   )}
                   <section className="card">
                     <h2>Por tipo de artículo</h2>
-                    <Breakdown buckets={data.byType} metric={metric} labelOf={(k) => TYPE_LABEL[k] ?? cap(k)} />
+                    <Breakdown buckets={cfgStats.byType} metric={metric} labelOf={(k) => TYPE_LABEL[k] ?? cap(k)} />
                   </section>
                 </div>
 
@@ -444,21 +465,21 @@ export function StatsPanel() {
                   <h2>Por configuración de impresión</h2>
                   <p className="muted">{metric === 'revenue' ? 'Facturación' : 'Nº de proyectos'} por cada opción (trabajos de copias/impresión).</p>
                   <div className="stats-cols">
-                    <Breakdown title="Color" buckets={data.byConfig.color} metric={metric} labelOf={(k) => (k === 'BN' ? 'Blanco y negro' : 'Color')} />
-                    <Breakdown title="Tamaño" buckets={data.byConfig.size} metric={metric} labelOf={(k) => SIZE_LABEL[k as keyof typeof SIZE_LABEL] ?? k} />
-                    <Breakdown title="Gramaje" buckets={data.byConfig.grosor} metric={metric} labelOf={(k) => `${k} g`} />
-                    <Breakdown title="Encuadernación" buckets={data.byConfig.acabado} metric={metric} labelOf={(k) => FINISH_LABEL[k as keyof typeof FINISH_LABEL] ?? k} />
-                    <Breakdown title="Caras" buckets={data.byConfig.dobleCara} metric={metric} labelOf={(k) => (k === '1' ? 'Doble cara' : 'Una cara')} />
-                    <Breakdown title="Nº de copias" buckets={data.byCopies} metric={metric} labelOf={(k) => k} />
+                    <Breakdown title="Color" buckets={cfgStats.byConfig.color} metric={metric} labelOf={(k) => (k === 'BN' ? 'Blanco y negro' : 'Color')} />
+                    <Breakdown title="Tamaño" buckets={cfgStats.byConfig.size} metric={metric} labelOf={(k) => SIZE_LABEL[k as keyof typeof SIZE_LABEL] ?? k} />
+                    <Breakdown title="Gramaje" buckets={cfgStats.byConfig.grosor} metric={metric} labelOf={(k) => `${k} g`} />
+                    <Breakdown title="Encuadernación" buckets={cfgStats.byConfig.acabado} metric={metric} labelOf={(k) => FINISH_LABEL[k as keyof typeof FINISH_LABEL] ?? k} />
+                    <Breakdown title="Caras" buckets={cfgStats.byConfig.dobleCara} metric={metric} labelOf={(k) => (k === '1' ? 'Doble cara' : 'Una cara')} />
+                    <Breakdown title="Nº de copias" buckets={cfgStats.byCopies} metric={metric} labelOf={(k) => k} />
                   </div>
                 </section>
 
-                {/* Honest caveat: unlike the summary tab, these breakdowns need the
-                    per-item configuration, which only the loaded orders carry. */}
                 <p className="muted stats-note">
-                  Estos desgloses se calculan sobre los <b>últimos 2.000 pedidos</b> cargados (hacen falta los detalles de
-                  cada artículo, que el resumen agregado del servidor no incluye). Los totales y la evolución de la
-                  pestaña Resumen sí cubren todo el histórico.
+                  Desglose de <b>{periodLabel(period)}</b>
+                  {source !== 'all' && ` · origen ${SOURCE_LABEL[source] ?? cap(source)}`}.{' '}
+                  {itemAgg
+                    ? 'Calculado en el servidor sobre todos los pedidos del periodo, sin límite.'
+                    : 'Sin conexión con el servidor: se muestran solo los pedidos cargados en este navegador.'}
                 </p>
               </>
             )}
