@@ -38,6 +38,19 @@ const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
+// Order-received confirmation (web orders only). Best-effort via the shop Gmail.
+async function sendOrderMail(to: string, nombre: string, orderId: string, total: number): Promise<void> {
+  if (!GMAIL_USER || !GMAIL_PASS || !to) return;
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_PASS } });
+  const eur = `${(Number(total) || 0).toFixed(2).replace('.', ',')} €`;
+  await t.sendMail({
+    from: `${SHOP_NAME} <${GMAIL_USER}>`,
+    to,
+    subject: `Hemos recibido tu pedido ${orderId} ✅`,
+    text: `Hola ${nombre}:\n\n¡Gracias por tu pedido! Lo hemos recibido correctamente y ya lo estamos gestionando.\n\nNº de pedido: ${orderId}\nTotal: ${eur}\n\nPuedes seguir su estado aquí:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por confiar en ${SHOP_NAME}.`,
+  });
+}
+
 async function sendShipMail(to: string, nombre: string, orderId: string, tracking: string): Promise<void> {
   if (!GMAIL_USER || !GMAIL_PASS || !to) return;
   const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: GMAIL_USER, pass: GMAIL_PASS } });
@@ -562,13 +575,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mismatch =
         o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
-      await sql`
+      const ins = (await sql`
         insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${o.source ?? 'mostrador'},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null},
                 ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount})
-        on conflict (id) do nothing`;
+        on conflict (id) do nothing
+        returning id`) as { id: string }[];
+      // Confirmación al cliente SOLO en pedidos WEB (online) y solo si es nuevo
+      // (no re-envío en un POST duplicado). En mostrador el cliente está delante.
+      if (ins.length > 0 && (o.source ?? 'mostrador') === 'online') {
+        const c = (o.customer ?? {}) as { email?: string; nombre?: string };
+        if (c.email) {
+          try {
+            await sendOrderMail(c.email, c.nombre ?? '', o.id, serverTotal);
+          } catch {
+            /* email opcional */
+          }
+        }
+      }
       return res.status(201).json({ ok: true, total: serverTotal, priceMismatch: mismatch, couponCode, couponDiscount });
     }
 
