@@ -306,6 +306,7 @@ export function StatsPanel() {
         <nav className="topnav">
           <a className="btn" href="#pedidos">Pedidos</a>
           <a className="btn" href="#admin">Catálogo</a>
+          <a className="btn" href="#clientes">👥 Clientes</a>
           <a className="btn" href="#">← Tienda</a>
           <AdminLogoutButton />
         </nav>
