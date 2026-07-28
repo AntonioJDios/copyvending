@@ -34,8 +34,13 @@ export async function adminLogin(password: string): Promise<void> {
   setAdminToken(d.token);
 }
 
+/** Fired when the user logs out on purpose, so the backoffice gate can go back to
+ *  the password form without a full page reload. */
+export const ADMIN_LOGGED_OUT = 'admin-logged-out';
+
 export function adminLogout(): void {
   clearAdminToken();
+  window.dispatchEvent(new Event(ADMIN_LOGGED_OUT));
 }
 
 /** Whether the server has a counter password configured (papelería tablet). */

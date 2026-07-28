@@ -9,6 +9,7 @@ import { downloadOrderZip } from '../lib/downloadZip';
 import { downloadInvoice } from '../lib/invoicePdf';
 import { downloadGlsLabel, glsTrackUrl } from '../lib/glsLabel';
 import { DEFAULT_BUSINESS, DEFAULT_VAT_PERCENT } from '../domain/catalog';
+import { AdminLogoutButton } from './AdminLogoutButton';
 import { CartDocsPreview } from './CartProjectCard';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -389,6 +390,7 @@ export function OrdersPanel() {
           <a className="btn" href="#">
             Tienda
           </a>
+          <AdminLogoutButton />
         </nav>
       </header>
 

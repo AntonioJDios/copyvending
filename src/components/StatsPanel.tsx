@@ -3,6 +3,7 @@ import { useOrders, type Order } from '../store/useOrders';
 import { aggregate, couponAnalytics, couponDaily, monthKey, seedFromAgg, seriesBy, splitVat, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { vatRateOf } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
+import { AdminLogoutButton } from './AdminLogoutButton';
 import { fetchAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
@@ -193,6 +194,7 @@ export function StatsPanel() {
           <a className="btn" href="#pedidos">Pedidos</a>
           <a className="btn" href="#admin">Catálogo</a>
           <a className="btn" href="#">← Tienda</a>
+          <AdminLogoutButton />
         </nav>
       </header>
 

@@ -66,6 +66,7 @@ import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE } from '../lib/api';
+import { AdminLogoutButton } from './AdminLogoutButton';
 import { downloadBackup, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
@@ -176,6 +177,7 @@ export function AdminPanel() {
           <a className="btn" href="#">
             ← Volver a la tienda
           </a>
+          <AdminLogoutButton />
         </nav>
       </header>
 

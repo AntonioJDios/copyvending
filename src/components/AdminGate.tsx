@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { ADMIN_AUTH_EXPIRED, API_BASE } from '../lib/api';
-import { adminConfigured, adminLogin } from '../lib/adminAuth';
+import { ADMIN_LOGGED_OUT, adminConfigured, adminLogin } from '../lib/adminAuth';
 import { adminTokenValid } from '../lib/adminToken';
 
 type GateState = 'loading' | 'open' | 'locked' | 'ok' | 'unconfigured';
@@ -25,8 +25,18 @@ export function AdminGate({ children }: { children: ReactNode }) {
       setExpired(true);
       setState('locked');
     };
+    // Deliberate logout: same destination (the password form), different reason,
+    // so we don't tell the user their session "expired" when they clicked Salir.
+    const onLoggedOut = () => {
+      setExpired(false);
+      setState('locked');
+    };
     window.addEventListener(ADMIN_AUTH_EXPIRED, onExpired);
-    return () => window.removeEventListener(ADMIN_AUTH_EXPIRED, onExpired);
+    window.addEventListener(ADMIN_LOGGED_OUT, onLoggedOut);
+    return () => {
+      window.removeEventListener(ADMIN_AUTH_EXPIRED, onExpired);
+      window.removeEventListener(ADMIN_LOGGED_OUT, onLoggedOut);
+    };
   }, []);
 
   useEffect(() => {
