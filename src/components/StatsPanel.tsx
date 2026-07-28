@@ -51,6 +51,19 @@ function tick(period: string, unit: Unit): string {
   return MONTHS[m - 1];
 }
 
+/**
+ * Windows for the daily chart. Capped at two years on purpose: one point per day
+ * is already ~730 marks, and beyond that a daily line stops being readable — the
+ * period trend above (monthly/quarterly) is the right tool for longer horizons.
+ */
+const DAILY_WINDOWS: { days: number; label: string }[] = [
+  { days: 30, label: '30d' },
+  { days: 90, label: '90d' },
+  { days: 180, label: '6m' },
+  { days: 365, label: '1 año' },
+  { days: 730, label: '2 años' },
+];
+
 const SOURCE_LABEL: Record<string, string> = { mostrador: 'Mostrador', online: 'Online', email: 'Email' };
 const TYPE_LABEL: Record<string, string> = { copias: 'Copias / impresión', taza: 'Tazas', chapa: 'Chapas' };
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -127,16 +140,52 @@ export function StatsPanel() {
     start.setHours(0, 0, 0, 0);
     return { from: start.getTime() - (dailyDays - 1) * 86400000, to: start.getTime() + 86400000 - 1 };
   }, [dailyDays]);
+
+  // Daily data comes from the SERVER aggregation, like the period trend does.
+  // Computing it from `orders` would silently cut the chart off, because that list
+  // is capped at the latest 2000 orders — on a shop with history (e.g. imported
+  // from PrestaShop) the older days would just read as zero instead of missing.
+  const [dailyAgg, setDailyAgg] = useState<AggResult | null>(null);
+  const [dailyPrevAgg, setDailyPrevAgg] = useState<AggResult | null>(null);
+  const dailyPrevRange = useMemo(() => {
+    const len = dailyDays * 86400000;
+    return { from: dailyRange.from - len, to: dailyRange.from - 1 };
+  }, [dailyRange.from, dailyDays]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchAgg(dailyRange.from, dailyRange.to, 'day', source)
+      .then((a) => { if (alive) setDailyAgg(a); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [dailyRange.from, dailyRange.to, source]);
+
+  useEffect(() => {
+    if (!compare) {
+      setDailyPrevAgg(null);
+      return;
+    }
+    let alive = true;
+    fetchAgg(dailyPrevRange.from, dailyPrevRange.to, 'day', source)
+      .then((a) => { if (alive) setDailyPrevAgg(a); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [compare, dailyPrevRange.from, dailyPrevRange.to, source]);
+
   const dailySeries = useMemo(
-    () => seriesBy(orders, dailyRange.from, dailyRange.to, 'day', source),
-    [orders, dailyRange, source]
+    () =>
+      dailyAgg
+        ? seedFromAgg(dailyAgg.series, dailyRange.from, dailyRange.to, 'day')
+        : seriesBy(orders, dailyRange.from, dailyRange.to, 'day', source),
+    [dailyAgg, orders, dailyRange, source]
   );
   // Previous window of the same length, for the daily-chart overlay.
   const dailyPrevSeries = useMemo(() => {
     if (!compare) return null;
-    const len = dailyDays * 86400000;
-    return seriesBy(orders, dailyRange.from - len, dailyRange.from - 1, 'day', source);
-  }, [compare, orders, dailyRange, dailyDays, source]);
+    return dailyPrevAgg
+      ? seedFromAgg(dailyPrevAgg.series, dailyPrevRange.from, dailyPrevRange.to, 'day')
+      : seriesBy(orders, dailyPrevRange.from, dailyPrevRange.to, 'day', source);
+  }, [compare, dailyPrevAgg, orders, dailyPrevRange, source]);
 
   const mv = (p: { revenue: number; orders: number }) => (metric === 'revenue' ? p.revenue : p.orders);
   const mfmt = (n: number) => (metric === 'revenue' ? eur0(n) : int(n));
@@ -269,8 +318,16 @@ export function StatsPanel() {
                         Comparar periodo anterior
                       </label>
                       <div className="seg-toggle sm">
-                        {[30, 90, 180, 365].map((d) => (
-                          <button key={d} type="button" className={dailyDays === d ? 'on' : ''} onClick={() => setDailyDays(d)}>{d}d</button>
+                        {DAILY_WINDOWS.map((w) => (
+                          <button
+                            key={w.days}
+                            type="button"
+                            className={dailyDays === w.days ? 'on' : ''}
+                            title={`Últimos ${w.days} días`}
+                            onClick={() => setDailyDays(w.days)}
+                          >
+                            {w.label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -281,7 +338,9 @@ export function StatsPanel() {
                 <p className="muted stats-note">
                   IVA incluido en los precios al {Math.round(vatRate * 100)}%; base y cuota calculadas para el modelo 303.
                   {source !== 'all' && ` Datos filtrados por origen: ${SOURCE_LABEL[source] ?? cap(source)}.`}{' '}
-                  El histórico analizado son los últimos pedidos cargados; los periodos recientes están completos.
+                  {agg
+                    ? 'Totales y evolución calculados sobre TODO el histórico en el servidor.'
+                    : 'Sin conexión con el servidor: se muestran solo los pedidos cargados en este navegador.'}
                 </p>
               </>
             )}
@@ -321,6 +380,14 @@ export function StatsPanel() {
                     <Breakdown title="Nº de copias" buckets={data.byCopies} metric={metric} labelOf={(k) => k} />
                   </div>
                 </section>
+
+                {/* Honest caveat: unlike the summary tab, these breakdowns need the
+                    per-item configuration, which only the loaded orders carry. */}
+                <p className="muted stats-note">
+                  Estos desgloses se calculan sobre los <b>últimos 2.000 pedidos</b> cargados (hacen falta los detalles de
+                  cada artículo, que el resumen agregado del servidor no incluye). Los totales y la evolución de la
+                  pestaña Resumen sí cubren todo el histórico.
+                </p>
               </>
             )}
 
