@@ -2302,6 +2302,25 @@ body {
 .coupon-stats-table th.sortable.on { color: var(--brand, #0ea5b7); }
 .coupon-matrix td.zero { color: var(--muted, #aab2bb); }
 
+/* Backoffice: buscador de clientes */
+.client-list { display: flex; flex-direction: column; gap: 6px; }
+.client-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  flex-wrap: wrap; width: 100%; text-align: left; padding: 10px 12px;
+  border: 1px solid var(--border, #d8dde3); border-radius: 10px;
+  background: var(--card, #fff); cursor: pointer; font: inherit; color: var(--text, #1f2933);
+}
+.client-row:hover { border-color: var(--brand, #0ea5b7); }
+.client-row.on { border-color: var(--brand, #0ea5b7); box-shadow: 0 0 0 1px var(--brand, #0ea5b7) inset; }
+.client-main { display: flex; flex-direction: column; gap: 2px; }
+.client-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.client-addr-list { display: flex; flex-direction: column; gap: 6px; }
+.client-addr {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--border, #d8dde3); border-radius: 8px; font-size: 13px;
+}
+.client-addr-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
 .coupon-src-toggles {
   display: flex;
   gap: 12px;

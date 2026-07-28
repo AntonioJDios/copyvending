@@ -639,6 +639,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           group by 1, 2, 3, 4, 5, 6, 7`) as ItemAggRow[];
         return res.status(200).json({ rows });
       }
+      // Backoffice: search customers by email (admin only). Returns basic
+      // profile + address + order count for each match.
+      if (req.query.findCustomer !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const term = (queryStr(req, 'findCustomer') || '').trim().toLowerCase();
+        if (term.length < 2) return res.status(200).json({ customers: [] });
+        const customers = await sql`
+          select c.id, c.email, c.nombre, c.apellidos, c.telefono, c.addresses, c.marketing_consent, c.created_at,
+                 (select count(*) from orders o where lower(o.customer->>'email') = lower(c.email))::int as orders_count
+          from customers c
+          where c.email ilike ${'%' + term + '%'}
+          order by c.email
+          limit 25`;
+        return res.status(200).json({ customers });
+      }
+      // Backoffice: all orders of a given customer email (admin only).
+      if (req.query.customerOrders !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const email = (queryStr(req, 'customerOrders') || '').trim().toLowerCase();
+        if (!email) return res.status(400).json({ error: 'falta email' });
+        const orders = await sql`
+          select id, created_at, source, total, status, paid, shipping_method, coupon_code, coupon_discount
+          from orders where lower(customer->>'email') = ${email}
+          order by created_at desc limit 500`;
+        return res.status(200).json({ orders });
+      }
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
       // list/detail payloads because it's large. Admin only.
       if (id && req.query.label !== undefined) {

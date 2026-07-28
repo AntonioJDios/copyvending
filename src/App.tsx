@@ -28,6 +28,7 @@ const StatsPanel = lazy(() => import('./components/StatsPanel').then((m) => ({ d
 const MugConfigurator = lazy(() => import('./mug/MugConfigurator').then((m) => ({ default: m.MugConfigurator })));
 const ChapaConfigurator = lazy(() => import('./chapa/ChapaConfigurator').then((m) => ({ default: m.ChapaConfigurator })));
 const AssistantStudio = lazy(() => import('./components/AssistantStudio').then((m) => ({ default: m.AssistantStudio })));
+const ClientsPanel = lazy(() => import('./components/ClientsPanel').then((m) => ({ default: m.ClientsPanel })));
 
 /** Minimal hash routing: #admin shows the (future) admin panel, else the shop. */
 function useHashRoute(): string {
@@ -115,6 +116,14 @@ function Shop() {
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AdminGate>
           <StatsPanel />
+        </AdminGate>
+      </Suspense>
+    );
+  if (route.startsWith('#clientes'))
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+        <AdminGate>
+          <ClientsPanel />
         </AdminGate>
       </Suspense>
     );

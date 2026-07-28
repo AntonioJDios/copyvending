@@ -388,6 +388,9 @@ export function OrdersPanel() {
           <a className="btn" href="#estadisticas">
             📊 Estadísticas
           </a>
+          <a className="btn" href="#clientes">
+            👥 Clientes
+          </a>
           <a className="btn" href="#">
             Tienda
           </a>
