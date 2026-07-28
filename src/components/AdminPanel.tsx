@@ -65,7 +65,7 @@ type AdminTab = 'producto' | 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asis
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
-import { API_BASE } from '../lib/api';
+import { API_BASE, apiSend } from '../lib/api';
 import { AdminLogoutButton } from './AdminLogoutButton';
 import { downloadBackup, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
@@ -749,13 +749,8 @@ function EmailTestTool() {
         text,
         attachments,
       };
-      const res = await fetch(`${API_BASE}/ingest-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = (await res.json()) as { orderId?: string; error?: string; docs?: number };
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      // Admin-only endpoint → apiSend attaches the backoffice token.
+      const data = await apiSend<{ orderId?: string; error?: string; docs?: number }>('POST', '/ingest-email', { email });
       setResult(`✅ Pedido creado: ${data.orderId} (${data.docs} doc.). Míralo en #pedidos (origen 📧 Email).`);
     } catch (e) {
       setResult(`⚠ ${e instanceof Error ? e.message : 'Error'}`);

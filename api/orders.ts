@@ -475,6 +475,37 @@ async function validateCoupon(codeRaw: string, subtotal: number, email?: string,
   return { ok: true, discount, code };
 }
 
+// ── Payment state (anti-fraud) ───────────────────────────────────────
+// Hardening the PRICE is useless if the browser can declare itself paid. The
+// customer's own request may never decide any of this: an order created with
+// {paid:true} would show up as "💶 Pagado" in the backoffice and get handed over
+// (or shipped, since home delivery is prepaid) without a single euro arriving.
+//
+// So: only the shop's own token may declare payment state. For everyone else the
+// order starts unpaid and brand new, and `paid` can then only be set by the
+// Redsys notification (server-to-server, signature verified) or by the admin.
+const ORDER_STATUS = ['nuevo', 'en_proceso', 'listo', 'entregado'] as const;
+const PAYMENT_METHODS = ['local', 'redsys'] as const;
+
+export function orderStateFrom(
+  body: { paid?: unknown; paymentMethod?: unknown; status?: unknown },
+  isShop: boolean
+): { paid: boolean; paymentMethod: string | null; status: string } {
+  const method = typeof body.paymentMethod === 'string' && (PAYMENT_METHODS as readonly string[]).includes(body.paymentMethod)
+    ? body.paymentMethod
+    : null;
+  if (!isShop) {
+    // The chosen method is kept as an INTENT (useful in the backoffice: "is going
+    // to pay by card"), but it can never imply the money arrived.
+    return { paid: false, paymentMethod: method, status: 'nuevo' };
+  }
+  return {
+    paid: body.paid === true,
+    paymentMethod: method,
+    status: typeof body.status === 'string' && (ORDER_STATUS as readonly string[]).includes(body.status) ? body.status : 'nuevo',
+  };
+}
+
 interface OrderRow {
   id: string; created_at: string | number; source: string; customer: unknown;
   items: unknown; total: string | number; status: string; price_mismatch?: boolean;
@@ -618,8 +649,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       //  - counter token → the shop-floor tablet: 'mostrador'.
       //  - anything else → 'online' (the public web, and the safe default: it
       //                    can never end up cheaper than it should be).
+      const shopRequest = isAdmin(req);
       const declared = typeof o.source === 'string' && ['online', 'mostrador', 'email'].includes(o.source) ? o.source : null;
-      const source = isAdmin(req) && declared ? declared : isCounter(req) ? 'mostrador' : 'online';
+      const source = shopRequest && declared ? declared : isCounter(req) ? 'mostrador' : 'online';
+      // Payment state decided here too, never by the browser (see orderStateFrom).
+      const state = orderStateFrom(o, shopRequest);
       const base = await getCatalog();
       const catalog = applySource(base, source);
       const sourceMods = base.sources?.[source]?.modules ?? {};
@@ -670,7 +704,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
-                ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null},
+                ${serverTotal}, ${state.status}, ${mismatch}, ${state.paid}, ${state.paymentMethod},
                 ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount})
         on conflict (id) do nothing
         returning id`) as { id: string }[];

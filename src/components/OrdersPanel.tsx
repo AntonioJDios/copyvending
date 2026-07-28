@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOrders, type Order, type OrderStatus } from '../store/useOrders';
 import { useConfigurator } from '../store/useConfigurator';
-import { API_BASE } from '../lib/api';
+import { API_BASE, apiSend } from '../lib/api';
 import type { CartProject } from '../store/useCart';
 import { projectDisplayName, projectDocLines, projectSpecLines } from '../domain/orderSpec';
 import { deleteProjectFiles } from '../lib/projectFiles';
@@ -338,7 +338,8 @@ export function OrdersPanel() {
       const emailOn = useConfigurator.getState().catalog.emailEnabled ?? true;
       if (API_BASE && emailOn) {
         try {
-          await fetch(`${API_BASE}/ingest-email`, { method: 'POST' });
+          // Admin-only endpoint (it spends LLM/storage and creates orders).
+          await apiSend('POST', '/ingest-email');
         } catch {
           /* no backend / no Gmail configured → ignore */
         }

@@ -14,6 +14,12 @@ const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
 
 const LOGIN_TTL = 30 * 60 * 1000; // magic link: 30 min
 const SESSION_TTL = 60 * 24 * 60 * 60 * 1000; // session: 60 days
+/** Wrong tries allowed on a 6-digit code before it is burnt. A code is only
+ *  1 in a million, which is nothing without a cap: an attacker can request a code
+ *  for someone else's address and then simply try them all. Five is plenty for a
+ *  human mistyping, and leaves brute force with no path (the victim would have to
+ *  request a fresh code for every five guesses). */
+const MAX_CODE_ATTEMPTS = 5;
 
 // ── Backoffice admin auth (single shared password) ───────────────────
 // Stateless signed token so the (self-contained) orders/catalog functions can
@@ -70,6 +76,9 @@ function ensureSchema(): Promise<void> {
           token text primary key, email text not null, expires_at bigint not null,
           used boolean not null default false, created_at bigint not null)`;
       await db()`alter table login_tokens add column if not exists code text`;
+      // Failed attempts per code, so a 6-digit code can be burnt before it can be
+      // guessed (see MAX_CODE_ATTEMPTS).
+      await db()`alter table login_tokens add column if not exists attempts int not null default 0`;
       await db()`
         create table if not exists sessions (
           token text primary key, customer_id text not null, email text not null,
@@ -244,6 +253,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'verify') {
       const tk = String(body.token ?? '');
       const now = Date.now();
+      // The link token is 24 random bytes (not guessable), but cap it anyway so it
+      // can't be used to hammer the database.
+      const gate = await rateLimit(`verify:${clientIp(req)}`, 30, 15 * 60 * 1000);
+      if (!gate.ok) return res.status(429).json({ error: 'Demasiados intentos. Prueba de nuevo en unos minutos.' });
       const rows = (await sql`select email, expires_at, used from login_tokens where token = ${tk}`) as { email: string; expires_at: number; used: boolean }[];
       const row = rows[0];
       if (!row || row.used || Number(row.expires_at) < now) return res.status(400).json({ error: 'Enlace no válido o caducado' });
@@ -256,14 +269,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2b) Verify a 6-digit code (inline login, e.g. during checkout) → session.
+    // Guessing this code is a full account takeover (orders, addresses, deletion),
+    // so it is defended twice: a request cap per IP/address, and a per-code attempt
+    // counter that burns the code. Only the NEWEST code for the address is valid.
     if (action === 'verify-code') {
       const email = String(body.email ?? '').trim().toLowerCase();
       const code = String(body.code ?? '').trim();
       const now = Date.now();
       if (!isEmail(email) || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Código no válido' });
-      const rows = (await sql`select token, expires_at, used from login_tokens where email = ${email} and code = ${code} order by created_at desc limit 1`) as { token: string; expires_at: number; used: boolean }[];
+      const byIp = await rateLimit(`code:ip:${clientIp(req)}`, 20, 15 * 60 * 1000);
+      const byMail = await rateLimit(`code:to:${email}`, 10, 15 * 60 * 1000);
+      if (!byIp.ok || !byMail.ok) {
+        return res.status(429).json({ error: 'Demasiados intentos. Pide un código nuevo en unos minutos.' });
+      }
+      const rows = (await sql`
+        select token, code, expires_at, used, coalesce(attempts, 0) as attempts
+        from login_tokens where email = ${email} order by created_at desc limit 1`) as {
+        token: string; code: string | null; expires_at: number; used: boolean; attempts: number;
+      }[];
       const row = rows[0];
       if (!row || row.used || Number(row.expires_at) < now) return res.status(400).json({ error: 'Código no válido o caducado' });
+      if (row.attempts >= MAX_CODE_ATTEMPTS) {
+        await sql`update login_tokens set used = true where token = ${row.token}`;
+        return res.status(400).json({ error: 'Demasiados intentos con este código. Pide uno nuevo.' });
+      }
+      if (row.code !== code) {
+        // Burn the code once the attempts run out, so a fresh one is required.
+        const left = MAX_CODE_ATTEMPTS - (row.attempts + 1);
+        await sql`update login_tokens set attempts = attempts + 1, used = ${left <= 0} where token = ${row.token}`;
+        return res.status(400).json({
+          error: left > 0 ? `Código incorrecto. Te quedan ${left} intentos.` : 'Código incorrecto. Pide uno nuevo.',
+        });
+      }
       await sql`update login_tokens set used = true where token = ${row.token}`;
       const cust = (await sql`select id, email, nombre, apellidos, telefono from customers where email = ${email}`) as Customer[];
       if (!cust[0]) return res.status(404).json({ error: 'Cuenta no encontrada' });

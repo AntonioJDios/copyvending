@@ -5,7 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 // Give the function headroom to read the inbox + upload attachments.
 export const maxDuration = 60;
@@ -85,6 +85,39 @@ const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
 
 // ── Internal auth + order codes (mirrors the client; self-contained) ──
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
+
+/**
+ * This endpoint is expensive and creates orders: it reads a mailbox, calls an LLM,
+ * uploads attachments to R2 and inserts orders. Left open, anyone could run it to
+ * burn the shop's LLM/storage budget and flood the backoffice with junk
+ * `source:'email'` orders. So it requires the shop's own credentials:
+ *   - an admin token (what the backoffice already holds), or
+ *   - CRON_SECRET as a bearer token, for a scheduled trigger.
+ */
+const CRON_SECRET = process.env.CRON_SECRET || '';
+function bearer(req: VercelRequest): string {
+  const h = req.headers['authorization'];
+  const raw = Array.isArray(h) ? h[0] : h || '';
+  return /^Bearer\s+(.+)$/i.exec(raw)?.[1] ?? '';
+}
+function safeEq(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+function isAuthorised(req: VercelRequest): boolean {
+  const tk = bearer(req);
+  if (!tk) return false;
+  if (CRON_SECRET && safeEq(tk, CRON_SECRET)) return true;
+  if (!ADMIN_SECRET) return false;
+  const [expStr, sig] = tk.split('.');
+  const exp = Number(expStr);
+  if (!exp || exp < Date.now() || !sig) return false;
+  return safeEq(sig, createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url'));
+}
 /** Short-lived admin-scope token so this server-side pipeline can tell
  *  /api/orders that the order genuinely comes from the shop's email inbox. */
 function internalAdminToken(): string {
@@ -586,6 +619,12 @@ async function readGmailAndProcess(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
+  if (!ADMIN_SECRET && !CRON_SECRET) {
+    return res.status(503).json({ error: 'La ingesta por email no está configurada en el servidor (falta ADMIN_PASSWORD).' });
+  }
+  if (!isAuthorised(req)) {
+    return res.status(401).json({ error: 'Necesitas iniciar sesión como administrador.' });
+  }
   try {
     const body = (req.body ?? {}) as { email?: EmailIn; instructions?: string };
     await ensureSchema();
