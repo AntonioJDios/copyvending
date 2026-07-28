@@ -89,8 +89,10 @@ export function StatsPanel() {
   const [period, setPeriod] = useState<string>(nowQuarterKey());
   const [metric, setMetric] = useState<Metric>('revenue');
   const [compare, setCompare] = useState(false);
-  // Free date range for the daily chart (no fixed windows, no cap): the data comes
-  // from the server aggregation, so any span the shop has orders for is valid.
+  // Date range for the daily chart. It FOLLOWS the period selected above (pick a
+  // quarter → you get that quarter's days) and can still be overridden by hand.
+  // No fixed windows and no cap: the data comes from the server aggregation, so
+  // any span the shop has orders for is valid.
   const [dailyFrom, setDailyFrom] = useState(() => isoDay(Date.now() - 89 * DAY));
   const [dailyTo, setDailyTo] = useState(() => isoDay(Date.now()));
   // Deep link like #estadisticas/cupon/CODE opens the Coupons tab focused on it.
@@ -187,13 +189,31 @@ export function StatsPanel() {
     return () => { alive = false; };
   }, [compare, dailyPrevRange.from, dailyPrevRange.to, source]);
 
-  /** Jump to the whole history: the server tells us every month with orders, so
-   *  the first one is the real start — no arbitrary cap. */
-  const setDailyAllTime = () => {
-    const first = (agg?.allMonths ?? [])[0] ?? (dailyAgg?.allMonths ?? [])[0];
-    setDailyFrom(first ? `${first}-01` : isoDay(Date.now() - 365 * DAY));
-    setDailyTo(isoDay(Date.now()));
+  // Start of the shop's history: the server lists every month with orders, so the
+  // first one is the real beginning — no arbitrary cap.
+  const firstMonth = (agg?.allMonths ?? [])[0] ?? (dailyAgg?.allMonths ?? [])[0];
+
+  /** The dates the selected period implies. "Todo el histórico" starts at the
+   *  first month with orders and stops today (never in the future). */
+  const periodDays = useMemo(() => {
+    const from = range.from > 0 ? range.from : firstMonth ? dayStart(`${firstMonth}-01`) : Date.now() - 365 * DAY;
+    const to = Math.min(range.to, Date.now());
+    return { from: isoDay(from), to: isoDay(Math.max(from, to)) };
+  }, [range.from, range.to, firstMonth]);
+
+  const snapToPeriod = () => {
+    setDailyFrom(periodDays.from);
+    setDailyTo(periodDays.to);
   };
+
+  // Selecting a quarter/month above retargets the daily chart at it.
+  useEffect(() => {
+    setDailyFrom(periodDays.from);
+    setDailyTo(periodDays.to);
+  }, [periodDays.from, periodDays.to]);
+
+  /** True while the chart shows exactly the selected period (not a manual range). */
+  const dailyFollowsPeriod = dailyFrom === periodDays.from && dailyTo === periodDays.to;
 
   const dailySeries = useMemo(
     () =>
@@ -341,11 +361,19 @@ export function StatsPanel() {
                         Comparar periodo anterior
                       </label>
                       <div className="seg-toggle sm">
+                        <button
+                          type="button"
+                          className={dailyFollowsPeriod ? 'on' : ''}
+                          onClick={snapToPeriod}
+                          title="Usar las fechas del periodo elegido arriba"
+                        >
+                          {periodLabel(period)}
+                        </button>
                         {DAILY_SHORTCUTS.map((w) => (
                           <button
                             key={w.days}
                             type="button"
-                            className={dailyDayCount === w.days ? 'on' : ''}
+                            className={!dailyFollowsPeriod && dailyDayCount === w.days ? 'on' : ''}
                             onClick={() => {
                               setDailyFrom(isoDay(Date.now() - (w.days - 1) * DAY));
                               setDailyTo(isoDay(Date.now()));
@@ -354,9 +382,6 @@ export function StatsPanel() {
                             {w.label}
                           </button>
                         ))}
-                        <button type="button" onClick={setDailyAllTime} title="Desde el primer pedido registrado">
-                          Todo
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -371,7 +396,13 @@ export function StatsPanel() {
                     </label>
                     <span className="muted">
                       {int(dailyDayCount)} día{dailyDayCount !== 1 ? 's' : ''}
+                      {!dailyFollowsPeriod && ' · rango personalizado'}
                     </span>
+                    {!dailyFollowsPeriod && (
+                      <button type="button" className="chip" onClick={snapToPeriod}>
+                        ↩ Volver a {periodLabel(period)}
+                      </button>
+                    )}
                   </div>
                   <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
                 </section>
