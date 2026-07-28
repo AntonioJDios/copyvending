@@ -51,18 +51,26 @@ function tick(period: string, unit: Unit): string {
   return MONTHS[m - 1];
 }
 
-/**
- * Windows for the daily chart. Capped at two years on purpose: one point per day
- * is already ~730 marks, and beyond that a daily line stops being readable — the
- * period trend above (monthly/quarterly) is the right tool for longer horizons.
- */
-const DAILY_WINDOWS: { days: number; label: string }[] = [
+/** Shortcuts that just fill in the date range; the range itself is free. */
+const DAILY_SHORTCUTS: { days: number; label: string }[] = [
   { days: 30, label: '30d' },
   { days: 90, label: '90d' },
-  { days: 180, label: '6m' },
   { days: 365, label: '1 año' },
   { days: 730, label: '2 años' },
 ];
+
+const DAY = 86400000;
+/** `YYYY-MM-DD` in local time (what <input type="date"> expects). */
+function isoDay(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** Local midnight from a `YYYY-MM-DD` value (never UTC: a UTC parse would shift
+ *  the day for anyone east/west of Greenwich and drop or duplicate a day). */
+function dayStart(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0).getTime();
+}
 
 const SOURCE_LABEL: Record<string, string> = { mostrador: 'Mostrador', online: 'Online', email: 'Email' };
 const TYPE_LABEL: Record<string, string> = { copias: 'Copias / impresión', taza: 'Tazas', chapa: 'Chapas' };
@@ -81,7 +89,10 @@ export function StatsPanel() {
   const [period, setPeriod] = useState<string>(nowQuarterKey());
   const [metric, setMetric] = useState<Metric>('revenue');
   const [compare, setCompare] = useState(false);
-  const [dailyDays, setDailyDays] = useState(90);
+  // Free date range for the daily chart (no fixed windows, no cap): the data comes
+  // from the server aggregation, so any span the shop has orders for is valid.
+  const [dailyFrom, setDailyFrom] = useState(() => isoDay(Date.now() - 89 * DAY));
+  const [dailyTo, setDailyTo] = useState(() => isoDay(Date.now()));
   // Deep link like #estadisticas/cupon/CODE opens the Coupons tab focused on it.
   const initialCoupon = (() => {
     const m = window.location.hash.match(/#estadisticas\/cupon\/(.+)$/i);
@@ -134,12 +145,16 @@ export function StatsPanel() {
     [agg, orders, range, unit, source]
   );
 
-  // Dedicated daily-evolution window (independent of the fiscal period).
+  // Dedicated daily-evolution range (independent of the fiscal period). Tolerates
+  // the dates being entered the wrong way round instead of drawing nothing.
   const dailyRange = useMemo(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    return { from: start.getTime() - (dailyDays - 1) * 86400000, to: start.getTime() + 86400000 - 1 };
-  }, [dailyDays]);
+    const a = dayStart(dailyFrom);
+    const b = dayStart(dailyTo);
+    const from = Math.min(a, b);
+    const to = Math.max(a, b) + DAY - 1; // include the whole end day
+    return { from, to };
+  }, [dailyFrom, dailyTo]);
+  const dailyDayCount = Math.max(1, Math.round((dailyRange.to + 1 - dailyRange.from) / DAY));
 
   // Daily data comes from the SERVER aggregation, like the period trend does.
   // Computing it from `orders` would silently cut the chart off, because that list
@@ -148,9 +163,9 @@ export function StatsPanel() {
   const [dailyAgg, setDailyAgg] = useState<AggResult | null>(null);
   const [dailyPrevAgg, setDailyPrevAgg] = useState<AggResult | null>(null);
   const dailyPrevRange = useMemo(() => {
-    const len = dailyDays * 86400000;
+    const len = dailyDayCount * DAY;
     return { from: dailyRange.from - len, to: dailyRange.from - 1 };
-  }, [dailyRange.from, dailyDays]);
+  }, [dailyRange.from, dailyDayCount]);
 
   useEffect(() => {
     let alive = true;
@@ -171,6 +186,14 @@ export function StatsPanel() {
       .catch(() => {});
     return () => { alive = false; };
   }, [compare, dailyPrevRange.from, dailyPrevRange.to, source]);
+
+  /** Jump to the whole history: the server tells us every month with orders, so
+   *  the first one is the real start — no arbitrary cap. */
+  const setDailyAllTime = () => {
+    const first = (agg?.allMonths ?? [])[0] ?? (dailyAgg?.allMonths ?? [])[0];
+    setDailyFrom(first ? `${first}-01` : isoDay(Date.now() - 365 * DAY));
+    setDailyTo(isoDay(Date.now()));
+  };
 
   const dailySeries = useMemo(
     () =>
@@ -308,7 +331,7 @@ export function StatsPanel() {
                   <TrendChart points={curSeries} max={maxSeries} unit={unit} value={mv} fmt={mfmt} />
                 </section>
 
-                {/* Evolución diaria (ventana propia) */}
+                {/* Evolución diaria (rango de fechas libre) */}
                 <section className="card">
                   <div className="stats-card-head">
                     <h2>Evolución diaria · {metric === 'revenue' ? 'ventas' : 'pedidos'}</h2>
@@ -318,19 +341,37 @@ export function StatsPanel() {
                         Comparar periodo anterior
                       </label>
                       <div className="seg-toggle sm">
-                        {DAILY_WINDOWS.map((w) => (
+                        {DAILY_SHORTCUTS.map((w) => (
                           <button
                             key={w.days}
                             type="button"
-                            className={dailyDays === w.days ? 'on' : ''}
-                            title={`Últimos ${w.days} días`}
-                            onClick={() => setDailyDays(w.days)}
+                            className={dailyDayCount === w.days ? 'on' : ''}
+                            onClick={() => {
+                              setDailyFrom(isoDay(Date.now() - (w.days - 1) * DAY));
+                              setDailyTo(isoDay(Date.now()));
+                            }}
                           >
                             {w.label}
                           </button>
                         ))}
+                        <button type="button" onClick={setDailyAllTime} title="Desde el primer pedido registrado">
+                          Todo
+                        </button>
                       </div>
                     </div>
+                  </div>
+                  <div className="dayline-range">
+                    <label className="field-inline">
+                      Desde
+                      <input type="date" value={dailyFrom} max={dailyTo} onChange={(e) => e.target.value && setDailyFrom(e.target.value)} />
+                    </label>
+                    <label className="field-inline">
+                      Hasta
+                      <input type="date" value={dailyTo} min={dailyFrom} onChange={(e) => e.target.value && setDailyTo(e.target.value)} />
+                    </label>
+                    <span className="muted">
+                      {int(dailyDayCount)} día{dailyDayCount !== 1 ? 's' : ''}
+                    </span>
                   </div>
                   <DailyLine points={dailySeries} prevPoints={dailyPrevSeries} value={mv} fmt={mfmt} />
                 </section>
@@ -485,10 +526,17 @@ function DailyLine({
   const total = points.reduce((s, p) => s + value(p), 0);
   const prevTotal = prevPoints ? prevPoints.reduce((s, p) => s + value(p), 0) : 0;
   const bw = n > 0 ? W / n : W;
+  // Show the year once the range spans more than one, or "3/7" is ambiguous.
+  const multiYear = n > 1 && points[0].period.slice(0, 4) !== points[n - 1].period.slice(0, 4);
   const dayLbl = (p: string) => {
-    const [, m, d] = p.split('-');
-    return `${Number(d)}/${Number(m)}`;
+    const [y, m, d] = p.split('-');
+    return multiYear ? `${Number(d)}/${Number(m)}/${y.slice(2)}` : `${Number(d)}/${Number(m)}`;
   };
+  // One hover rect per day is fine for months, not for years: with a free date
+  // range this can be thousands of days, so past a threshold we drop the per-day
+  // tooltips and keep the line. The data is unaffected — only the hover targets.
+  const HOVER_LIMIT = 500;
+  const showHover = n <= HOVER_LIMIT;
 
   return (
     <div className="dayline">
@@ -509,11 +557,12 @@ function DailyLine({
           <path d={linePath(prevPoints)} className="dayline-line prev" fill="none" vectorEffect="non-scaling-stroke" />
         )}
         {points.length > 0 && <path d={linePath(points)} className="dayline-line" fill="none" vectorEffect="non-scaling-stroke" />}
-        {points.map((p, i) => (
-          <rect key={p.period} x={xOf(i, n) - bw / 2} y={0} width={bw} height={H} fill="transparent">
-            <title>{`${dayLbl(p.period)}: ${fmt(value(p))}${prevPoints && prevPoints[i] ? ` · anterior ${fmt(value(prevPoints[i]))}` : ''}`}</title>
-          </rect>
-        ))}
+        {showHover &&
+          points.map((p, i) => (
+            <rect key={p.period} x={xOf(i, n) - bw / 2} y={0} width={bw} height={H} fill="transparent">
+              <title>{`${dayLbl(p.period)}: ${fmt(value(p))}${prevPoints && prevPoints[i] ? ` · anterior ${fmt(value(prevPoints[i]))}` : ''}`}</title>
+            </rect>
+          ))}
       </svg>
       <div className="dayline-axis">
         <span>{n ? dayLbl(points[0].period) : ''}</span>

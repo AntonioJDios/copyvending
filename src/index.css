@@ -3800,6 +3800,21 @@ body {
   gap: 12px;
   flex-wrap: wrap;
 }
+/* Free date range for the daily chart (no fixed windows). */
+.dayline-range {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.dayline-range .field-inline {
+  gap: 6px;
+  margin: 0;
+}
+.dayline-range input[type='date'] {
+  min-width: 9.5rem;
+}
 .dayline-legend {
   display: inline-flex;
   gap: 14px;
