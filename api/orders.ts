@@ -456,6 +456,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const v = await validateCoupon(q('coupon') || '', Number(q('subtotal')) || 0, q('email'), q('source') || 'online');
         return res.status(200).json(v);
       }
+      // Aggregated stats over the FULL history (SQL GROUP BY), no 2000 cap. Admin.
+      if (req.query.agg !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const qa = (k: string) => (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined));
+        const from = Number(qa('from')) || 0;
+        const to = Number(qa('to')) || Number.MAX_SAFE_INTEGER;
+        const src = qa('source') || 'all';
+        const fmt = qa('unit') === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
+        const series = (await sql`
+          select to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', ${fmt}) as period,
+                 count(*)::int as orders, coalesce(sum(total), 0)::float8 as revenue
+          from orders
+          where created_at >= ${from} and created_at <= ${to} and (${src} = 'all' or source = ${src})
+          group by period order by period`) as { period: string; orders: number; revenue: number }[];
+        const bySource = (await sql`
+          select source as key, count(*)::int as count, coalesce(sum(total), 0)::float8 as revenue
+          from orders
+          where created_at >= ${from} and created_at <= ${to}
+          group by source order by revenue desc`) as { key: string; count: number; revenue: number }[];
+        const monthsRows = (await sql`
+          select distinct to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', 'YYYY-MM') as period
+          from orders where (${src} = 'all' or source = ${src}) order by period`) as { period: string }[];
+        const totals = series.reduce((a, r) => ({ revenue: a.revenue + r.revenue, orders: a.orders + r.orders }), { revenue: 0, orders: 0 });
+        return res.status(200).json({ totals, series, bySource, allMonths: monthsRows.map((m) => m.period) });
+      }
       // Download a stored GLS label (base64 PDF) on demand — kept out of the
       // list/detail payloads because it's large. Admin only.
       if (id && req.query.label !== undefined) {

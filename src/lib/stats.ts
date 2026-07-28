@@ -209,6 +209,32 @@ export function couponDaily(orders: Order[], month: string, source = 'all', code
   return series;
 }
 
+/** Turn a server-aggregated series (only non-empty buckets) into a seeded series
+ *  over [from,to] at `unit` — empty buckets filled with zeros, so the chart is
+ *  continuous. Keys are computed in local time to match the server (Europe/Madrid). */
+export function seedFromAgg(raw: { period: string; revenue: number; orders: number }[], from: number, to: number, unit: Unit): SeriesPoint[] {
+  const key = unit === 'day' ? dayKey : monthKey;
+  const map = new Map(raw.map((r) => [r.period, { period: r.period, revenue: r.revenue, orders: r.orders }]));
+  if (to < Number.MAX_SAFE_INTEGER && from > 0) {
+    const out: SeriesPoint[] = [];
+    const seen = new Set<string>();
+    const cur = new Date(from);
+    if (unit === 'day') cur.setHours(0, 0, 0, 0);
+    else cur.setDate(1);
+    while (cur.getTime() <= to) {
+      const k = key(cur.getTime());
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(map.get(k) ?? { period: k, revenue: 0, orders: 0 });
+      }
+      if (unit === 'day') cur.setDate(cur.getDate() + 1);
+      else cur.setMonth(cur.getMonth() + 1);
+    }
+    return out;
+  }
+  return [...map.values()].sort((a, b) => a.period.localeCompare(b.period));
+}
+
 /**
  * Aggregate orders into the dashboard model. Breakdowns are scoped to
  * [fromMs, toMs]; the monthly series always spans the whole list (for the trend).

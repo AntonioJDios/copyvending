@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOrders, type Order } from '../store/useOrders';
-import { aggregate, couponAnalytics, couponDaily, monthKey, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { aggregate, couponAnalytics, couponDaily, monthKey, seedFromAgg, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { fetchAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
@@ -71,21 +72,35 @@ export function StatsPanel() {
     return m ? decodeURIComponent(m[1].split(/[?&]/)[0]).trim().toUpperCase() : '';
   })();
   const [statsTab, setStatsTab] = useState<'resumen' | 'config' | 'cupones'>(initialCoupon ? 'cupones' : 'resumen');
+  // Server-side aggregation over the FULL history (KPIs, trend, by-source, period
+  // options) — not limited to the latest 2000 rows the client keeps.
+  const [agg, setAgg] = useState<AggResult | null>(null);
 
   useEffect(() => {
     void fetchOrders();
   }, [fetchOrders]);
 
+  const range = useMemo(() => rangeOf(period), [period]);
+  const unit: Unit = period !== 'all' && gran === 'month' ? 'day' : 'month';
+
+  useEffect(() => {
+    let alive = true;
+    fetchAgg(range.from, range.to, unit, source)
+      .then((a) => { if (alive) setAgg(a); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [range.from, range.to, unit, source]);
+
   // Sources present (for the source filter).
   const sources = useMemo(() => [...new Set(orders.map((o) => o.source))], [orders]);
 
-  // Periods available at the chosen granularity, for the source, most recent first.
+  // Periods available at the chosen granularity, most recent first. From the
+  // server's full-history month list when available (else the loaded orders).
   const periodOptions = useMemo(() => {
-    const scoped = source === 'all' ? orders : orders.filter((o) => o.source === source);
-    const months = [...new Set(scoped.map((o) => monthKey(o.createdAt)))];
+    const months = agg?.allMonths ?? [...new Set((source === 'all' ? orders : orders.filter((o) => o.source === source)).map((o) => monthKey(o.createdAt)))];
     const keys = gran === 'month' ? months : [...new Set(months.map(monthToQuarter))];
     return ['all', ...keys.sort().reverse()];
-  }, [orders, source, gran]);
+  }, [agg, orders, source, gran]);
 
   // Keep the selected period valid when granularity/source change. Only act once
   // there are real periods (length > 1, since 'all' is always present) so the
@@ -94,12 +109,14 @@ export function StatsPanel() {
     if (periodOptions.length > 1 && !periodOptions.includes(period)) setPeriod(periodOptions[1]);
   }, [periodOptions, period]);
 
-  const range = useMemo(() => rangeOf(period), [period]);
   const data = useMemo(() => aggregate(orders, range.from, range.to, source), [orders, range.from, range.to, source]);
 
-  // Trend unit: a month shows daily bars; a quarter or "todo" shows monthly bars.
-  const unit: Unit = period !== 'all' && gran === 'month' ? 'day' : 'month';
-  const curSeries = useMemo(() => seriesBy(orders, range.from, range.to, unit, source), [orders, range, unit, source]);
+  // Period trend from the server aggregation (full history); fallback to the
+  // loaded orders when there's no backend.
+  const curSeries = useMemo(
+    () => (agg ? seedFromAgg(agg.series, range.from, range.to, unit) : seriesBy(orders, range.from, range.to, unit, source)),
+    [agg, orders, range, unit, source]
+  );
 
   // Dedicated daily-evolution window (independent of the fiscal period).
   const dailyRange = useMemo(() => {
@@ -122,8 +139,10 @@ export function StatsPanel() {
   const mfmt = (n: number) => (metric === 'revenue' ? eur0(n) : int(n));
   const maxSeries = Math.max(1, ...curSeries.map(mv));
 
-  const { base, vat } = splitVat(data.totals.revenue);
-  const ticket = data.totals.orders > 0 ? data.totals.revenue / data.totals.orders : 0;
+  const totals = agg?.totals ?? data.totals;
+  const { base, vat } = splitVat(totals.revenue);
+  const ticket = totals.orders > 0 ? totals.revenue / totals.orders : 0;
+  const bySourceBuckets: Bucket[] = agg?.bySource ?? data.bySource;
 
   const combos = useMemo(
     () => [...data.byCombo].sort((a, b) => (metric === 'revenue' ? b.revenue - a.revenue : b.count - a.count)).slice(0, 10),
@@ -131,23 +150,32 @@ export function StatsPanel() {
   );
 
   const exportPdf = () => {
-    const months = data.monthly
-      .filter((m) => {
-        const [y, mm] = m.period.split('-').map(Number);
-        const t = new Date(y, mm - 1, 1).getTime();
-        return t >= range.from && t <= range.to;
-      })
-      .map((m) => {
-        const [y, mm] = m.period.split('-').map(Number);
-        return { label: `${MONTHS[mm - 1]} ${y}`, orders: m.orders, revenue: m.revenue };
-      });
-    const bySourceRows = source === 'all' ? data.bySource.map((b) => ({ label: SOURCE_LABEL[b.key] ?? cap(b.key), orders: b.count, revenue: b.revenue })) : [];
+    // Monthly rows for the period. If the trend is daily (a single month), the
+    // whole period IS one month → collapse to a single row from the totals.
+    const monthly = agg
+      ? unit === 'month'
+        ? agg.series.map((m) => {
+            const [y, mm] = m.period.split('-').map(Number);
+            return { label: `${MONTHS[mm - 1]} ${y}`, orders: m.orders, revenue: m.revenue };
+          })
+        : [{ label: periodLabel(period), orders: totals.orders, revenue: totals.revenue }]
+      : data.monthly
+          .filter((m) => {
+            const [y, mm] = m.period.split('-').map(Number);
+            const t = new Date(y, mm - 1, 1).getTime();
+            return t >= range.from && t <= range.to;
+          })
+          .map((m) => {
+            const [y, mm] = m.period.split('-').map(Number);
+            return { label: `${MONTHS[mm - 1]} ${y}`, orders: m.orders, revenue: m.revenue };
+          });
+    const bySourceRows = source === 'all' ? bySourceBuckets.map((b) => ({ label: SOURCE_LABEL[b.key] ?? cap(b.key), orders: b.count, revenue: b.revenue })) : [];
     void downloadFiscalPdf({
       title: `Resumen fiscal — ${periodLabel(period)}`,
       sourceLabel: source === 'all' ? 'Todas las fuentes' : SOURCE_LABEL[source] ?? cap(source),
       filename: `resumen-fiscal-${period}`,
-      totals: { revenue: data.totals.revenue, orders: data.totals.orders },
-      months,
+      totals: { revenue: totals.revenue, orders: totals.orders },
+      months: monthly,
       bySource: bySourceRows,
       vatRate: VAT_RATE,
     });
@@ -193,12 +221,12 @@ export function StatsPanel() {
             <button type="button" className={metric === 'orders' ? 'on' : ''} onClick={() => setMetric('orders')}>Pedidos</button>
           </div>
 
-          <button type="button" className="btn btn-primary stats-pdf" onClick={exportPdf} disabled={data.totals.orders === 0}>
+          <button type="button" className="btn btn-primary stats-pdf" onClick={exportPdf} disabled={totals.orders === 0}>
             📄 PDF para el asesor
           </button>
         </div>
 
-        {orders.length === 0 ? (
+        {orders.length === 0 && (!agg || agg.totals.orders === 0) ? (
           <p className="muted" style={{ padding: 20 }}>{loading ? 'Cargando pedidos…' : 'Aún no hay pedidos para analizar.'}</p>
         ) : (
           <>
@@ -212,10 +240,10 @@ export function StatsPanel() {
               <>
                 {/* KPIs */}
                 <div className="stats-kpis">
-                  <Kpi label="Facturación (IVA incl.)" value={eur(data.totals.revenue)} strong />
+                  <Kpi label="Facturación (IVA incl.)" value={eur(totals.revenue)} strong />
                   <Kpi label="Base imponible" value={eur(base)} />
                   <Kpi label={`IVA (${Math.round(VAT_RATE * 100)}%)`} value={eur(vat)} accent />
-                  <Kpi label="Pedidos" value={int(data.totals.orders)} />
+                  <Kpi label="Pedidos" value={int(totals.orders)} />
                   <Kpi label="Ticket medio" value={eur(ticket)} />
                 </div>
 
@@ -266,7 +294,7 @@ export function StatsPanel() {
                   {source === 'all' && (
                     <section className="card">
                       <h2>Por origen del pedido</h2>
-                      <Breakdown buckets={data.bySource} metric={metric} labelOf={(k) => SOURCE_LABEL[k] ?? cap(k)} />
+                      <Breakdown buckets={bySourceBuckets} metric={metric} labelOf={(k) => SOURCE_LABEL[k] ?? cap(k)} />
                     </section>
                   )}
                   <section className="card">
