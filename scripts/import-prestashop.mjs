@@ -63,8 +63,16 @@ const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const customers = parse('prstshp_customer.sql', 'prstshp_customer', ['id_customer', 'firstname', 'lastname', 'email', 'active', 'deleted', 'newsletter', 'optin', 'date_add']);
 const orders = parse('prstshp_orders.sql', 'prstshp_orders', ['id_order', 'id_customer', 'total_paid_tax_incl', 'total_paid', 'date_add', 'valid']);
 const addresses = parse('prstshp_address.sql', 'prstshp_address', [
-  'id_address', 'id_customer', 'alias', 'lastname', 'firstname', 'address1', 'address2', 'postcode', 'city', 'phone', 'phone_mobile', 'vat_number', 'dni', 'active', 'deleted',
+  'id_address', 'id_customer', 'id_state', 'alias', 'lastname', 'firstname', 'address1', 'address2', 'postcode', 'city', 'phone', 'phone_mobile', 'vat_number', 'dni', 'active', 'deleted',
 ]);
+// Provincias: id_state → nombre (opcional; si no está el dump, quedan vacías).
+let stateMap = new Map();
+try {
+  const states = parse('prstshp_state.sql', 'prstshp_state', ['id_state', 'name']);
+  stateMap = new Map(states.map((s) => [Number(s.id_state), (s.name || '').trim()]));
+} catch {
+  /* sin ps_state → sin provincia */
+}
 
 const clip = (s, n) => { const v = (s || '').trim(); return v ? v.slice(0, n) : undefined; };
 function toAddr(a) {
@@ -79,6 +87,7 @@ function toAddr(a) {
     linea2: clip(a.address2, 120),
     cp: clip(a.postcode, 12),
     ciudad: clip(a.city, 64),
+    provincia: clip(stateMap.get(Number(a.id_state)), 64),
     telefono: clip(a.phone_mobile || a.phone, 30),
   };
 }
@@ -131,6 +140,7 @@ for (const r of custRows) {
   r.addresses.forEach((a, i) => { a.defaultShipping = i === 0; a.defaultBilling = i === 0; });
 }
 const withAddr = custRows.filter((r) => r.addresses.length > 0).length;
+const withProv = custRows.filter((r) => r.addresses.some((a) => a.provincia)).length;
 
 // ── Pedidos a importar (válidos) ──
 const orderRows = [];
@@ -145,7 +155,7 @@ for (const o of orders) {
   });
 }
 
-console.log(`Clientes a importar: ${custRows.length} (con consentimiento: ${custRows.filter((r) => r.consent).length} · con dirección: ${withAddr})`);
+console.log(`Clientes a importar: ${custRows.length} (con consentimiento: ${custRows.filter((r) => r.consent).length} · con dirección: ${withAddr} · con provincia: ${withProv})`);
 console.log(`Pedidos a importar:  ${orderRows.length} · importe ${orderRows.reduce((s, o) => s + o.total, 0).toFixed(2)} €`);
 console.log('Ejemplos cliente:', custRows.slice(0, 2).map((r) => `${r.email} (${r.nombre})`).join(' · '));
 
