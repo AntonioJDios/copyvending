@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOrders, type Order } from '../store/useOrders';
-import { aggregate, couponAnalytics, couponDaily, monthKey, seedFromAgg, seriesBy, splitVat, VAT_RATE, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { aggregate, couponAnalytics, couponDaily, monthKey, seedFromAgg, seriesBy, splitVat, type Bucket, type CouponRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { vatRateOf } from '../domain/catalog';
+import { useConfigurator } from '../store/useConfigurator';
 import { fetchAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
@@ -140,7 +142,9 @@ export function StatsPanel() {
   const maxSeries = Math.max(1, ...curSeries.map(mv));
 
   const totals = agg?.totals ?? data.totals;
-  const { base, vat } = splitVat(totals.revenue);
+  // VAT rate comes from the shop's own config, not a constant in the code.
+  const vatRate = vatRateOf(useConfigurator((s) => s.rawCatalog.invoicing));
+  const { base, vat } = splitVat(totals.revenue, vatRate);
   const ticket = totals.orders > 0 ? totals.revenue / totals.orders : 0;
   const bySourceBuckets: Bucket[] = agg?.bySource ?? data.bySource;
 
@@ -177,7 +181,7 @@ export function StatsPanel() {
       totals: { revenue: totals.revenue, orders: totals.orders },
       months: monthly,
       bySource: bySourceRows,
-      vatRate: VAT_RATE,
+      vatRate,
     });
   };
 
@@ -242,7 +246,7 @@ export function StatsPanel() {
                 <div className="stats-kpis">
                   <Kpi label="Facturación (IVA incl.)" value={eur(totals.revenue)} strong />
                   <Kpi label="Base imponible" value={eur(base)} />
-                  <Kpi label={`IVA (${Math.round(VAT_RATE * 100)}%)`} value={eur(vat)} accent />
+                  <Kpi label={`IVA (${Math.round(vatRate * 100)}%)`} value={eur(vat)} accent />
                   <Kpi label="Pedidos" value={int(totals.orders)} />
                   <Kpi label="Ticket medio" value={eur(ticket)} />
                 </div>
@@ -273,7 +277,7 @@ export function StatsPanel() {
                 </section>
 
                 <p className="muted stats-note">
-                  IVA incluido en los precios al {Math.round(VAT_RATE * 100)}%; base y cuota calculadas para el modelo 303.
+                  IVA incluido en los precios al {Math.round(vatRate * 100)}%; base y cuota calculadas para el modelo 303.
                   {source !== 'all' && ` Datos filtrados por origen: ${SOURCE_LABEL[source] ?? cap(source)}.`}{' '}
                   El histórico analizado son los últimos pedidos cargados; los periodos recientes están completos.
                 </p>

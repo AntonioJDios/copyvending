@@ -6,8 +6,24 @@
 // (IndexedDB + localStorage) so the UI still runs offline / as a demo.
 //
 // VITE_UPLOAD_API is still read for backwards compatibility (older setups).
-import { getAdminToken } from './adminToken';
+import { clearAdminToken, getAdminToken } from './adminToken';
 import { getCounterToken } from './counterToken';
+
+/**
+ * Fired when the server rejects our admin token (401). The stored token only
+ * carries its expiry, so the client cannot tell a *valid* token from one signed
+ * with a secret the server no longer uses (e.g. ADMIN_SECRET was set or rotated
+ * after login). Without this, the backoffice would look unlocked while every
+ * request failed — so on a 401 we drop the token and ask for the password again.
+ */
+export const ADMIN_AUTH_EXPIRED = 'admin-auth-expired';
+
+function onUnauthorized(): void {
+  if (getAdminToken()) {
+    clearAdminToken();
+    window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED));
+  }
+}
 
 const env = import.meta.env as Record<string, string | undefined>;
 const raw = env.VITE_API_BASE ?? env.VITE_UPLOAD_API;
@@ -26,6 +42,7 @@ function authHeaders(): Record<string, string> {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  if (res.status === 401) onUnauthorized();
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -36,6 +53,7 @@ export async function apiSend<T = unknown>(method: string, path: string, body?: 
     headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) onUnauthorized();
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(e.error || `${method} ${path} → ${res.status}`);

@@ -297,7 +297,10 @@ function copiasTotal(c: Cfg, docs: Doc[], copias: number, cat: PriceCatalog, col
   }
   return (docsCost + bindingCost + extraCost + colorExtra) * Math.max(1, copias || 1);
 }
-function itemTotal(item: Record<string, unknown>, cat: PriceCatalog): number {
+/** Exported ONLY so tests/pricing-parity.test.ts can check this copy against
+ *  src/domain/priceEngine.ts. Vercel routes the default export (the handler);
+ *  extra named exports are inert at runtime. */
+export function itemTotal(item: Record<string, unknown>, cat: PriceCatalog): number {
   if (item.kind === 'taza') return cat.mugPrice * Math.max(1, Number(item.cantidad) || 1);
   if (item.kind === 'chapa') return cat.badgePrice * Math.max(1, Number(item.cantidad) || 1);
   const docs = Array.isArray(item.docs) ? (item.docs as Record<string, unknown>[]) : [];
@@ -406,8 +409,9 @@ async function getCatalog(): Promise<PriceCatalog> {
   return cat;
 }
 
-/** Effective price catalog for an order's source (mirror of catalogForSource). */
-function applySource(cat: PriceCatalog, source: string): PriceCatalog {
+/** Effective price catalog for an order's source (mirror of catalogForSource).
+ *  Exported for the parity test (see itemTotal). */
+export function applySource(cat: PriceCatalog, source: string): PriceCatalog {
   const o = cat.sources?.[source];
   if (!o) return cat;
   return {

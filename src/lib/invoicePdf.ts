@@ -1,18 +1,24 @@
 import type { Order } from '../store/useOrders';
-import type { BusinessConfig } from '../domain/catalog';
+import { DEFAULT_VAT_PERCENT, type BusinessConfig } from '../domain/catalog';
 import { projectDisplayName, projectSpecLines } from '../domain/orderSpec';
 
 /**
- * Simple invoice PDF (like PrestaShop's): shop fiscal header, customer billing
- * data, line items with their configuration, IVA breakdown and payment status.
- * Proforma when unpaid; final invoice when paid. Not Verifactu — orientative.
+ * Simple document PDF: shop fiscal header, customer billing data, line items with
+ * their configuration, VAT breakdown and payment status.
+ *
+ * ⚠️ NOT a legally valid invoice. Two reasons, both pending a decision with the
+ * shop's accountant (see docs/facturacion-verifactu.md):
+ *   - the number is the order code, not a gap-free sequential series;
+ *   - it does not comply with Verifactu.
+ * Treat it as a receipt/proforma for the customer.
  */
-const VAT_RATE = 0.21;
 const money = (n: number) => `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
 const PAYMENT_LABEL: Record<string, string> = { local: 'Pago en el mostrador', redsys: 'Tarjeta / Bizum (Redsys)' };
 
-export async function downloadInvoice(order: Order, shop: BusinessConfig): Promise<void> {
+/** @param vatPercent VAT rate from the shop's config (21 = 21%). */
+export async function downloadInvoice(order: Order, shop: BusinessConfig, vatPercent = DEFAULT_VAT_PERCENT): Promise<void> {
+  const VAT_RATE = (Number.isFinite(vatPercent) && vatPercent >= 0 ? vatPercent : DEFAULT_VAT_PERCENT) / 100;
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);

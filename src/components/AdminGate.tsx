@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { API_BASE } from '../lib/api';
+import { ADMIN_AUTH_EXPIRED, API_BASE } from '../lib/api';
 import { adminConfigured, adminLogin } from '../lib/adminAuth';
 import { adminTokenValid } from '../lib/adminToken';
 
@@ -15,6 +15,19 @@ type GateState = 'loading' | 'open' | 'locked' | 'ok' | 'unconfigured';
  */
 export function AdminGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GateState>('loading');
+  const [expired, setExpired] = useState(false);
+
+  // The stored token carries only its expiry, so we can't verify its signature
+  // here. If the server rejects it (401), lib/api drops it and fires this event:
+  // go back to the password form instead of showing a panel that can't load.
+  useEffect(() => {
+    const onExpired = () => {
+      setExpired(true);
+      setState('locked');
+    };
+    window.addEventListener(ADMIN_AUTH_EXPIRED, onExpired);
+    return () => window.removeEventListener(ADMIN_AUTH_EXPIRED, onExpired);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -50,10 +63,10 @@ export function AdminGate({ children }: { children: ReactNode }) {
         </div>
       </div>
     );
-  return <AdminLogin onOk={() => setState('ok')} />;
+  return <AdminLogin expired={expired} onOk={() => { setExpired(false); setState('ok'); }} />;
 }
 
-function AdminLogin({ onOk }: { onOk: () => void }) {
+function AdminLogin({ onOk, expired = false }: { onOk: () => void; expired?: boolean }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -76,7 +89,11 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
     <div className="admin-login">
       <form className="admin-login-card" onSubmit={submit}>
         <h1>🔒 Administración</h1>
-        <p className="muted">Introduce la contraseña del backoffice.</p>
+        <p className="muted">
+          {expired
+            ? 'Tu sesión ya no es válida (caducó o cambió la clave del servidor). Vuelve a introducir la contraseña.'
+            : 'Introduce la contraseña del backoffice.'}
+        </p>
         <input
           type="password"
           autoFocus

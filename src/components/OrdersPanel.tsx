@@ -8,7 +8,7 @@ import { deleteProjectFiles } from '../lib/projectFiles';
 import { downloadOrderZip } from '../lib/downloadZip';
 import { downloadInvoice } from '../lib/invoicePdf';
 import { downloadGlsLabel, glsTrackUrl } from '../lib/glsLabel';
-import { DEFAULT_BUSINESS } from '../domain/catalog';
+import { DEFAULT_BUSINESS, DEFAULT_VAT_PERCENT } from '../domain/catalog';
 import { CartDocsPreview } from './CartProjectCard';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -119,7 +119,10 @@ function OrderCard({ order }: { order: Order }) {
   const generateGls = useOrders((s) => s.generateGls);
   const deleteGlsLabel = useOrders((s) => s.deleteGlsLabel);
   const remove = useOrders((s) => s.remove);
-  const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
+  const invoicing = useConfigurator((s) => s.catalog.invoicing);
+  const invoicingOn = !!invoicing?.enabled;
+  // VAT rate set by the shop in the admin, not hardcoded.
+  const vatPercent = invoicing?.vatPercent ?? DEFAULT_VAT_PERCENT;
   const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
   const [open, setOpen] = useState(false);
   const [zipping, setZipping] = useState(false);
@@ -303,7 +306,7 @@ function OrderCard({ order }: { order: Order }) {
                 {order.paid ? '↩ Marcar pendiente' : '💶 Marcar pagado'}
               </button>
               {invoicingOn && (
-                <button type="button" className="chip" onClick={() => void downloadInvoice(order, business)}>
+                <button type="button" className="chip" onClick={() => void downloadInvoice(order, business, vatPercent)}>
                   🧾 {order.paid ? 'Factura' : 'Proforma'}
                 </button>
               )}

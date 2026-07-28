@@ -13,6 +13,7 @@ import {
   DEFAULT_PAYMENTS,
   DEFAULT_PAY_MATRIX,
   DEFAULT_INVOICING,
+  DEFAULT_VAT_PERCENT,
   DEFAULT_BUSINESS,
   DEFAULT_SHIPPING,
   FINISH_LABEL,
@@ -65,6 +66,7 @@ import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE } from '../lib/api';
+import { downloadBackup, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -515,6 +517,7 @@ export function AdminPanel() {
 
         {tab === 'herramientas' && API_BASE && (
           <>
+            <CatalogBackupTool onRestored={(c) => { setDraft(c); setCatalog(c); setDirty(false); }} />
             <section className="card">
               <h2>Entrada de pedidos por email</h2>
               <label className="chk">
@@ -619,6 +622,89 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Dev tool: builds a fake email with a sample PDF and sends it to the email
  *  ingestion endpoint, to test the whole pipeline before Gmail is wired. */
+/**
+ * Catalog backup. Prices exist ONLY in the database (there are no default prices
+ * in the code), so the owner needs a file of their own: without it, losing that
+ * row means losing every price with no way back.
+ */
+function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  const doExport = async () => {
+    setBusy(true);
+    setMsg('');
+    setErr('');
+    try {
+      const name = await downloadBackup();
+      setMsg(`Copia descargada: ${name}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo exportar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doImport = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    setMsg('');
+    setErr('');
+    try {
+      const parsed = parseBackup(await file.text());
+      const when = parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleString('es-ES') : 'fecha desconocida';
+      const ok = window.confirm(
+        `Vas a SUSTITUIR los precios y los cupones actuales por los de esta copia.\n\n` +
+          `Copia del: ${when}\nPrecios que contiene: ${parsed.priceCount}\nCupones: ${parsed.coupons.length}\n\n` +
+          `Esta acción no se puede deshacer. ¿Continuar?`
+      );
+      if (!ok) return;
+      await restoreBackup(parsed);
+      onRestored(parsed.catalog);
+      setMsg('Catálogo y cupones restaurados.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo restaurar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Copia de seguridad del catálogo</h2>
+      <p className="muted">
+        Los precios viven <b>solo en la base de datos</b>: no hay copia en el código. Descarga una copia cada vez que
+        cambies precios y guárdala fuera de aquí — es tu única red de seguridad si se pierde la configuración.
+      </p>
+      <div className="admin-actions" style={{ padding: 0, justifyContent: 'flex-start', gap: 8 }}>
+        <button type="button" className="btn btn-primary" onClick={() => void doExport()} disabled={busy}>
+          ⬇ Descargar copia (JSON)
+        </button>
+        <label className="btn" style={{ cursor: busy ? 'default' : 'pointer' }}>
+          ⬆ Restaurar desde archivo
+          <input
+            type="file"
+            accept="application/json,.json"
+            hidden
+            disabled={busy}
+            onChange={(e) => {
+              void doImport(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
+        </label>
+      </div>
+      {msg && <p className="muted">✓ {msg}</p>}
+      {err && <p className="admin-login-err">⚠ {err}</p>}
+      <p className="muted">
+        La copia incluye precios (de todos los canales), perfiles, colores, envíos, datos del negocio y cupones. No
+        incluye la credencial de GLS ni ningún secreto del servidor.
+      </p>
+    </section>
+  );
+}
+
 function EmailTestTool() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>('');
@@ -894,20 +980,47 @@ function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
   );
 }
 
-/** Invoicing: just on/off (the header uses the shop's business data). */
+/** Invoicing: on/off + VAT rate (the header uses the shop's business data). */
 function InvoicingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const inv = draft.invoicing ?? DEFAULT_INVOICING;
   const set = (patch: Partial<typeof inv>) => change((d) => { d.invoicing = { ...DEFAULT_INVOICING, ...d.invoicing, ...patch }; });
   return (
     <section className="card">
-      <h2>Facturación</h2>
-      <p className="muted">Genera facturas (proforma o factura según el pago) descargables desde los pedidos. Usa los datos del negocio de arriba.</p>
+      <h2>Documentos de cobro</h2>
+      <p className="muted">
+        Genera un documento descargable por pedido (proforma o justificante según el pago) con los datos del negocio de
+        arriba.
+      </p>
       <label className="chk">
         <input type="checkbox" checked={inv.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-        Activar la generación de facturas
+        Activar la generación de documentos
       </label>
+      <div className="admin-grid" style={{ marginTop: 12 }}>
+        <label className="field-inline">
+          IVA aplicado (%)
+          <input
+            type="number"
+            step="1"
+            min="0"
+            max="100"
+            value={inv.vatPercent ?? DEFAULT_VAT_PERCENT}
+            onChange={(e) => set({ vatPercent: num(e.target.value) })}
+          />
+        </label>
+      </div>
+      <p className="muted">
+        Los precios del catálogo se introducen <b>con IVA incluido</b>; este tipo se usa para desglosar base y cuota en
+        los documentos y en el resumen fiscal.
+      </p>
       {inv.enabled && (!(draft.business?.name) || !(draft.business?.nif)) && (
-        <p className="muted">⚠ Completa el nombre y el NIF en "Datos del negocio" para que las facturas salgan correctas.</p>
+        <p className="muted">⚠ Completa el nombre y el NIF en "Datos del negocio" para que los documentos salgan correctos.</p>
+      )}
+      {inv.enabled && (
+        <p className="muted">
+          ⚠ <b>Estos documentos NO son facturas con validez legal:</b> el número es el código del pedido (no una serie
+          correlativa) y no cumplen Verifactu. Consúltalo con tu asesor antes de usarlos como factura — hay un resumen
+          de la situación en <code>docs/facturacion-verifactu.md</code>.
+        </p>
       )}
     </section>
   );

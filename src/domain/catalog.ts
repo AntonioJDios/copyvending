@@ -61,8 +61,23 @@ export const DEFAULT_BUSINESS: BusinessConfig = { name: '', nif: '', address: ''
 /** Invoicing (optional). Uses the shop's `business` data for the header. */
 export interface InvoicingConfig {
   enabled: boolean;
+  /**
+   * VAT rate applied to the documents, as a percentage (21 = 21%). Set by the
+   * shop, not hardcoded: the rate can change by law, and books/printing can fall
+   * under a reduced rate. Absent → DEFAULT_VAT_PERCENT.
+   */
+  vatPercent?: number;
 }
-export const DEFAULT_INVOICING: InvoicingConfig = { enabled: false };
+/** Spanish general rate today. Only a starting value for the admin field — the
+ *  effective rate is whatever the shop saved (see vatRateOf). */
+export const DEFAULT_VAT_PERCENT = 21;
+export const DEFAULT_INVOICING: InvoicingConfig = { enabled: false, vatPercent: DEFAULT_VAT_PERCENT };
+
+/** Effective VAT rate as a fraction (0.21), from the shop's config. */
+export function vatRateOf(invoicing: InvoicingConfig | undefined): number {
+  const pct = Number(invoicing?.vatPercent);
+  return (Number.isFinite(pct) && pct >= 0 ? pct : DEFAULT_VAT_PERCENT) / 100;
+}
 
 /** Home delivery (optional). Prices by zone (from the postal code); Canarias is
  *  not served. Free over `freeThreshold` (0 = never free). */

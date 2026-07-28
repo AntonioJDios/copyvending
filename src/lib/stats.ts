@@ -1,8 +1,11 @@
 import type { Order } from '../store/useOrders';
+import { DEFAULT_VAT_PERCENT } from '../domain/catalog';
 
-/** IVA español general. Los precios se guardan CON IVA incluido, así que para la
- *  declaración trimestral hay que desglosar la base y la cuota. */
-export const VAT_RATE = 0.21;
+/** Tipo de IVA por defecto, solo como punto de partida: el tipo efectivo lo fija
+ *  la copistería en el panel (catalog.invoicing.vatPercent → vatRateOf). Los
+ *  precios se guardan CON IVA incluido, así que para la declaración trimestral
+ *  hay que desglosar base y cuota. */
+export const VAT_RATE = DEFAULT_VAT_PERCENT / 100;
 
 /** Split an IVA-included gross amount into taxable base + IVA. */
 export function splitVat(gross: number, rate = VAT_RATE): { base: number; vat: number } {
