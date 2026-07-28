@@ -5,9 +5,11 @@ import { uploadService } from './uploads';
  *  when the project is removed for good (cart "Quitar", empty cart, delete
  *  order) — NOT when merely editing it (the files are still needed). */
 export async function deleteProjectFiles(project: CartProject): Promise<void> {
+  // The project's capability token is what authorises deleting its files.
+  const tk = project.storageToken;
   if (project.kind === 'copias') {
-    await Promise.all(project.docs.filter((d) => d.storageKey).map((d) => uploadService.remove(d.storageKey!)));
+    await Promise.all(project.docs.filter((d) => d.storageKey).map((d) => uploadService.remove(d.storageKey!, tk)));
   } else if (project.printImageKey) {
-    await uploadService.remove(project.printImageKey);
+    await uploadService.remove(project.printImageKey, tk);
   }
 }

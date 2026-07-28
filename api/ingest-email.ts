@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
+import { createHmac, randomBytes } from 'crypto';
 
 // Give the function headroom to read the inbox + upload attachments.
 export const maxDuration = 60;
@@ -81,6 +82,24 @@ function ensureSchema(): Promise<void> {
 }
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// ── Internal auth + order codes (mirrors the client; self-contained) ──
+const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
+/** Short-lived admin-scope token so this server-side pipeline can tell
+ *  /api/orders that the order genuinely comes from the shop's email inbox. */
+function internalAdminToken(): string {
+  const exp = Date.now() + 60 * 1000;
+  const sig = createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
+  return `${exp}.${sig}`;
+}
+/** Random order code (same alphabet/length as the web checkout). */
+const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+function newOrderCode(): string {
+  const bytes = randomBytes(8);
+  let out = '';
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return `P-${out}`;
+}
 
 /** Map a loose colour word ("amarilla", "azul") to a catalog colour name
  *  ("Plástico Amarillo Pastel", "Azul Pastel"). Tolerant of accents/plurals. */
@@ -301,7 +320,8 @@ async function sendOrderReply(opts: {
     secure: true,
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
   });
-  const link = `${PUBLIC_URL}/#recoger/${opts.orderId}`;
+  // Looking an order up needs code + email, so carry the address in the link.
+  const link = `${PUBLIC_URL}/#recoger/${opts.orderId}?e=${encodeURIComponent(opts.to)}`;
   const lines = opts.items.map((it) => {
     const c = (it.config || {}) as Record<string, unknown>;
     const parts = [String(c.size || ''), c.color === 'BN' ? 'B/N' : 'Color', c.dobleCara === '1' ? 'doble cara' : 'una cara'];
@@ -445,20 +465,25 @@ async function processEmail(
     (items[0] as { comentario: string }).comentario = `📧 Pedido por email. IA entendió: ${reply}${skipped.length ? ` · (ignorados: ${skipped.join(', ')})` : ''}`;
 
     // 4) Create the order (source: 'email') via /api/orders (authoritative price).
-    const orderId = `P-${crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}`;
+    const orderId = newOrderCode();
     const nombre = (email.fromName || email.from || 'Cliente email').slice(0, 60);
     const order = {
       id: orderId,
       createdAt: Date.now(),
       source: 'email',
-      customer: { nombre, apellidos: '', telefono: undefined as string | undefined },
+      // Store the sender's address: it's how the customer proves the order is
+      // theirs when looking it up (code + email).
+      customer: { nombre, apellidos: '', email: email.from || undefined, telefono: undefined as string | undefined },
       items,
       total: 0,
       status: 'nuevo',
     };
+    // /api/orders decides the price list from the caller's token; without an
+    // admin one it would fall back to the online tariff. Mint it here (same
+    // ADMIN_SECRET, server-side only) so email orders are priced as 'email'.
     const orderRes = await fetch(`${SELF_URL}/api/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${internalAdminToken()}` },
       body: JSON.stringify(order),
     });
     const orderData = (await orderRes.json().catch(() => ({}))) as { total?: number; error?: string };

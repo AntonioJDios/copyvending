@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_CATALOG, catalogForSource, type Catalog } from '../domain/catalog';
+import { EMPTY_CATALOG, catalogForSource, type Catalog } from '../domain/catalog';
 import { CURRENT_SOURCE } from '../lib/source';
 import { normalize } from '../domain/rules';
 import type { Configuracion, DocFile } from '../domain/types';
@@ -9,9 +9,14 @@ import { API_BASE, apiSend } from '../lib/api';
 
 const CATALOG_KEY = 'copisteria/catalog/v6';
 
-/** Load the admin-edited catalog from localStorage, or the defaults. Used as a
- *  fast local cache; when a backend is wired, fetchCatalog refreshes it from
- *  the shared settings so every device sees the same prices. */
+/** True when a catalog actually carries prices (i.e. it came from the DB, not
+ *  the empty skeleton). Prices live only in the DB, so an empty pagePrices map
+ *  means "not loaded yet" — the shop must not price anything. */
+export const hasPrices = (c: Catalog): boolean => Object.keys(c.pagePrices ?? {}).length > 0;
+
+/** Load the last catalog seen by THIS browser (fast local cache only). The
+ *  authoritative copy is always the one in the DB, which fetchCatalog pulls on
+ *  every start; without a cache we begin with the price-less skeleton. */
 export function loadCatalog(): Catalog {
   try {
     const raw = localStorage.getItem(CATALOG_KEY);
@@ -22,7 +27,7 @@ export function loadCatalog(): Catalog {
   } catch {
     /* ignore corrupt storage */
   }
-  return DEFAULT_CATALOG;
+  return EMPTY_CATALOG;
 }
 
 /** Persist the catalog locally and, if a backend is wired, to the shared
@@ -54,6 +59,11 @@ interface ConfiguratorState {
   catalog: Catalog;
   /** Raw catalog with all sources' overrides — edited by the admin. */
   rawCatalog: Catalog;
+  /** Whether a real (priced) catalog is available. False = prices unknown, so
+   *  the UI must not show totals nor let an order through. */
+  catalogLoaded: boolean;
+  /** Set when the catalog could not be loaded, to explain it in the UI. */
+  catalogError: string | null;
   config: Configuracion;
   files: DocFile[];
   copias: number;
@@ -61,6 +71,10 @@ interface ConfiguratorState {
   /** UUID that ties this working project's uploads into one R2 folder and, once
    *  added to the cart, becomes the project/order-item id. */
   proyectoId: string;
+  /** Capability token for this project's uploaded files (set on first upload).
+   *  Carried into the cart/order so the files can be re-read or deleted later. */
+  proyectoToken?: string;
+  setProyectoToken: (token: string | undefined) => void;
   /** Customer-facing name for this print project. */
   nombreProyecto: string;
   /** AI proposal for the uploaded files (config + explanation), or null. */
@@ -71,6 +85,9 @@ interface ConfiguratorState {
   preflight: string[];
   /** When set, the configurator is editing an existing order (not a new project). */
   editingOrderId: string | null;
+  /** Email the order was placed with — the server requires it (with the code) as
+   *  proof of ownership before letting the customer rewrite the order. */
+  editingOrderEmail: string | null;
   /** Selected ring and back-cover colors (only meaningful for AnillasColores). */
   colorAnillas: string;
   colorContraportada: string;
@@ -87,6 +104,7 @@ interface ConfiguratorState {
   setCopias: (n: number) => void;
   setComentario: (s: string) => void;
   setNombreProyecto: (s: string) => void;
+  setEditingOrderEmail: (email: string | null) => void;
   /** Clear the working project (files/name/comment) after adding to cart. */
   clearProject: () => void;
   /** Load a cart project snapshot back into the configurator for editing. */
@@ -108,21 +126,25 @@ const initialCatalog = catalogForSource(initialRaw, CURRENT_SOURCE);
 export const useConfigurator = create<ConfiguratorState>()((set) => ({
   catalog: initialCatalog,
   rawCatalog: initialRaw,
+  catalogLoaded: hasPrices(initialCatalog),
+  catalogError: null,
   config: DEFAULT_CONFIG,
   files: [],
   copias: 1,
   comentario: '',
   proyectoId: crypto.randomUUID(),
+  proyectoToken: undefined,
   nombreProyecto: '',
   suggestion: null,
   analyzing: false,
   preflight: [],
   editingOrderId: null,
+  editingOrderEmail: null,
   colorAnillas: initialCatalog.ringColors[0]?.name ?? '',
   colorContraportada: initialCatalog.coverColors[0]?.name ?? '',
 
   // Admin saves the RAW catalog; derive the effective one for this front.
-  setCatalog: (raw) => set((s) => { const catalog = catalogForSource(raw, CURRENT_SOURCE); return { rawCatalog: raw, catalog, config: normalize(s.config, catalog) }; }),
+  setCatalog: (raw) => set((s) => { const catalog = catalogForSource(raw, CURRENT_SOURCE); return { rawCatalog: raw, catalog, catalogLoaded: hasPrices(catalog), config: normalize(s.config, catalog) }; }),
   setColorAnillas: (colorAnillas) => set({ colorAnillas }),
   setColorContraportada: (colorContraportada) => set({ colorContraportada }),
 
@@ -153,16 +175,19 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
       return { files };
     }),
 
+  setProyectoToken: (proyectoToken) => set((s) => (s.proyectoToken ? {} : { proyectoToken })),
   setCopias: (n) => set({ copias: Math.max(1, Math.floor(n) || 1) }),
   setComentario: (comentario) => set({ comentario }),
   setNombreProyecto: (nombreProyecto) => set({ nombreProyecto }),
   clearProject: () =>
-    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), suggestion: null, analyzing: false, preflight: [], editingOrderId: null }),
+    set({ files: [], copias: 1, comentario: '', nombreProyecto: '', proyectoId: crypto.randomUUID(), proyectoToken: undefined, suggestion: null, analyzing: false, preflight: [], editingOrderId: null, editingOrderEmail: null }),
   setEditingOrderId: (editingOrderId) => set({ editingOrderId }),
+  setEditingOrderEmail: (editingOrderEmail) => set({ editingOrderEmail }),
   loadProject: (p) => {
     if (p.kind !== 'copias') return;
     set((s) => ({
       proyectoId: p.id,
+      proyectoToken: p.storageToken,
       config: normalize({ ...p.config }, s.catalog),
       files: p.docs.map((d) => ({
         id: d.id,
@@ -182,7 +207,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
     // Files are persisted → rehydrate the original blob so preview/page-flip work.
     for (const d of p.docs) {
       if (!d.storageKey) continue;
-      void uploadService.getBlob(d.storageKey).then((blob) => {
+      void uploadService.getBlob(d.storageKey, p.storageToken).then((blob) => {
         if (!blob) return;
         const file = new File([blob], d.name, { type: blob.type || 'application/octet-stream' });
         set((s) => ({ files: s.files.map((f) => (f.id === d.id ? { ...f, source: file } : f)) }));
@@ -193,17 +218,20 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
     if (!API_BASE) return;
     try {
       const remote = (await (await fetch(`${API_BASE}/catalog`)).json()) as Catalog | null;
-      if (remote && remote.version === 6) {
+      if (remote && remote.version === 6 && hasPrices(remote)) {
         localStorage.setItem(CATALOG_KEY, JSON.stringify(remote));
         const catalog = catalogForSource(remote, CURRENT_SOURCE);
-        set((s) => ({ rawCatalog: remote, catalog, config: normalize(s.config, catalog) }));
-      } else if (!remote) {
-        // Neon has no catalog yet → seed it with the current one so every device
-        // (and the server pricing) shares the same catalog.
-        saveCatalog(useConfigurator.getState().catalog);
+        set((s) => ({ rawCatalog: remote, catalog, catalogLoaded: true, catalogError: null, config: normalize(s.config, catalog) }));
+      } else {
+        // The DB has no priced catalog. We do NOT seed it from the browser: the
+        // shop owner sets prices in the admin panel, and until then there is no
+        // price to show. (Seeding from here would make the client the source of
+        // truth for prices, which is exactly what we don't want.)
+        set({ catalogLoaded: false, catalogError: 'Los precios aún no están configurados en el panel de administración.' });
       }
     } catch {
-      /* keep the local cache */
+      // Network/API failure: keep whatever cache we had, but say so if it has no prices.
+      set((s) => ({ catalogError: s.catalogLoaded ? null : 'No se han podido cargar los precios. Inténtalo de nuevo en unos segundos.' }));
     }
   },
 

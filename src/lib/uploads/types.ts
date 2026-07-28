@@ -6,6 +6,13 @@
 export interface UploadResult {
   /** Opaque storage key the backend understands. */
   key: string;
+  /**
+   * Capability token for this project's folder, returned by the signing API.
+   * Required to read or delete the project's files later (so a leaked key alone
+   * grants nothing). Travels with the project into the cart and the order.
+   * Absent in local mode, where files never leave the browser.
+   */
+  token?: string;
 }
 
 export interface UploadOptions {
@@ -21,9 +28,9 @@ export interface UploadService {
   /** Upload a file. Rejects on abort/error. */
   upload(file: File, opts?: UploadOptions): Promise<UploadResult>;
   /** Resolve a displayable/downloadable URL for a stored key (if available). */
-  getObjectURL(key: string): Promise<string | undefined>;
+  getObjectURL(key: string, token?: string): Promise<string | undefined>;
   /** Fetch the raw blob for a stored key (used to build the ZIP download). */
-  getBlob(key: string): Promise<Blob | undefined>;
+  getBlob(key: string, token?: string): Promise<Blob | undefined>;
   /** Delete a stored object (used on remove / abandoned cleanup). */
-  remove(key: string): Promise<void>;
+  remove(key: string, token?: string): Promise<void>;
 }

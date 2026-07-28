@@ -25,10 +25,12 @@ export function MugConfigurator() {
   const previewRef = useRef<HTMLDivElement>(null);
 
   const price = useConfigurator((s) => s.catalog.mugPrice);
+  // Prices come from the DB catalog; until it's loaded there is no price to charge.
+  const catalogLoaded = useConfigurator((s) => s.catalogLoaded);
   const addToCart = useCart((s) => s.add);
 
   const onAddToCart = async () => {
-    if (!textureUrl || adding) return;
+    if (!textureUrl || adding || !catalogLoaded) return;
     // Snapshot the rendered 3D mug so the cart shows the actual mug, not the
     // flat print strip. Falls back to the texture if the capture fails.
     const canvas = previewRef.current?.querySelector('canvas');
@@ -47,9 +49,9 @@ export function MugConfigurator() {
       // just the key (keeps it small + under the API body limit). The preview
       // is a downscaled snapshot for display.
       const file = await dataUrlToFile(textureUrl, 'taza.png');
-      const { key } = await uploadService.upload(file, { projectId: id });
+      const { key, token } = await uploadService.upload(file, { projectId: id });
       const preview = await downscaleDataUrl(snapshot, 480);
-      addToCart({ id, kind: 'taza', nombre, preview, printImageKey: key, cantidad, total: price * cantidad });
+      addToCart({ id, kind: 'taza', nombre, preview, printImageKey: key, storageToken: token, cantidad, total: price * cantidad });
       setOriginalUrl(null);
       setTextureUrl(null);
       setNombre('');
@@ -142,9 +144,9 @@ export function MugConfigurator() {
               Uds.
               <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
             </label>
-            <span className="product-price">{eur(price * cantidad)}</span>
-            <button type="button" className="btn btn-primary" disabled={!textureUrl || adding} onClick={onAddToCart}>
-              {adding ? 'Añadiendo…' : 'Añadir al carrito'}
+            <span className="product-price">{catalogLoaded ? eur(price * cantidad) : '—'}</span>
+            <button type="button" className="btn btn-primary" disabled={!textureUrl || adding || !catalogLoaded} onClick={onAddToCart}>
+              {adding ? 'Añadiendo…' : !catalogLoaded ? 'Precios no disponibles' : 'Añadir al carrito'}
             </button>
           </div>
         </section>

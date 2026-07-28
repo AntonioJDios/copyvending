@@ -9,6 +9,7 @@ import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
 import { validateCouponRemote } from '../lib/coupons';
 import { CURRENT_SOURCE } from '../lib/source';
+import { newOrderCode } from '../lib/orderCode';
 import { payWithRedsys, authorizeInsite, getRedsysConfig, type RedsysConfig } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
@@ -116,7 +117,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
           : canOnline
             ? 'redsys'
             : null;
-  const [orderId] = useState(() => `P-${Date.now().toString(36).toUpperCase().slice(-6)}`);
+  const [orderId] = useState(newOrderCode);
 
   // Recognise an existing session and prefill from the account.
   useEffect(() => {

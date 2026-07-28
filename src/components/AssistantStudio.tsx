@@ -51,6 +51,8 @@ export function AssistantStudio() {
   const catalog = useConfigurator((s) => s.catalog);
   const addToCart = useCart((s) => s.add);
   const [sessionId] = useState(() => crypto.randomUUID());
+  // Capability token for this session's storage folder (see api/presign).
+  const sessionToken = useRef<string | undefined>(undefined);
   const [files, setFiles] = useState<StudioFile[]>([]);
   const [messages, setMessages] = useState<PlanMsg[]>([]);
   const [plan, setPlan] = useState<PlanProject[] | null>(null);
@@ -91,7 +93,9 @@ export function AssistantStudio() {
         try {
           const info = await readFileInfo(file).catch(() => ({ pages: 0, thumb: undefined as string | undefined }));
           const analysis = await analyzeFile(file);
-          const { key } = await uploadService.upload(file, { projectId: sessionId });
+          const { key, token } = await uploadService.upload(file, { projectId: sessionId });
+          // All the studio's files share one folder → one capability token.
+          if (token) sessionToken.current = token;
           patch(id, { pages: analysis.pages || info.pages, thumb: info.thumb, storageKey: key, status: 'done', analysis });
         } catch {
           patch(id, { status: 'error' });
@@ -154,6 +158,7 @@ export function AssistantStudio() {
         id: crypto.randomUUID(),
         kind: 'copias',
         nombre: pc.p.nombre || pc.docs[0].name,
+        storageToken: sessionToken.current,
         config: pc.config,
         docs: pc.docs.map((d) => ({ id: d.id, name: d.name, pages: d.pages, thumb: d.thumb, color: pc.p.docColor, storageKey: d.storageKey })),
         copias: pc.p.copias,

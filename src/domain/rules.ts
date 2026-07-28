@@ -1,5 +1,4 @@
 import type { Catalog } from './catalog';
-import { DEFAULT_CATALOG } from './catalog';
 import { sheets } from './pricing';
 import type { Configuracion, DobleCara, DocFile, Grosor, Size } from './types';
 
@@ -28,7 +27,7 @@ export interface Warning {
   message: string;
 }
 
-export function validate(config: Configuracion, files: DocFile[], catalog: Catalog = DEFAULT_CATALOG): Warning[] {
+export function validate(config: Configuracion, files: DocFile[], catalog: Catalog): Warning[] {
   const warnings: Warning[] = [];
   const totalSheets = files.reduce((s, f) => s + sheets(f.pages, config.paginasPorHoja, config.dobleCara), 0);
 
@@ -48,7 +47,7 @@ export function validate(config: Configuracion, files: DocFile[], catalog: Catal
 }
 
 /** Coerce a configuration to a valid state after a change (new object). */
-export function normalize(config: Configuracion, catalog: Catalog = DEFAULT_CATALOG): Configuracion {
+export function normalize(config: Configuracion, catalog: Catalog): Configuracion {
   let next = { ...config };
   if (!allowedGrosores(catalog, next.size).includes(next.grosor)) {
     next = { ...next, grosor: defaultGrosor(catalog, next.size) };

@@ -1,13 +1,18 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { API_BASE } from '../lib/api';
-import { adminStatus, adminLogin } from '../lib/adminAuth';
+import { adminConfigured, adminLogin } from '../lib/adminAuth';
 import { adminTokenValid } from '../lib/adminToken';
 
-type GateState = 'loading' | 'open' | 'locked' | 'ok';
+type GateState = 'loading' | 'open' | 'locked' | 'ok' | 'unconfigured';
 
-/** Gate for the backoffice routes (#admin/#pedidos/#estadisticas). If the server
- *  has no ADMIN_PASSWORD set (or there's no backend), it stays open (prototype);
- *  otherwise it asks for the password and unlocks on success. */
+/**
+ * Gate for the backoffice routes (#admin/#pedidos/#estadisticas).
+ *
+ * FAILS CLOSED: a server without ADMIN_PASSWORD does not mean "open", it means
+ * the backoffice is unavailable until the owner configures it. The only case
+ * that needs no password is running with no backend at all (local demo: there is
+ * no shared data to protect).
+ */
 export function AdminGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GateState>('loading');
 
@@ -15,12 +20,12 @@ export function AdminGate({ children }: { children: ReactNode }) {
     let alive = true;
     (async () => {
       if (!API_BASE) {
-        if (alive) setState('open');
+        if (alive) setState('open'); // local demo, nothing shared to protect
         return;
       }
-      const enabled = await adminStatus().catch(() => false);
+      const configured = await adminConfigured();
       if (!alive) return;
-      if (!enabled) setState('open');
+      if (!configured) setState('unconfigured');
       else setState(adminTokenValid() ? 'ok' : 'locked');
     })();
     return () => {
@@ -30,6 +35,21 @@ export function AdminGate({ children }: { children: ReactNode }) {
 
   if (state === 'loading') return <div style={{ padding: 24 }}>Cargando…</div>;
   if (state === 'open' || state === 'ok') return <>{children}</>;
+  if (state === 'unconfigured')
+    return (
+      <div className="admin-login">
+        <div className="admin-login-card">
+          <h1>🔒 Administración no disponible</h1>
+          <p className="muted">
+            Falta configurar la contraseña del backoffice en el servidor (variable <code>ADMIN_PASSWORD</code>).
+            Hasta entonces el panel permanece cerrado.
+          </p>
+          <a className="muted admin-login-back" href="#">
+            ← Volver a la tienda
+          </a>
+        </div>
+      </div>
+    );
   return <AdminLogin onOk={() => setState('ok')} />;
 }
 

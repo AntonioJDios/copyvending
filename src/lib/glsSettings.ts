@@ -36,7 +36,11 @@ export const DEFAULT_GLS_SETTINGS: GlsSettings = {
 
 export async function loadGlsSettings(): Promise<GlsSettings> {
   if (!API_BASE) return { ...DEFAULT_GLS_SETTINGS };
-  const res = await fetch(`${API_BASE}/catalog?key=gls`);
+  // Admin-only on the server (it carries the courier credential's presence).
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/catalog?key=gls`, {
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  });
   if (!res.ok) return { ...DEFAULT_GLS_SETTINGS };
   const v = (await res.json()) as Partial<GlsSettings> | null;
   return v ? { ...DEFAULT_GLS_SETTINGS, ...v } : { ...DEFAULT_GLS_SETTINGS };

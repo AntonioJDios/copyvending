@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
-import { randomBytes, randomInt, createHmac } from 'crypto';
+import { randomBytes, randomInt, createHmac, timingSafeEqual } from 'crypto';
 
 // IMPORTANT: self-contained Vercel function (no imports of values from ../src).
 // Passwordless accounts: request a magic link by email, verify it → session.
@@ -17,16 +17,34 @@ const SESSION_TTL = 60 * 24 * 60 * 60 * 1000; // session: 60 days
 
 // ── Backoffice admin auth (single shared password) ───────────────────
 // Stateless signed token so the (self-contained) orders/catalog functions can
-// verify it without a DB lookup. Auth is OFF until ADMIN_PASSWORD is set, so
-// the prototype keeps working; setting it turns protection on everywhere.
+// verify it without a DB lookup.
+//
+// FAILS CLOSED: if ADMIN_PASSWORD is not set on the server, the backoffice is
+// not "open", it is *unavailable*. A missing env var must never turn into public
+// access to every customer's orders.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const ADMIN_AUTH_ON = !!ADMIN_PASSWORD;
+const ADMIN_CONFIGURED = !!ADMIN_PASSWORD;
 const ADMIN_SECRET = process.env.ADMIN_SECRET || ADMIN_PASSWORD;
 const ADMIN_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-const signAdmin = (exp: number) => createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
-const makeAdminToken = () => {
-  const exp = Date.now() + ADMIN_TTL;
-  return `${exp}.${signAdmin(exp)}`;
+
+// ── Counter (papelería tablet) auth ──────────────────────────────────
+// The shop-floor tablet gets its own password and its own token scope. It is
+// what proves an order really was placed at the counter, so the SERVER can pick
+// the counter price list instead of trusting a flag sent by the browser
+// (/papeleria.html is publicly reachable — anyone could claim to be the shop).
+// Without COUNTER_PASSWORD the counter front simply can't authenticate, and
+// orders fall back to the online price list (never the cheaper one).
+const COUNTER_PASSWORD = process.env.COUNTER_PASSWORD || '';
+const COUNTER_CONFIGURED = !!COUNTER_PASSWORD;
+const COUNTER_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days (a fixed shop device)
+
+/** Signed, scoped, stateless token: `<expiry>.<hmac>`. The scope is part of the
+ *  signed payload, so a counter token can never pass as an admin one. */
+const signScoped = (scope: 'admin' | 'counter', exp: number) =>
+  createHmac('sha256', ADMIN_SECRET).update(`${scope}.${exp}`).digest('base64url');
+const makeToken = (scope: 'admin' | 'counter', ttl: number) => {
+  const exp = Date.now() + ttl;
+  return `${exp}.${signScoped(scope, exp)}`;
 };
 
 let _sql: NeonQueryFunction<false, false> | null = null;
@@ -70,6 +88,48 @@ function ensureSchema(): Promise<void> {
 
 const token = () => randomBytes(24).toString('hex');
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+
+// ── Rate limiting ────────────────────────────────────────────────────
+// Serverless functions share no memory, so the counter lives in Neon (fixed
+// window, one row per key). Deliberately FAILS OPEN: if the limiter itself is
+// broken we let the request through rather than locking the shop out.
+let _rlReady: Promise<void> | null = null;
+function ensureRateLimitTable(): Promise<void> {
+  if (!_rlReady) {
+    _rlReady = db()`
+      create table if not exists rate_limits (
+        k text primary key, window_start bigint not null, hits int not null)`
+      .then(() => undefined)
+      .catch((e) => {
+        _rlReady = null;
+        throw e;
+      });
+  }
+  return _rlReady;
+}
+async function rateLimit(key: string, max: number, windowMs: number): Promise<{ ok: boolean; retryInMin: number }> {
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const retryInMin = Math.max(1, Math.ceil((windowStart + windowMs - now) / 60000));
+  try {
+    await ensureRateLimitTable();
+    const rows = (await db()`
+      insert into rate_limits (k, window_start, hits) values (${key}, ${windowStart}, 1)
+      on conflict (k) do update set
+        hits = case when rate_limits.window_start = ${windowStart} then rate_limits.hits + 1 else 1 end,
+        window_start = ${windowStart}
+      returning hits`) as { hits: number }[];
+    return { ok: (rows[0]?.hits ?? 1) <= max, retryInMin };
+  } catch {
+    return { ok: true, retryInMin };
+  }
+}
+/** Best-effort client IP (Vercel sets x-forwarded-for). */
+const clientIp = (req: VercelRequest): string => {
+  const xf = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(xf) ? xf[0] : xf || '';
+  return (raw.split(',')[0] || 'unknown').trim().slice(0, 64) || 'unknown';
+};
 
 /** Sanitise one address (known fields only, capped). Requires a street line. */
 function cleanAddress(a: unknown): Record<string, unknown> | null {
@@ -122,12 +182,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     const action = body.action;
 
-    // Backoffice admin auth (no DB needed).
-    if (action === 'admin-status') return res.status(200).json({ enabled: ADMIN_AUTH_ON });
-    if (action === 'admin-login') {
-      if (!ADMIN_AUTH_ON) return res.status(503).json({ error: 'El backoffice no tiene contraseña configurada.' });
-      if (String(body.password ?? '') !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Contraseña incorrecta.' });
-      return res.status(200).json({ token: makeAdminToken() });
+    // Backoffice + counter auth (no DB needed).
+    // `configured` says whether the server has a password; it NEVER means "come
+    // on in". The client always has to log in.
+    if (action === 'admin-status') return res.status(200).json({ configured: ADMIN_CONFIGURED });
+    if (action === 'counter-status') return res.status(200).json({ configured: COUNTER_CONFIGURED });
+
+    if (action === 'admin-login' || action === 'counter-login') {
+      const isCounter = action === 'counter-login';
+      const configured = isCounter ? COUNTER_CONFIGURED : ADMIN_CONFIGURED;
+      const expected = isCounter ? COUNTER_PASSWORD : ADMIN_PASSWORD;
+      if (!configured) {
+        return res.status(503).json({
+          error: isCounter
+            ? 'El modo mostrador no está configurado en el servidor (falta COUNTER_PASSWORD).'
+            : 'El backoffice no está configurado en el servidor (falta ADMIN_PASSWORD).',
+        });
+      }
+      // Throttle before checking: a single shared password must not be brute-forceable.
+      const gate = await rateLimit(`login:${action}:${clientIp(req)}`, 10, 10 * 60 * 1000);
+      if (!gate.ok) return res.status(429).json({ error: `Demasiados intentos. Prueba de nuevo en ${gate.retryInMin} min.` });
+      const given = Buffer.from(String(body.password ?? ''));
+      const want = Buffer.from(expected);
+      const ok = given.length === want.length && timingSafeEqual(given, want);
+      if (!ok) return res.status(401).json({ error: 'Contraseña incorrecta.' });
+      return res.status(200).json({
+        token: isCounter ? makeToken('counter', COUNTER_TTL) : makeToken('admin', ADMIN_TTL),
+      });
     }
 
     await ensureSchema();
@@ -137,6 +218,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'request') {
       const email = String(body.email ?? '').trim().toLowerCase();
       if (!isEmail(email)) return res.status(400).json({ error: 'Email no válido' });
+      // Don't let anyone use us as a mailer: cap link requests per IP and per address.
+      const byIp = await rateLimit(`magic:ip:${clientIp(req)}`, 10, 15 * 60 * 1000);
+      const byMail = await rateLimit(`magic:to:${email}`, 5, 15 * 60 * 1000);
+      if (!byIp.ok || !byMail.ok) {
+        return res.status(429).json({ error: 'Has pedido demasiados enlaces de acceso. Prueba de nuevo en unos minutos.' });
+      }
       const cust = (await sql`select nombre from customers where email = ${email}`) as { nombre: string }[];
       if (cust[0]) {
         const tk = token();
@@ -248,6 +335,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(400).json({ error: 'acción no válida' });
   } catch (e) {
-    return res.status(500).json({ error: e instanceof Error ? e.message : 'error de autenticación' });
+    console.error('[auth]', e);
+    return res.status(500).json({ error: 'Error del servidor de autenticación.' });
   }
 }

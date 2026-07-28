@@ -9,23 +9,29 @@ import { API_BASE } from '../lib/api';
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
 export function PriceBar() {
-  const { catalog, config, files, copias, comentario, nombreProyecto, proyectoId, editingOrderId, setCopias, setComentario, clearProject } =
+  const { catalog, config, files, copias, comentario, nombreProyecto, proyectoId, proyectoToken, editingOrderId, editingOrderEmail, setCopias, setComentario, clearProject } =
     useConfigurator();
   const colorAnillas = useConfigurator((s) => s.colorAnillas);
   const colorContraportada = useConfigurator((s) => s.colorContraportada);
   const addToCart = useCart((s) => s.add);
   const [saving, setSaving] = useState(false);
+  const catalogLoaded = useConfigurator((s) => s.catalogLoaded);
+  const catalogError = useConfigurator((s) => s.catalogError);
   const price = computePrice({ config, files, copias, colorAnillas, colorContraportada }, catalog);
   const warnings = validate(config, files, catalog);
   const hasFiles = files.length > 0;
   const uploading = files.some((f) => f.uploadStatus === 'uploading');
   const failed = files.some((f) => f.uploadStatus === 'error');
-  const notReady = uploading || failed;
+  // Without a priced catalog there is no total to show and nothing may be
+  // ordered — prices come from the DB, never from a default baked into the app.
+  const notReady = uploading || failed || !catalogLoaded;
 
   const buildProjectFrom = (fileList: typeof files, id: string, nombre: string) => ({
     id,
     kind: 'copias' as const,
     nombre,
+    // Travels with the project so its files stay readable/deletable later.
+    storageToken: proyectoToken,
     config: { ...config },
     docs: fileList.map((f) => ({ id: f.id, name: f.name, pages: f.pages, thumb: f.thumb, color: f.color, storageKey: f.storageKey })),
     copias,
@@ -64,7 +70,8 @@ export function PriceBar() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         // Replace only THIS project (by id); other projects of the order stay.
-        body: JSON.stringify({ item: buildProject() }),
+        // The email proves ownership (the server won't take the code alone).
+        body: JSON.stringify({ item: buildProject(), email: editingOrderEmail ?? '' }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
@@ -118,7 +125,9 @@ export function PriceBar() {
         </label>
 
         <div className="summary">
-          {hasFiles ? (
+          {!catalogLoaded ? (
+            <span className="summary-meta">{catalogError ?? 'Cargando precios…'}</span>
+          ) : hasFiles ? (
             <>
               <span className="summary-meta">
                 {price.totalPrintedSides} caras · {price.totalSheets} folios
@@ -135,11 +144,11 @@ export function PriceBar() {
 
         {editingOrderId ? (
           <button type="button" className="btn btn-primary" disabled={!hasFiles || notReady || saving} onClick={onSaveEdit}>
-            {saving ? 'Guardando…' : uploading ? 'Subiendo…' : failed ? 'Hay un archivo con error' : 'Guardar cambios'}
+            {saving ? 'Guardando…' : !catalogLoaded ? 'Precios no disponibles' : uploading ? 'Subiendo…' : failed ? 'Hay un archivo con error' : 'Guardar cambios'}
           </button>
         ) : (
           <button type="button" className="btn btn-primary" disabled={!hasFiles || notReady} onClick={onAddToCart}>
-            {uploading ? 'Subiendo…' : failed ? 'Hay un archivo con error' : 'Añadir proyecto al carrito'}
+            {!catalogLoaded ? 'Precios no disponibles' : uploading ? 'Subiendo…' : failed ? 'Hay un archivo con error' : 'Añadir proyecto al carrito'}
           </button>
         )}
       </div>

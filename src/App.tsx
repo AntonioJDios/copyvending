@@ -17,6 +17,7 @@ import { CartPage } from './components/CartPage';
 import { CartButton } from './components/CartButton';
 import { AccountButton } from './components/AccountButton';
 import { AdminGate } from './components/AdminGate';
+import { CounterGate } from './components/CounterGate';
 import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
@@ -40,6 +41,18 @@ function useHashRoute(): string {
 }
 
 export default function App() {
+  // The counter front (papeleria.html) has to prove it is the shop's device
+  // before it can use the counter price list.
+  if (CURRENT_SOURCE === 'mostrador')
+    return (
+      <CounterGate>
+        <Shop />
+      </CounterGate>
+    );
+  return <Shop />;
+}
+
+function Shop() {
   const route = useHashRoute();
   const fetchCatalog = useConfigurator((s) => s.fetchCatalog);
   const restoreSession = useAuth((s) => s.restore);

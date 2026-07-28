@@ -28,16 +28,19 @@ export class LocalUploadService implements UploadService {
     return { key };
   }
 
-  async getBlob(key: string): Promise<Blob | undefined> {
+  // No capability tokens here: the blobs never leave this browser's IndexedDB,
+  // so there is nothing to authorise. The `_token` args exist only to match the
+  // shared UploadService interface.
+  async getBlob(key: string, _token?: string): Promise<Blob | undefined> {
     return (await get<Blob>(key, store)) ?? undefined;
   }
 
-  async getObjectURL(key: string): Promise<string | undefined> {
+  async getObjectURL(key: string, _token?: string): Promise<string | undefined> {
     const blob = await this.getBlob(key);
     return blob ? URL.createObjectURL(blob) : undefined;
   }
 
-  async remove(key: string): Promise<void> {
+  async remove(key: string, _token?: string): Promise<void> {
     await del(key, store);
   }
 }

@@ -73,10 +73,12 @@ export interface ShippingConfig {
   freeThreshold: number;
   info: string;
 }
+/** Structure only — the real shipping rates live in the DB catalog (see
+ *  EMPTY_CATALOG), never in code. */
 export const DEFAULT_SHIPPING: ShippingConfig = {
   enabled: false,
-  peninsula: 4.95,
-  baleares: 8.95,
+  peninsula: 0,
+  baleares: 0,
   freeThreshold: 0,
   info: '',
 };
@@ -242,8 +244,18 @@ export const SIZE_LABEL: Record<Size, string> = {
   A5: 'A5 (medio folio)',
 };
 
-/** Default catalog = the exact values from the legacy copisteria.js. */
-export const DEFAULT_CATALOG: Catalog = {
+/**
+ * Structural skeleton of the catalog: what the shop OFFERS (sizes, grammages,
+ * finishes, colours, presets) with every monetary value left empty/zero.
+ *
+ * PRICES ARE NOT IN THE CODE. The single source of truth for every price is the
+ * `catalog` row of the `settings` table (edited in the admin panel, read by the
+ * configurator and — authoritatively — by the server when pricing an order).
+ * This skeleton only exists so the UI has a valid shape before the real catalog
+ * arrives from the backend; until then `catalogLoaded` is false and the shop
+ * refuses to price or take orders (see store/useConfigurator).
+ */
+export const EMPTY_CATALOG: Catalog = {
   version: 6,
   presets: DEFAULT_PRESETS,
   assistant: {
@@ -285,42 +297,28 @@ export const DEFAULT_CATALOG: Catalog = {
   },
   enabledFinishes: ['sinencuadernacion', 'grapado', 'AnillasColores', 'dos_agujeros', 'cuatro_agujeros', 'perforado'],
   enabledFolios: ['normal', 'plastificar', 'pegatinas'],
-  pagePrices: {
-    'A3-80-BN-0': 0.07, 'A3-80-BN-1': 0.06, 'A3-80-Color-0': 0.22, 'A3-80-Color-1': 0.2,
-    'A3-100-BN-0': 0.1, 'A3-100-BN-1': 0.08, 'A3-100-Color-0': 0.24, 'A3-100-Color-1': 0.22,
-    'A3-250-BN-0': 0.4, 'A3-250-Color-0': 0.6,
-    'A4-80-BN-0': 0.025, 'A4-80-BN-1': 0.0215, 'A4-80-Color-0': 0.085, 'A4-80-Color-1': 0.08,
-    'A4-90-BN-0': 0.04, 'A4-90-BN-1': 0.0319, 'A4-90-Color-0': 0.119, 'A4-90-Color-1': 0.109,
-    'A4-100-BN-0': 0.075, 'A4-100-BN-1': 0.05, 'A4-100-Color-0': 0.135, 'A4-100-Color-1': 0.12,
-    'A4-120-BN-0': 0.099, 'A4-120-BN-1': 0.079, 'A4-120-Color-0': 0.169, 'A4-120-Color-1': 0.159,
-    'A4-160-BN-0': 0.08, 'A4-160-BN-1': 0.07, 'A4-160-Color-0': 0.18, 'A4-160-Color-1': 0.16,
-    'A4-250-BN-0': 0.25, 'A4-250-Color-0': 0.4,
-    'A5-80-BN-0': 0.026, 'A5-80-BN-1': 0.02, 'A5-80-Color-0': 0.085, 'A5-80-Color-1': 0.08,
-    'A5-90-BN-0': 0.04, 'A5-90-BN-1': 0.03, 'A5-90-Color-0': 0.1, 'A5-90-Color-1': 0.09,
-    'A5-100-BN-0': 0.05, 'A5-100-BN-1': 0.04, 'A5-100-Color-0': 0.12, 'A5-100-Color-1': 0.11,
-    'A5-120-BN-0': 0.06, 'A5-120-BN-1': 0.05, 'A5-120-Color-0': 0.135, 'A5-120-Color-1': 0.12,
-    'A5-160-BN-0': 0.08, 'A5-160-BN-1': 0.07, 'A5-160-Color-0': 0.18, 'A5-160-Color-1': 0.16,
-    'A5-250-BN-0': 0.15, 'A5-250-Color-0': 0.25,
-  },
+  // ── No prices here, on purpose. Every value below is set in the admin panel
+  // and persisted in the DB (`settings.catalog`). See the comment above.
+  pagePrices: {},
   bindingPrices: {
     sinencuadernacion: 0,
-    grapado: 0.05,
-    AnillasColores: 1.99,
-    dos_agujeros: 0.25,
-    cuatro_agujeros: 0.25,
+    grapado: 0,
+    AnillasColores: 0,
+    dos_agujeros: 0,
+    cuatro_agujeros: 0,
     perforado: 0,
   },
-  bindingMaxSheets: { AnillasColores: 350, grapado: 100 },
-  colorSurcharge: { A4: 0.08, A5: 0.08, A3: 0.15 },
-  laminateSurcharge: { A4: 0.99, A5: 0.99, A3: 1.5 },
-  coverColorSurcharge: 0.3,
-  perforatePrice: 0.5,
-  holesPrice: 0.1,
-  stickerPrice: 0.15,
-  noMarginsPrice: 0.8,
-  extraFolioPrice: 0.1,
-  mugPrice: 9.95,
-  badgePrice: 2.5,
+  bindingMaxSheets: { AnillasColores: 350, grapado: 100 }, // physical limits, not prices
+  colorSurcharge: { A4: 0, A5: 0, A3: 0 },
+  laminateSurcharge: { A4: 0, A5: 0, A3: 0 },
+  coverColorSurcharge: 0,
+  perforatePrice: 0,
+  holesPrice: 0,
+  stickerPrice: 0,
+  noMarginsPrice: 0,
+  extraFolioPrice: 0,
+  mugPrice: 0,
+  badgePrice: 0,
 };
 
 export const GROSORES: Grosor[] = [80, 90, 100, 120, 160, 250];

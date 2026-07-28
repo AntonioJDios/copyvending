@@ -1,4 +1,11 @@
+import { getAdminToken } from '../adminToken';
+import { getCounterToken } from '../counterToken';
 import type { UploadOptions, UploadResult, UploadService } from './types';
+
+const authHeaders = (): Record<string, string> => {
+  const t = getAdminToken() ?? getCounterToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
 
 /**
  * Real adapter: asks the signing API (/api/presign on Vercel) for a presigned
@@ -14,7 +21,9 @@ export class R2UploadService implements UploadService {
   private async presign<T>(body: unknown): Promise<T> {
     const res = await fetch(`${this.api}/presign`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The admin/counter token (when this device has one) lets the backoffice
+      // reach any file; customers rely on the per-project capability token.
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -26,7 +35,7 @@ export class R2UploadService implements UploadService {
 
   async upload(file: File, opts: UploadOptions = {}): Promise<UploadResult> {
     const { projectId, onProgress, signal } = opts;
-    const { key, url } = await this.presign<{ key: string; url: string }>({
+    const { key, url, token } = await this.presign<{ key: string; url: string; token?: string }>({
       op: 'put',
       name: file.name,
       type: file.type,
@@ -46,22 +55,22 @@ export class R2UploadService implements UploadService {
       signal?.addEventListener('abort', () => xhr.abort());
       xhr.send(file);
     });
-    return { key };
+    return { key, token };
   }
 
-  async getObjectURL(key: string): Promise<string | undefined> {
-    const { url } = await this.presign<{ url: string }>({ op: 'get', key });
+  async getObjectURL(key: string, token?: string): Promise<string | undefined> {
+    const { url } = await this.presign<{ url: string }>({ op: 'get', key, token });
     return url;
   }
 
-  async getBlob(key: string): Promise<Blob | undefined> {
-    const url = await this.getObjectURL(key);
+  async getBlob(key: string, token?: string): Promise<Blob | undefined> {
+    const url = await this.getObjectURL(key, token);
     if (!url) return undefined;
     const res = await fetch(url);
     return res.ok ? await res.blob() : undefined;
   }
 
-  async remove(key: string): Promise<void> {
-    await this.presign({ op: 'delete', key });
+  async remove(key: string, token?: string): Promise<void> {
+    await this.presign({ op: 'delete', key, token });
   }
 }

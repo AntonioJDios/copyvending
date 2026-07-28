@@ -16,6 +16,12 @@ interface CartBase {
   id: string;
   nombre: string;
   total: number;
+  /**
+   * Capability token for this project's files in storage (issued on upload).
+   * Needed to re-open or delete them later; without it a storage key on its own
+   * grants no access. Absent in local mode (files stay in this browser).
+   */
+  storageToken?: string;
 }
 
 /** A copy-shop print project (documents + print options). */

@@ -3,12 +3,14 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
 import { createHmac, timingSafeEqual } from 'crypto';
 
-// Backoffice admin auth: verify the stateless token issued by /api/auth. Auth is
-// OFF until ADMIN_PASSWORD is set (prototype stays open); setting it enforces
-// protection on the admin-only operations below.
-const ADMIN_AUTH_ON = !!process.env.ADMIN_PASSWORD;
+// Auth: verify the stateless scoped tokens issued by /api/auth ('admin' for the
+// backoffice, 'counter' for the shop-floor tablet). The scope is inside the
+// signed payload, so a counter token can never pass as an admin one.
+//
+// FAILS CLOSED: with no ADMIN_SECRET configured, admin operations are refused
+// (503), never served. A missing env var must not expose every order.
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
-function isAdmin(req: VercelRequest): boolean {
+function hasScope(req: VercelRequest, scope: 'admin' | 'counter'): boolean {
   if (!ADMIN_SECRET) return false;
   const h = req.headers['authorization'];
   const raw = Array.isArray(h) ? h[0] : h || '';
@@ -17,7 +19,7 @@ function isAdmin(req: VercelRequest): boolean {
   const [expStr, sig] = m[1].split('.');
   const exp = Number(expStr);
   if (!exp || exp < Date.now() || !sig) return false;
-  const expected = createHmac('sha256', ADMIN_SECRET).update(`admin.${exp}`).digest('base64url');
+  const expected = createHmac('sha256', ADMIN_SECRET).update(`${scope}.${exp}`).digest('base64url');
   if (sig.length !== expected.length) return false;
   try {
     return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
@@ -25,9 +27,16 @@ function isAdmin(req: VercelRequest): boolean {
     return false;
   }
 }
-/** Allow the request through, or send 401 and return false. */
+const isAdmin = (req: VercelRequest): boolean => hasScope(req, 'admin');
+const isCounter = (req: VercelRequest): boolean => hasScope(req, 'counter');
+
+/** Allow the request through, or answer 401/503 and return false. */
 function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
-  if (!ADMIN_AUTH_ON || isAdmin(req)) return true;
+  if (!ADMIN_SECRET) {
+    res.status(503).json({ error: 'El backoffice no está configurado en el servidor (falta ADMIN_PASSWORD).' });
+    return false;
+  }
+  if (isAdmin(req)) return true;
   res.status(401).json({ error: 'Necesitas iniciar sesión como administrador.' });
   return false;
 }
@@ -38,6 +47,12 @@ const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
+
+/** Tracking link for the customer. Carries the email (`e=`) because looking an
+ *  order up needs code + email — this keeps our own links one-click. */
+const trackLink = (orderId: string, email: string) =>
+  `${PUBLIC_URL}/#recoger/${orderId}?e=${encodeURIComponent(email)}`;
+
 // "Ready for pickup" notice (pickup orders only). Best-effort via the shop Gmail.
 async function sendReadyMail(to: string, nombre: string, orderId: string): Promise<void> {
   if (!GMAIL_USER || !GMAIL_PASS || !to) return;
@@ -46,7 +61,7 @@ async function sendReadyMail(to: string, nombre: string, orderId: string): Promi
     from: `${SHOP_NAME} <${GMAIL_USER}>`,
     to,
     subject: `Tu pedido ${orderId} ya está listo para recoger 📦`,
-    text: `Hola ${nombre}:\n\n¡Buenas noticias! Tu pedido ${orderId} ya está preparado. Puedes pasar a recogerlo cuando quieras.\n\nDetalles y estado:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por confiar en ${SHOP_NAME}.`,
+    text: `Hola ${nombre}:\n\n¡Buenas noticias! Tu pedido ${orderId} ya está preparado. Puedes pasar a recogerlo cuando quieras.\n\nDetalles y estado:\n${trackLink(orderId, to)}\n\nGracias por confiar en ${SHOP_NAME}.`,
   });
 }
 
@@ -59,7 +74,7 @@ async function sendOrderMail(to: string, nombre: string, orderId: string, total:
     from: `${SHOP_NAME} <${GMAIL_USER}>`,
     to,
     subject: `Hemos recibido tu pedido ${orderId} ✅`,
-    text: `Hola ${nombre}:\n\n¡Gracias por tu pedido! Lo hemos recibido correctamente y ya lo estamos gestionando.\n\nNº de pedido: ${orderId}\nTotal: ${eur}\n\nPuedes seguir su estado aquí:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por confiar en ${SHOP_NAME}.`,
+    text: `Hola ${nombre}:\n\n¡Gracias por tu pedido! Lo hemos recibido correctamente y ya lo estamos gestionando.\n\nNº de pedido: ${orderId}\nTotal: ${eur}\n\nPuedes seguir su estado aquí:\n${trackLink(orderId, to)}\n\nPara consultarlo necesitarás este código y tu email (${to}).\n\nGracias por confiar en ${SHOP_NAME}.`,
   });
 }
 
@@ -70,7 +85,7 @@ async function sendShipMail(to: string, nombre: string, orderId: string, trackin
     from: `${SHOP_NAME} <${GMAIL_USER}>`,
     to,
     subject: `Tu pedido ${orderId} va en camino 🚚`,
-    text: `Hola ${nombre}:\n\nTu pedido ${orderId} ya está en camino.\n${tracking ? `Seguimiento: ${tracking}\n` : ''}\nPuedes ver su estado aquí:\n${PUBLIC_URL}/#recoger/${orderId}\n\nGracias por tu compra.\n${SHOP_NAME}`,
+    text: `Hola ${nombre}:\n\nTu pedido ${orderId} ya está en camino.\n${tracking ? `Seguimiento: ${tracking}\n` : ''}\nPuedes ver su estado aquí:\n${trackLink(orderId, to)}\n\nGracias por tu compra.\n${SHOP_NAME}`,
   });
 }
 
@@ -211,12 +226,15 @@ async function createGlsShipment(orderId: string, cust: GlsCustomer, cfg?: GlsCo
 
 // IMPORTANT: Vercel Node functions here must be SELF-CONTAINED — importing
 // values from ../src (or other api files) breaks the runtime. So the pricing
-// math below is a synced copy of src/domain/priceEngine.ts. Keep them in sync;
-// both read the SAME admin catalog persisted in Neon, so results match and we
-// can validate the price the client sent (anti-fraud).
-
-// ── Fallback pricing values (used only if Neon has no catalog yet) ───
-// Mirror of the pricing-relevant fields of DEFAULT_CATALOG.
+// MATH below is a synced copy of src/domain/priceEngine.ts. Keep them in sync
+// (this duplication disappears with the move to Cloudflare, where routes can
+// share code).
+//
+// The pricing VALUES are NOT duplicated: there are no prices in this file. Both
+// client and server read the one and only catalog stored in Neon
+// (`settings.catalog`), which is why the server can re-price an order and
+// validate what the client sent (anti-fraud). If that catalog is missing, we
+// refuse the order instead of inventing a price.
 type ColorOpt = { name: string; extra?: number };
 type PriceCatalog = {
   pagePrices: Record<string, number>;
@@ -240,38 +258,7 @@ type SourcePriceOverride = Partial<Omit<PriceCatalog, 'sources' | 'ringColors' |
   coverExtras?: Record<string, number>;
   modules?: { payments?: boolean; invoicing?: boolean; shipping?: boolean; coupons?: boolean; assistant?: boolean };
 };
-const FALLBACK: PriceCatalog = {
-  pagePrices: {
-    'A3-80-BN-0': 0.07, 'A3-80-BN-1': 0.06, 'A3-80-Color-0': 0.22, 'A3-80-Color-1': 0.2,
-    'A3-100-BN-0': 0.1, 'A3-100-BN-1': 0.08, 'A3-100-Color-0': 0.24, 'A3-100-Color-1': 0.22,
-    'A3-250-BN-0': 0.4, 'A3-250-Color-0': 0.6,
-    'A4-80-BN-0': 0.025, 'A4-80-BN-1': 0.0215, 'A4-80-Color-0': 0.085, 'A4-80-Color-1': 0.08,
-    'A4-90-BN-0': 0.04, 'A4-90-BN-1': 0.0319, 'A4-90-Color-0': 0.119, 'A4-90-Color-1': 0.109,
-    'A4-100-BN-0': 0.075, 'A4-100-BN-1': 0.05, 'A4-100-Color-0': 0.135, 'A4-100-Color-1': 0.12,
-    'A4-120-BN-0': 0.099, 'A4-120-BN-1': 0.079, 'A4-120-Color-0': 0.169, 'A4-120-Color-1': 0.159,
-    'A4-160-BN-0': 0.08, 'A4-160-BN-1': 0.07, 'A4-160-Color-0': 0.18, 'A4-160-Color-1': 0.16,
-    'A4-250-BN-0': 0.25, 'A4-250-Color-0': 0.4,
-    'A5-80-BN-0': 0.026, 'A5-80-BN-1': 0.02, 'A5-80-Color-0': 0.085, 'A5-80-Color-1': 0.08,
-    'A5-90-BN-0': 0.04, 'A5-90-BN-1': 0.03, 'A5-90-Color-0': 0.1, 'A5-90-Color-1': 0.09,
-    'A5-100-BN-0': 0.05, 'A5-100-BN-1': 0.04, 'A5-100-Color-0': 0.12, 'A5-100-Color-1': 0.11,
-    'A5-120-BN-0': 0.06, 'A5-120-BN-1': 0.05, 'A5-120-Color-0': 0.135, 'A5-120-Color-1': 0.12,
-    'A5-160-BN-0': 0.08, 'A5-160-BN-1': 0.07, 'A5-160-Color-0': 0.18, 'A5-160-Color-1': 0.16,
-    'A5-250-BN-0': 0.15, 'A5-250-Color-0': 0.25,
-  },
-  bindingPrices: { sinencuadernacion: 0, grapado: 0.05, AnillasColores: 1.99, dos_agujeros: 0.25, cuatro_agujeros: 0.25, perforado: 0 },
-  colorSurcharge: { A4: 0.08, A5: 0.08, A3: 0.15 },
-  laminateSurcharge: { A4: 0.99, A5: 0.99, A3: 1.5 },
-  coverColorSurcharge: 0.3,
-  perforatePrice: 0.5,
-  holesPrice: 0.1,
-  stickerPrice: 0.15,
-  noMarginsPrice: 0.8,
-  extraFolioPrice: 0.1,
-  mugPrice: 9.95,
-  badgePrice: 2.5,
-};
-
-// ── Pricing (synced copy of src/domain/priceEngine.ts) ───────────────
+// ── Pricing math (synced copy of src/domain/priceEngine.ts) ──────────
 type Cfg = {
   size: string; color: string; grosor: number; dobleCara: string; paginasPorHoja: number;
   acabado: string; acabadoFolios: string; juntos: string; sinMargenes: boolean;
@@ -359,14 +346,64 @@ function ensureSchema(): Promise<void> {
   }
   return _ready;
 }
-async function getCatalog(): Promise<PriceCatalog> {
-  try {
-    const rows = (await db()`select value from settings where key = 'catalog'`) as { value: PriceCatalog }[];
-    if (rows[0]?.value?.pagePrices) return rows[0].value;
-  } catch {
-    /* settings table may not exist yet → fallback */
+// ── Rate limiting (same fixed-window limiter as /api/auth; duplicated because
+// Vercel functions must be self-contained). Fails OPEN on error. ──────
+let _rlReady: Promise<void> | null = null;
+function ensureRateLimitTable(): Promise<void> {
+  if (!_rlReady) {
+    _rlReady = db()`
+      create table if not exists rate_limits (
+        k text primary key, window_start bigint not null, hits int not null)`
+      .then(() => undefined)
+      .catch((e) => {
+        _rlReady = null;
+        throw e;
+      });
   }
-  return FALLBACK;
+  return _rlReady;
+}
+async function rateLimit(key: string, max: number, windowMs: number): Promise<{ ok: boolean; retryInMin: number }> {
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const retryInMin = Math.max(1, Math.ceil((windowStart + windowMs - now) / 60000));
+  try {
+    await ensureRateLimitTable();
+    const rows = (await db()`
+      insert into rate_limits (k, window_start, hits) values (${key}, ${windowStart}, 1)
+      on conflict (k) do update set
+        hits = case when rate_limits.window_start = ${windowStart} then rate_limits.hits + 1 else 1 end,
+        window_start = ${windowStart}
+      returning hits`) as { hits: number }[];
+    return { ok: (rows[0]?.hits ?? 1) <= max, retryInMin };
+  } catch {
+    return { ok: true, retryInMin };
+  }
+}
+const clientIp = (req: VercelRequest): string => {
+  const xf = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(xf) ? xf[0] : xf || '';
+  return (raw.split(',')[0] || 'unknown').trim().slice(0, 64) || 'unknown';
+};
+
+/** Raised when Neon has no usable price catalog. Never priced with defaults:
+ *  inventing a price would silently under/over-charge the customer. */
+class MissingCatalog extends Error {
+  constructor() {
+    super('El catálogo de precios no está configurado. Configúralo en el panel de administración antes de aceptar pedidos.');
+  }
+}
+
+/** The ONE source of truth for prices: the `catalog` row in `settings`. */
+async function getCatalog(): Promise<PriceCatalog> {
+  let rows: { value: PriceCatalog }[] = [];
+  try {
+    rows = (await db()`select value from settings where key = 'catalog'`) as { value: PriceCatalog }[];
+  } catch {
+    throw new MissingCatalog(); // settings table not created yet
+  }
+  const cat = rows[0]?.value;
+  if (!cat?.pagePrices || Object.keys(cat.pagePrices).length === 0) throw new MissingCatalog();
+  return cat;
 }
 
 /** Effective price catalog for an order's source (mirror of catalogForSource). */
@@ -467,6 +504,22 @@ function queryId(req: VercelRequest): string | undefined {
   const v = req.query.id;
   return Array.isArray(v) ? v[0] : v;
 }
+const queryStr = (req: VercelRequest, k: string): string =>
+  (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined)) ?? '';
+
+/**
+ * Ownership check for the customer-facing endpoints: the order code ALONE is not
+ * enough, the email on the order must match too. Codes are short (people read
+ * them out loud), so on their own they are guessable; requiring the email makes
+ * a stolen/guessed code useless and keeps every customer's personal data out of
+ * reach. The shop's own admin token bypasses this (it sees everything anyway).
+ */
+async function ownsOrder(sql: NeonQueryFunction<false, false>, id: string, email: string): Promise<boolean> {
+  const e = email.trim().toLowerCase();
+  if (!e) return false;
+  const rows = (await sql`select 1 as ok from orders where id = ${id} and lower(customer->>'email') = ${e}`) as { ok: number }[];
+  return rows.length > 0;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -476,7 +529,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const id = queryId(req);
       // Validate a coupon (public preview for the checkout: never lists codes).
+      // Throttled so the endpoint can't be used to fish for valid codes.
       if (req.query.coupon !== undefined) {
+        const gate = await rateLimit(`coupon:${clientIp(req)}`, 30, 10 * 60 * 1000);
+        if (!gate.ok) return res.status(429).json({ ok: false, discount: 0, reason: 'Demasiados intentos. Prueba en unos minutos.' });
         const q = (k: string) => (Array.isArray(req.query[k]) ? (req.query[k] as string[])[0] : (req.query[k] as string | undefined));
         const v = await validateCoupon(q('coupon') || '', Number(q('subtotal')) || 0, q('email'), q('source') || 'online');
         return res.status(200).json(v);
@@ -514,8 +570,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (rows.length === 0 || !rows[0].label) return res.status(404).json({ error: 'sin etiqueta' });
         return res.status(200).json({ label: rows[0].label });
       }
-      // Single order by code stays public (customers look up their own pickup).
+      // Single order: the customer must prove ownership with code + email.
       if (id) {
+        if (!isAdmin(req)) {
+          // Throttle so the pair (code, email) can't be brute-forced.
+          const gate = await rateLimit(`order:${clientIp(req)}`, 30, 10 * 60 * 1000);
+          if (!gate.ok) return res.status(429).json({ error: `Demasiadas consultas. Prueba de nuevo en ${gate.retryInMin} min.` });
+          const email = queryStr(req, 'email');
+          if (!email) return res.status(400).json({ error: 'Indica el email con el que hiciste el pedido.' });
+          // Same answer whether the code doesn't exist or the email doesn't match,
+          // so this can't be used to find out which codes are real.
+          if (!(await ownsOrder(sql, id, email))) {
+            return res.status(404).json({ error: 'No encontramos ningún pedido con ese código y ese email.' });
+          }
+        }
         const rows = (await sql`
           select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount
           from orders where id = ${id}`) as OrderRow[];
@@ -538,9 +606,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
-      // Anti-fraud: recompute totals server-side with the Neon catalog for THIS
-      // order's source; the client-sent price is never trusted.
-      const source = typeof o.source === 'string' ? o.source : 'mostrador';
+      // Which price list applies is decided HERE, never by the browser:
+      // /papeleria.html is publicly reachable, so a claim of "I'm the counter"
+      // (usually the cheaper tariff) has to be proven with the counter token.
+      //  - admin token   → the shop itself (backoffice, email ingestion): may
+      //                    declare the source explicitly.
+      //  - counter token → the shop-floor tablet: 'mostrador'.
+      //  - anything else → 'online' (the public web, and the safe default: it
+      //                    can never end up cheaper than it should be).
+      const declared = typeof o.source === 'string' && ['online', 'mostrador', 'email'].includes(o.source) ? o.source : null;
+      const source = isAdmin(req) && declared ? declared : isCounter(req) ? 'mostrador' : 'online';
       const base = await getCatalog();
       const catalog = applySource(base, source);
       const sourceMods = base.sources?.[source]?.modules ?? {};
@@ -585,11 +660,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Email orders intentionally arrive with total 0 (priced here), so a
       // difference there isn't a client mismatch — only flag client sources.
       const mismatch =
-        o.source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
+        source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       const ins = (await sql`
         insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount)
-        values (${o.id}, ${o.createdAt ?? Date.now()}, ${o.source ?? 'mostrador'},
+        values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${o.status ?? 'nuevo'}, ${mismatch}, ${o.paid ?? false}, ${o.paymentMethod ?? null},
                 ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount})
@@ -597,7 +672,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         returning id`) as { id: string }[];
       // Confirmación al cliente SOLO en pedidos WEB (online) y solo si es nuevo
       // (no re-envío en un POST duplicado). En mostrador el cliente está delante.
-      if (ins.length > 0 && (o.source ?? 'mostrador') === 'online') {
+      if (ins.length > 0 && source === 'online') {
         const c = (o.customer ?? {}) as { email?: string; nombre?: string };
         if (c.email) {
           try {
@@ -684,8 +759,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // keeping the rest — used to edit a single project of a multi-project order).
     if (req.method === 'PUT') {
       const id = queryId(req);
-      const body = req.body as { items?: Record<string, unknown>[]; item?: Record<string, unknown> };
+      const body = req.body as { items?: Record<string, unknown>[]; item?: Record<string, unknown>; email?: string };
       if (!id || (!Array.isArray(body.items) && !body.item)) return res.status(400).json({ error: 'faltan datos' });
+      // Only the owner (code + email) or the shop may rewrite an order's contents.
+      if (!isAdmin(req) && !(await ownsOrder(sql, id, String(body.email ?? '')))) {
+        return res.status(403).json({ error: 'No puedes modificar este pedido.' });
+      }
       const cur = (await sql`select status, items, source from orders where id = ${id}`) as { status: string; items: Record<string, unknown>[]; source: string }[];
       if (cur.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
       if (cur[0].status !== 'nuevo') {
@@ -730,6 +809,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
-    return res.status(500).json({ error: e instanceof Error ? e.message : 'error de base de datos' });
+    if (e instanceof MissingCatalog) return res.status(503).json({ error: e.message });
+    // Don't leak internals (DB errors, connection strings) to the client.
+    console.error('[orders]', e);
+    return res.status(500).json({ error: 'Error del servidor al procesar el pedido.' });
   }
 }

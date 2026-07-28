@@ -7,6 +7,7 @@
 //
 // VITE_UPLOAD_API is still read for backwards compatibility (older setups).
 import { getAdminToken } from './adminToken';
+import { getCounterToken } from './counterToken';
 
 const env = import.meta.env as Record<string, string | undefined>;
 const raw = env.VITE_API_BASE ?? env.VITE_UPLOAD_API;
@@ -14,10 +15,12 @@ const raw = env.VITE_API_BASE ?? env.VITE_UPLOAD_API;
 export const API_BASE: string | null = raw ? raw.replace(/\/+$/, '') : null;
 export const hasBackend = API_BASE !== null;
 
-// Attach the admin token when present. Harmless on public endpoints (ignored),
-// required by admin-only ones (order management, saving the catalog).
+// Attach whichever scoped token this device holds. Admin wins (a backoffice user
+// can do everything); otherwise the counter token, which tells the server this
+// order is being taken at the shop (→ counter price list). Harmless on public
+// endpoints (ignored), required by admin-only ones.
 function authHeaders(): Record<string, string> {
-  const t = getAdminToken();
+  const t = getAdminToken() ?? getCounterToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 

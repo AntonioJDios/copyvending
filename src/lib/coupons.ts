@@ -2,10 +2,14 @@ import { API_BASE } from './api';
 import { getAdminToken } from './adminToken';
 import type { Coupon } from '../domain/coupons';
 
-/** Load the coupon list (admin). Empty when there's no backend or none defined. */
+/** Load the coupon list (admin-only: the server won't return codes without the
+ *  admin token). Empty when there's no backend or none defined. */
 export async function loadCoupons(): Promise<Coupon[]> {
   if (!API_BASE) return [];
-  const res = await fetch(`${API_BASE}/catalog?key=coupons`);
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/catalog?key=coupons`, {
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  });
   if (!res.ok) return [];
   const v = (await res.json()) as Coupon[] | null;
   return Array.isArray(v) ? v : [];

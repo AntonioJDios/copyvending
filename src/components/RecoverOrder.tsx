@@ -16,6 +16,10 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 /** Kiosk screen: a customer enters their order code to see its status. */
 export function RecoverOrder() {
   const [code, setCode] = useState('');
+  // The order code alone is not enough to see an order: the email it was placed
+  // with has to match. Otherwise anyone with a code (or guessing one) could read
+  // someone else's name, phone and address.
+  const [email, setEmail] = useState('');
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,6 +28,7 @@ export function RecoverOrder() {
   const clearCart = useCart((s) => s.clear);
   const loadProject = useConfigurator((s) => s.loadProject);
   const setEditingOrderId = useConfigurator((s) => s.setEditingOrderId);
+  const setEditingOrderEmail = useConfigurator((s) => s.setEditingOrderEmail);
 
   // Only orders still in the initial state, with a single copies project, can be
   // self-edited here (products/multi-item → shop handles it).
@@ -34,36 +39,48 @@ export function RecoverOrder() {
     if (!order || !editable) return;
     loadProject(order.items[0]);
     setEditingOrderId(order.id);
+    // Saving the edit needs the same proof of ownership as reading it.
+    setEditingOrderEmail(email.trim() || (order.customer.email ?? ''));
     window.location.hash = '';
   };
 
-  const lookup = async (codeArg?: string) => {
+  const lookup = async (codeArg?: string, emailArg?: string) => {
     const c = (codeArg ?? code).trim();
-    if (!c || loading) return;
+    const e = (emailArg ?? email).trim();
+    if (!c || !e || loading) return;
     setLoading(true);
     setError('');
     setOrder(null);
     try {
-      const res = await fetch(`${API_BASE ?? ''}/orders?id=${encodeURIComponent(c)}`);
+      const q = new URLSearchParams({ id: c, email: e });
+      const res = await fetch(`${API_BASE ?? ''}/orders?${q.toString()}`);
       if (!res.ok) throw new Error('no');
       setOrder((await res.json()) as Order);
     } catch {
-      setError('No encontramos ningún pedido con ese código. Revísalo, por favor.');
+      setError('No encontramos ningún pedido con ese código y ese email. Revísalos, por favor.');
     } finally {
       setLoading(false);
     }
   };
 
-  // If arrived via a link like #recoger/P-XXXXXX, prefill and search automatically.
+  // If arrived via a link like #recoger/P-XXXXXXXX?e=<email>, prefill and search.
   useEffect(() => {
-    const m = window.location.hash.match(/#recoger\/(.+)$/);
+    const hash = window.location.hash;
+    const m = hash.match(/#recoger\/(.+)$/);
     if (m) {
       // Redsys (y otras pasarelas) añaden parámetros a la URL de retorno; como la
-      // ruta va tras '#', quedan pegados al código → recortamos desde ? o &.
-      if (/ds_signature/i.test(window.location.hash)) setJustPaid(true);
-      const c = decodeURIComponent(m[1].split(/[?&]/)[0]).trim().toUpperCase();
+      // ruta va tras '#', quedan pegados al código → separamos por ? o &.
+      if (/ds_signature/i.test(hash)) setJustPaid(true);
+      const [codePart, ...rest] = m[1].split(/[?&]/);
+      const c = decodeURIComponent(codePart).trim().toUpperCase();
       setCode(c);
-      void lookup(c);
+      // Our own emails carry the address (`e=`) so the link works in one click.
+      const params = new URLSearchParams(rest.join('&'));
+      const e = (params.get('e') ?? '').trim();
+      if (e) {
+        setEmail(e);
+        void lookup(c, e);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -103,19 +120,37 @@ export function RecoverOrder() {
         )}
         <section className="checkout-card">
           <h2>Introduce tu código de pedido</h2>
-          <p className="muted">Lo recibiste por email al enviar tu trabajo (por ejemplo, P-AB12CD).</p>
+          <p className="muted">
+            Lo recibiste por email al enviar tu trabajo (por ejemplo, P-AB2CD3EF). Por seguridad pedimos también el
+            email con el que hiciste el pedido.
+          </p>
           <div className="recover-form">
             <input
               type="text"
               value={code}
               autoFocus
-              placeholder="P-XXXXXX"
+              placeholder="P-XXXXXXXX"
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void lookup();
               }}
             />
-            <button type="button" className="btn btn-primary" onClick={() => void lookup()} disabled={loading || !code.trim()}>
+            <input
+              type="email"
+              value={email}
+              placeholder="tu@email.com"
+              autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void lookup();
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void lookup()}
+              disabled={loading || !code.trim() || !email.trim()}
+            >
               {loading ? 'Buscando…' : 'Buscar'}
             </button>
           </div>

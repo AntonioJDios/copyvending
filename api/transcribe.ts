@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { neon } from '@neondatabase/serverless';
 
 // Speech-to-text via the same OpenAI-compatible provider as the assistant
 // (Groq's Whisper by default, same API key). Turbo = fast + cheap, plenty for
@@ -6,6 +7,38 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const BASE_URL = process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1';
 const API_KEY = process.env.LLM_API_KEY || process.env.GROQ_API_KEY || '';
 const MODEL = process.env.STT_MODEL || 'whisper-large-v3-turbo';
+
+// ── Abuse guard ──────────────────────────────────────────────────────
+// Every call here spends money at the LLM provider and needs no login, so
+// without a cap anyone could run their AI workload on the shop's bill. Fixed
+// window per IP, counted in Neon (serverless functions share no memory), shared
+// with the other AI endpoints. Fails OPEN: a broken limiter must not break the
+// shop. Duplicated across the AI endpoints because Vercel functions have to be
+// self-contained (this goes away with the Cloudflare migration).
+const RL_MAX = Number(process.env.LLM_RATE_MAX || 30);
+const RL_WINDOW_MS = 10 * 60 * 1000;
+let _rlReady: Promise<unknown> | null = null;
+async function llmRateLimited(req: VercelRequest): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return false;
+  const xf = req.headers['x-forwarded-for'];
+  const ip = ((Array.isArray(xf) ? xf[0] : xf || '').split(',')[0] || 'unknown').trim().slice(0, 64) || 'unknown';
+  const w = Math.floor(Date.now() / RL_WINDOW_MS) * RL_WINDOW_MS;
+  try {
+    const sql = neon(process.env.DATABASE_URL);
+    _rlReady ??= sql`create table if not exists rate_limits (k text primary key, window_start bigint not null, hits int not null)`;
+    await _rlReady;
+    const rows = (await sql`
+      insert into rate_limits (k, window_start, hits) values (${`llm:${ip}`}, ${w}, 1)
+      on conflict (k) do update set
+        hits = case when rate_limits.window_start = ${w} then rate_limits.hits + 1 else 1 end,
+        window_start = ${w}
+      returning hits`) as { hits: number }[];
+    return (rows[0]?.hits ?? 1) > RL_MAX;
+  } catch {
+    _rlReady = null;
+    return false;
+  }
+}
 
 export const maxDuration = 30;
 
@@ -25,6 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
     if (!API_KEY) return res.status(500).json({ error: 'Falta GROQ_API_KEY (o LLM_API_KEY) en el servidor' });
+    if (await llmRateLimited(req)) return res.status(429).json({ error: 'Has enviado demasiados audios. Espera unos minutos.' });
 
     const body = (req.body ?? {}) as { audio?: string; mime?: string; language?: string };
     // Accept a data: URL or a bare base64 string.

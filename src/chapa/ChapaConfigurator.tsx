@@ -40,17 +40,19 @@ export function ChapaConfigurator() {
   const backLabel = BACKS.find((b) => b.id === back)?.label ?? '';
 
   const price = useConfigurator((s) => s.catalog.badgePrice);
+  // Prices come from the DB catalog; until it's loaded there is no price to charge.
+  const catalogLoaded = useConfigurator((s) => s.catalogLoaded);
   const addToCart = useCart((s) => s.add);
 
   const onAddToCart = async () => {
-    if (!imageUrl || adding) return;
+    if (!imageUrl || adding || !catalogLoaded) return;
     flyToCart({ el: previewRef.current, imageUrl, round: true });
     setAdding(true);
     try {
       const id = crypto.randomUUID();
       // Full-res round crop → storage (print artwork); order keeps just the key.
       const file = await dataUrlToFile(imageUrl, 'chapa.png');
-      const { key } = await uploadService.upload(file, { projectId: id });
+      const { key, token } = await uploadService.upload(file, { projectId: id });
       const preview = await downscaleDataUrl(imageUrl, 480);
       addToCart({
         id,
@@ -58,6 +60,7 @@ export function ChapaConfigurator() {
         nombre,
         preview,
         printImageKey: key,
+        storageToken: token,
         back: backLabel,
         sizeMm: SIZE_MM,
         cantidad,
@@ -174,9 +177,9 @@ export function ChapaConfigurator() {
               Uds.
               <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))} />
             </label>
-            <span className="product-price">{eur(price * cantidad)}</span>
-            <button type="button" className="btn btn-primary" disabled={!imageUrl || adding} onClick={onAddToCart}>
-              {adding ? 'Añadiendo…' : 'Añadir al carrito'}
+            <span className="product-price">{catalogLoaded ? eur(price * cantidad) : '—'}</span>
+            <button type="button" className="btn btn-primary" disabled={!imageUrl || adding || !catalogLoaded} onClick={onAddToCart}>
+              {adding ? 'Añadiendo…' : !catalogLoaded ? 'Precios no disponibles' : 'Añadir al carrito'}
             </button>
           </div>
         </section>

@@ -32,7 +32,7 @@ function colorExtra(config: Configuracion, catalog: Catalog, colorAnillas: strin
 }
 
 function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
-  const { catalog, config, copias, colorAnillas, colorContraportada, files, removeFile, setFileColor } = useConfigurator();
+  const { catalog, config, copias, colorAnillas, colorContraportada, files, proyectoToken, removeFile, setFileColor } = useConfigurator();
   const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({ id: file.id });
   const { setNodeRef: dropRef, isOver } = useDroppable({ id: file.id });
 
@@ -213,7 +213,7 @@ function FileCard({ file, index = 0 }: { file: DocFile; index?: number }) {
           type="button"
           className="chip chip-danger"
           onClick={() => {
-            if (file.storageKey) void uploadService.remove(file.storageKey);
+            if (file.storageKey) void uploadService.remove(file.storageKey, proyectoToken);
             removeFile(file.id);
           }}
         >
@@ -285,7 +285,7 @@ function GroupedBinding() {
 }
 
 export function FileGrid() {
-  const { files, addFiles, patchFile, reorder, proyectoId, setAnalyzing, setPreflight, setSuggestion } = useConfigurator();
+  const { files, addFiles, patchFile, reorder, proyectoId, setProyectoToken, setAnalyzing, setPreflight, setSuggestion } = useConfigurator();
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -363,7 +363,12 @@ export function FileGrid() {
       for (const { doc, file } of started) {
         uploadService
           .upload(file, { projectId: proyectoId, onProgress: (p) => patchFile(doc.id, { uploadProgress: p }) })
-          .then(({ key }) => patchFile(doc.id, { uploadStatus: 'done', uploadProgress: 1, storageKey: key }))
+          .then(({ key, token }) => {
+            // Keep the project's capability token: it's what lets us read or
+            // delete these files afterwards.
+            setProyectoToken(token);
+            patchFile(doc.id, { uploadStatus: 'done', uploadProgress: 1, storageKey: key });
+          })
           .catch((e: unknown) => patchFile(doc.id, { uploadStatus: 'error', uploadError: e instanceof Error ? e.message : 'Error' }));
       }
 

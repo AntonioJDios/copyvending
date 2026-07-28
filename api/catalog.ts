@@ -2,9 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { createHmac, timingSafeEqual } from 'crypto';
 
-// Backoffice admin auth (mirror of orders.ts; self-contained). Saving settings
-// is admin-only once ADMIN_PASSWORD is set; open before that (prototype).
-const ADMIN_AUTH_ON = !!process.env.ADMIN_PASSWORD;
+// Backoffice admin auth (mirror of orders.ts; self-contained). FAILS CLOSED:
+// with no ADMIN_SECRET configured, admin operations are refused, not opened.
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
 function isAdmin(req: VercelRequest): boolean {
   if (!ADMIN_SECRET) return false;
@@ -24,7 +23,11 @@ function isAdmin(req: VercelRequest): boolean {
   }
 }
 function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
-  if (!ADMIN_AUTH_ON || isAdmin(req)) return true;
+  if (!ADMIN_SECRET) {
+    res.status(503).json({ error: 'El backoffice no está configurado en el servidor (falta ADMIN_PASSWORD).' });
+    return false;
+  }
+  if (isAdmin(req)) return true;
   res.status(401).json({ error: 'Necesitas iniciar sesión como administrador.' });
   return false;
 }
@@ -55,13 +58,16 @@ function ensureSchema(): Promise<void> {
 }
 
 // The `settings` table is a key/value store (like PrestaShop's ps_configuration).
-//  - 'catalog'  → pricing + public shop config. The customer configurator loads
-//                 this, so it must never hold secrets.
-//  - 'gls'      → GLS courier config (backoffice only). The configurator never
-//                 requests it. Its `guid` credential is WRITE-ONLY: it is stored
-//                 but never returned by GET (we return `hasGuid` instead), so it
-//                 can't leak to the browser.
+//  - 'catalog'  → prices + public shop config. The customer configurator loads
+//                 this, so it must never hold secrets. PUBLIC on GET.
+//  - 'gls'      → GLS courier config. BACKOFFICE ONLY. Its `guid` credential is
+//                 additionally write-only (GET returns `hasGuid`, never the value).
+//  - 'coupons'  → coupon definitions. BACKOFFICE ONLY: reading them publicly
+//                 would hand out every discount code in the shop. Customers
+//                 validate a code they already know via /api/orders?coupon=…
 const ALLOWED_KEYS = new Set(['catalog', 'gls', 'coupons']);
+/** Keys that only the shop may read. */
+const PRIVATE_KEYS = new Set(['gls', 'coupons']);
 function keyOf(req: VercelRequest): string {
   const k = Array.isArray(req.query.key) ? req.query.key[0] : req.query.key;
   return k && ALLOWED_KEYS.has(k) ? k : 'catalog';
@@ -75,6 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const key = keyOf(req);
 
     if (req.method === 'GET') {
+      if (PRIVATE_KEYS.has(key) && !requireAdmin(req, res)) return;
       const rows = (await sql`select value from settings where key = ${key}`) as { value: unknown }[];
       let value = rows[0]?.value ?? null;
       // Never expose the GLS credential to the browser.
@@ -112,6 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
-    return res.status(500).json({ error: e instanceof Error ? e.message : 'error de base de datos' });
+    console.error('[catalog]', e);
+    return res.status(500).json({ error: 'Error del servidor al leer/guardar la configuración.' });
   }
 }

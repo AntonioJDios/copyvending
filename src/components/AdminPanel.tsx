@@ -9,7 +9,7 @@ import {
   ALL_SIZES,
   CARAS,
   COLORS,
-  DEFAULT_CATALOG,
+  EMPTY_CATALOG,
   DEFAULT_PAYMENTS,
   DEFAULT_PAY_MATRIX,
   DEFAULT_INVOICING,
@@ -129,9 +129,33 @@ export function AdminPanel() {
     setCatalog(draft);
     setDirty(false);
   };
+  // Restores the OFFER (profiles, sizes, grammages, finishes, colours) to the
+  // factory structure while keeping every price untouched: prices live only in
+  // the DB and are the shop's own data — a "restore defaults" must never wipe
+  // them (there are no default prices in the code to restore them from).
   const restore = () => {
-    if (window.confirm('¿Restaurar todos los valores por defecto?')) {
-      setDraft(structuredClone(DEFAULT_CATALOG));
+    if (window.confirm('¿Restaurar perfiles, tamaños, gramajes, acabados y colores a los valores de fábrica?\n\nLos precios NO se tocan.')) {
+      setDraft((d) => ({
+        ...structuredClone(EMPTY_CATALOG),
+        // Keep all pricing + business configuration from the current catalog.
+        pagePrices: d.pagePrices,
+        bindingPrices: d.bindingPrices,
+        colorSurcharge: d.colorSurcharge,
+        laminateSurcharge: d.laminateSurcharge,
+        coverColorSurcharge: d.coverColorSurcharge,
+        perforatePrice: d.perforatePrice,
+        holesPrice: d.holesPrice,
+        stickerPrice: d.stickerPrice,
+        noMarginsPrice: d.noMarginsPrice,
+        extraFolioPrice: d.extraFolioPrice,
+        mugPrice: d.mugPrice,
+        badgePrice: d.badgePrice,
+        sources: d.sources,
+        payments: d.payments,
+        invoicing: d.invoicing,
+        business: d.business,
+        shipping: d.shipping,
+      }));
       setDirty(true);
     }
   };
