@@ -129,6 +129,7 @@ function OrderCard({ order }: { order: Order }) {
   const generateGls = useOrders((s) => s.generateGls);
   const deleteGlsLabel = useOrders((s) => s.deleteGlsLabel);
   const remove = useOrders((s) => s.remove);
+  const purgeFiles = useOrders((s) => s.purgeFiles);
   const invoicing = useConfigurator((s) => s.catalog.invoicing);
   const invoicingOn = !!invoicing?.enabled;
   // VAT rate set by the shop in the admin, not hardcoded.
@@ -139,6 +140,7 @@ function OrderCard({ order }: { order: Order }) {
   const [tracking, setTracking] = useState(order.tracking ?? '');
   const [shipping, setShipping] = useState(false);
   const [glsBusy, setGlsBusy] = useState(false);
+  const [purging, setPurging] = useState(false);
 
   const onDownload = async () => {
     setZipping(true);
@@ -150,6 +152,30 @@ function OrderCard({ order }: { order: Order }) {
       setZipping(false);
     }
   };
+  /** Delete just the customer's files, on request (RGPD erasure or freeing space).
+   *  The order stays: it is the sales record. */
+  const onPurgeFiles = async () => {
+    if (purging) return;
+    if (
+      !window.confirm(
+        `¿Borrar los archivos del pedido ${order.id}?
+
+` +
+          'Se eliminan de forma permanente los documentos, las miniaturas y las imágenes de impresión. ' +
+          'El pedido y su importe se conservan, pero ya no podrás reimprimirlo.'
+      )
+    )
+      return;
+    setPurging(true);
+    try {
+      await purgeFiles(order.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudieron borrar los archivos.');
+    } finally {
+      setPurging(false);
+    }
+  };
+
   const onDelete = () => {
     if (!window.confirm(`¿Eliminar el pedido ${order.id} y sus archivos subidos?`)) return;
     order.items.forEach((p) => void deleteProjectFiles(p));
@@ -334,6 +360,11 @@ function OrderCard({ order }: { order: Order }) {
               {invoicingOn && (
                 <button type="button" className="chip" onClick={() => void downloadInvoice(order, business, vatPercent)}>
                   🧾 {order.paid ? 'Ticket' : 'Albarán'}
+                </button>
+              )}
+              {!order.filesPurgedAt && (
+                <button type="button" className="chip" onClick={() => void onPurgeFiles()} disabled={purging}>
+                  {purging ? 'Borrando…' : '🗑 Borrar archivos'}
                 </button>
               )}
               <button type="button" className="chip chip-danger" onClick={onDelete}>

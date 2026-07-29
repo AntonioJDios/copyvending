@@ -1137,13 +1137,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH') {
       const id = queryId(req);
-      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean; generateGls?: boolean; deleteGls?: boolean };
+      const body = (req.body ?? {}) as { status?: string; paid?: boolean; paymentMethod?: string; tracking?: string; shipped?: boolean; generateGls?: boolean; deleteGls?: boolean; purgeFiles?: boolean };
       if (!id) return res.status(400).json({ error: 'falta id' });
       if (!requireAdmin(req, res)) return; // order management is admin-only
 
       // Delete the stored GLS label so a fresh one can be generated. Clears the
       // label + tracking + shipped mark locally (the old GLS expedition, if any,
       // stays in your GLS account — cancel it there if needed).
+      // Delete this order's files on request (a customer exercising erasure, or
+      // simply freeing space). The order is kept: it is the sales record.
+      if (body.purgeFiles) {
+        const r = (await sql`select items from orders where id = ${id}`) as { items: Record<string, unknown>[] }[];
+        if (r.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
+        const keys = (Array.isArray(r[0].items) ? r[0].items : []).flatMap(itemKeys);
+        const client = r2Client();
+        const base = r2Base();
+        let deleted = 0;
+        const failed: string[] = [];
+        for (const key of keys) {
+          try {
+            if (await deleteObject(client, base, key)) {
+              deleted++;
+              await db()`delete from files where key = ${key}`;
+            } else failed.push(key);
+          } catch {
+            failed.push(key);
+          }
+        }
+        // Only marked when everything went, so a partial failure is retried by the
+        // automatic sweep instead of being silently forgotten.
+        if (failed.length === 0) await sql`update orders set files_purged_at = ${Date.now()} where id = ${id}`;
+        return res.status(failed.length === 0 ? 200 : 502).json({
+          ok: failed.length === 0,
+          deleted,
+          failed: failed.length,
+          error: failed.length ? `No se pudieron borrar ${failed.length} de ${keys.length} archivos.` : undefined,
+        });
+      }
+
       if (body.deleteGls) {
         await sql`update orders set label = null, tracking = null, shipped_at = null where id = ${id}`;
         return res.status(200).json({ ok: true });

@@ -100,6 +100,9 @@ interface OrdersState {
   generateGls: (id: string) => Promise<{ tracking: string; trackUrl: string }>;
   /** Delete the stored GLS label + tracking so a new one can be generated. */
   deleteGlsLabel: (id: string) => Promise<void>;
+  /** Delete this order's files from storage on request (RGPD erasure, or space).
+   *  The order itself is kept. */
+  purgeFiles: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -196,6 +199,12 @@ export const useOrders = create<OrdersState>()((set, get) => ({
     set((s) => ({
       orders: s.orders.map((o) => (o.id === id ? { ...o, tracking: undefined, shippedAt: undefined, hasLabel: false } : o)),
     }));
+  },
+
+  purgeFiles: async (id) => {
+    if (!API_BASE) throw new Error('Borrar archivos requiere el backend.');
+    await apiSend('PATCH', `/orders?id=${encodeURIComponent(id)}`, { purgeFiles: true });
+    set((s) => ({ orders: s.orders.map((o) => (o.id === id ? { ...o, filesPurgedAt: Date.now() } : o)) }));
   },
 
   remove: async (id) => {
