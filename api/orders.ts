@@ -603,6 +603,8 @@ interface OrderRow {
   tracking?: string | null; shipped_at?: string | number | null; has_label?: boolean;
   coupon_code?: string | null; coupon_discount?: string | number | null;
   terms_version?: string | null; terms_accepted_at?: string | number | null;
+  paid_at?: string | number | null; payment_auth_code?: string | null;
+  payment_ref?: string | null; payment_amount_cents?: string | number | null;
 }
 function mapRow(r: OrderRow) {
   return {
@@ -615,6 +617,10 @@ function mapRow(r: OrderRow) {
     couponCode: r.coupon_code ?? undefined, couponDiscount: r.coupon_discount != null ? Number(r.coupon_discount) : undefined,
     termsVersion: r.terms_version ?? undefined,
     termsAcceptedAt: r.terms_accepted_at != null ? Number(r.terms_accepted_at) : undefined,
+    paidAt: r.paid_at != null ? Number(r.paid_at) : undefined,
+    paymentAuthCode: r.payment_auth_code ?? undefined,
+    paymentRef: r.payment_ref ?? undefined,
+    paymentAmountCents: r.payment_amount_cents != null ? Number(r.payment_amount_cents) : undefined,
   };
 }
 
@@ -767,7 +773,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
@@ -775,7 +781,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Full list exposes every customer's data → admin only.
       if (!requireAdmin(req, res)) return;
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -849,7 +855,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       const ins = (await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${state.status}, ${mismatch}, ${state.paid}, ${state.paymentMethod},

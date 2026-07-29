@@ -33,6 +33,13 @@ export interface Order {
    *  the customer was informed of the withdrawal-right exclusion before buying. */
   termsVersion?: string;
   termsAcceptedAt?: number;
+  /** Payment reconciliation, filled by the Redsys notification: when it was paid,
+   *  the bank's authorisation code, the Redsys order reference (what you search for
+   *  in their portal) and the amount actually charged, in cents. */
+  paidAt?: number;
+  paymentAuthCode?: string;
+  paymentRef?: string;
+  paymentAmountCents?: number;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }

@@ -182,6 +182,17 @@ function OrderCard({ order }: { order: Order }) {
           </span>
         </div>
       )}
+      {/* Reconciliation data from the bank: this is what you search for in the
+          Redsys portal when a charge has to be traced or disputed. */}
+      {order.paid && order.paymentMethod === 'redsys' && (order.paymentAuthCode || order.paymentRef) && (
+        <div className="order-customer">
+          💳 <b>Cobro Redsys</b>
+          {order.paymentRef && <span className="muted"> · ref. {order.paymentRef}</span>}
+          {order.paymentAuthCode && <span className="muted"> · autorización {order.paymentAuthCode}</span>}
+          {order.paymentAmountCents != null && <span className="muted"> · {eur(order.paymentAmountCents / 100)}</span>}
+          {order.paidAt && <span className="muted"> · {new Date(order.paidAt).toLocaleString('es-ES')}</span>}
+        </div>
+      )}
       {order.couponCode && (
         <div className="order-customer">
           🏷️ <b>Cupón {order.couponCode}</b>
