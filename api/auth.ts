@@ -26,7 +26,10 @@ const MAIL_REPLY_TO = process.env.MAIL_REPLY_TO || '';
 
 /** Send a plain-text email. Throws on failure so the caller can log it. */
 async function sendEmail(to: string, subject: string, text: string, opts: { inReplyTo?: string } = {}): Promise<void> {
-  if (!to || !MAIL_FROM) return;
+  if (!to) return; // nothing to do without a recipient
+  // A missing sender is a MISCONFIGURATION, not a no-op: returning quietly here
+  // would mean emails silently never go out, with nothing in the logs to explain it.
+  if (!MAIL_FROM) throw new Error('Falta MAIL_FROM (o GMAIL_USER) en el servidor: no hay remitente configurado');
   // Threading headers, so a reply lands in the customer's original conversation.
   const headers = opts.inReplyTo ? { 'In-Reply-To': opts.inReplyTo, References: opts.inReplyTo } : undefined;
 
