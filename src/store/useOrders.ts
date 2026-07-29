@@ -66,11 +66,32 @@ function saveLocal(orders: Order[]): void {
   }
 }
 
+/** Filters applied server-side (see the list endpoint in api/orders). */
+export interface OrderQuery {
+  status?: string;
+  source?: string;
+  q?: string;
+  /** Page size. The orders list paginates; screens that still count coupon usage
+   *  client-side ask for a big page so they don't silently count one page. */
+  limit?: number;
+}
+/** status × source totals over the whole history, for the filter badges. */
+export type OrderCounts = { status: string; source: string; n: number }[];
+type Cursor = { at: number; id: string } | null;
+
 interface OrdersState {
   orders: Order[];
   loading: boolean;
-  /** Reload from the shared backend (no-op in local mode). */
-  fetchOrders: () => Promise<void>;
+  /** Totals from the server, so the badges don't count only the loaded page. */
+  counts: OrderCounts;
+  /** Cursor for the next page; null when there is nothing more to load. */
+  cursor: Cursor;
+  /** Filters the loaded list corresponds to. */
+  query: OrderQuery;
+  /** Load the FIRST page for a set of filters (replaces the list). */
+  fetchOrders: (query?: OrderQuery) => Promise<void>;
+  /** Load the next page and append it. */
+  loadMore: () => Promise<void>;
   addOrder: (order: Order) => Promise<void>;
   setStatus: (id: string, status: OrderStatus) => Promise<void>;
   setPaid: (id: string, paid: boolean, paymentMethod?: string) => Promise<void>;
@@ -86,15 +107,45 @@ export const useOrders = create<OrdersState>()((set, get) => ({
   // With a backend, start empty and let fetchOrders fill it; otherwise localStorage.
   orders: API_BASE ? [] : loadLocal(),
   loading: false,
+  counts: [],
+  cursor: null,
+  query: {},
 
-  fetchOrders: async () => {
+  fetchOrders: async (query) => {
     if (!API_BASE) return;
-    set({ loading: true });
+    const q = query ?? get().query;
+    set({ loading: true, query: q });
     try {
-      const orders = await apiGet<Order[]>('/orders');
-      set({ orders });
+      const p = new URLSearchParams();
+      if (q.status) p.set('status', q.status);
+      if (q.source) p.set('source', q.source);
+      if (q.q) p.set('q', q.q);
+      if (q.limit) p.set('limit', String(q.limit));
+      const r = await apiGet<{ orders: Order[]; counts: OrderCounts; nextCursor: Cursor }>(`/orders?${p.toString()}`);
+      set({ orders: r.orders, counts: r.counts, cursor: r.nextCursor });
     } catch {
       /* keep whatever we had; backoffice shows a stale-but-usable list */
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  loadMore: async () => {
+    const { cursor, query, loading, orders } = get();
+    if (!API_BASE || !cursor || loading) return;
+    set({ loading: true });
+    try {
+      const p = new URLSearchParams({ before: String(cursor.at), beforeId: cursor.id });
+      if (query.status) p.set('status', query.status);
+      if (query.source) p.set('source', query.source);
+      if (query.q) p.set('q', query.q);
+      if (query.limit) p.set('limit', String(query.limit));
+      const r = await apiGet<{ orders: Order[]; counts: OrderCounts; nextCursor: Cursor }>(`/orders?${p.toString()}`);
+      // Guard against a double click appending the same page twice.
+      const known = new Set(orders.map((o) => o.id));
+      set({ orders: [...orders, ...r.orders.filter((o) => !known.has(o.id))], cursor: r.nextCursor });
+    } catch {
+      /* leave the list as it is */
     } finally {
       set({ loading: false });
     }

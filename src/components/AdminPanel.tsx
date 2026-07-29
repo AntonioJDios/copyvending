@@ -1293,7 +1293,10 @@ function CouponsEditor() {
       .then((c) => { if (alive) setList(c); })
       .catch(() => { /* keep empty */ })
       .finally(() => { if (alive) setLoading(false); });
-    void fetchOrders(); // usage is derived from orders
+    // Coupon usage is still counted client-side, so ask for a big page: with the
+    // default page size it would count only the first one. TODO: aggregate in SQL
+    // like the statistics do.
+    void fetchOrders({ limit: 200 });
     return () => { alive = false; };
   }, [fetchOrders]);
 

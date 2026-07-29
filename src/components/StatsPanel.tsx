@@ -106,7 +106,8 @@ export function StatsPanel() {
   const [agg, setAgg] = useState<AggResult | null>(null);
 
   useEffect(() => {
-    void fetchOrders();
+    // Coupon analytics still run client-side over this list. TODO: move to SQL.
+    void fetchOrders({ limit: 200 });
   }, [fetchOrders]);
 
   const range = useMemo(() => rangeOf(period), [period]);

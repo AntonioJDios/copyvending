@@ -1916,6 +1916,19 @@ body {
   margin: 6px 0;
   padding-left: 22px;
 }
+/* Búsqueda de pedidos (se resuelve en SQL sobre todo el histórico). */
+.orders-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.orders-search input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 /* Storefront footer: legal links where every shop puts them. */
 .site-footer {
   border-top: 1px solid var(--border);

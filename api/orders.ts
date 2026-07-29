@@ -423,6 +423,10 @@ function ensureSchema(): Promise<void> {
       // the sales record: statistics, the 303 summary and coupon-usage counts all
       // read from it); only the documents go.
       await db()`alter table orders add column if not exists files_purged_at bigint`;
+      // Pagination + the stats queries all sort by date; the id breaks ties so a
+      // cursor can never skip or repeat a row (the PrestaShop import created
+      // orders sharing the same millisecond).
+      await db()`create index if not exists orders_created_idx on orders (created_at desc, id desc)`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -937,11 +941,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json(mapRow(rows[0]));
       }
       // Full list exposes every customer's data → admin only.
+      //
+      // Paginated by CURSOR, not by a fixed cap: with a real order history a
+      // `limit 2000` silently hides everything older, and the shop just sees its
+      // old orders "disappear". Filtering and the counters are done in SQL too —
+      // filtering a single page client-side would show numbers that don't match
+      // the list.
       if (!requireAdmin(req, res)) return;
+      const lim = Math.min(Math.max(Number(queryStr(req, 'limit')) || 40, 1), 200);
+      const beforeAt = Number(queryStr(req, 'before')) || 0;
+      const beforeId = queryStr(req, 'beforeId');
+      const fStatus = queryStr(req, 'status');
+      const fSource = queryStr(req, 'source');
+      const term = queryStr(req, 'q').trim().slice(0, 80);
+      const like = `%${term}%`;
       const rows = (await sql`
         select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
-        from orders order by created_at desc limit 2000`) as OrderRow[];
-      return res.status(200).json(rows.map(mapRow));
+        from orders
+        where (${beforeAt} = 0 or (created_at, id) < (${beforeAt}, ${beforeId}))
+          and (${fStatus} = '' or status = ${fStatus})
+          and (${fSource} = '' or source = ${fSource})
+          and (${term} = '' or id ilike ${like} or customer->>'email' ilike ${like}
+               or customer->>'nombre' ilike ${like} or customer->>'apellidos' ilike ${like})
+        order by created_at desc, id desc
+        limit ${lim}`) as OrderRow[];
+      // Counters over the WHOLE history (respecting only the search), so the
+      // filter badges tell the truth instead of counting the current page.
+      const counts = (await sql`
+        select status, source, count(*)::int as n from orders
+        where (${term} = '' or id ilike ${like} or customer->>'email' ilike ${like}
+               or customer->>'nombre' ilike ${like} or customer->>'apellidos' ilike ${like})
+        group by status, source`) as { status: string; source: string; n: number }[];
+      const last = rows[rows.length - 1];
+      return res.status(200).json({
+        orders: rows.map(mapRow),
+        counts,
+        // Present only while there may be more; the client stops asking when null.
+        nextCursor: rows.length === lim && last ? { at: Number(last.created_at), id: last.id } : null,
+      });
     }
 
     if (req.method === 'POST') {

@@ -350,11 +350,31 @@ function OrderCard({ order }: { order: Order }) {
 export function OrdersPanel() {
   const orders = useOrders((s) => s.orders);
   const fetchOrders = useOrders((s) => s.fetchOrders);
+  const loadMore = useOrders((s) => s.loadMore);
+  const serverCounts = useOrders((s) => s.counts);
+  const cursor = useOrders((s) => s.cursor);
+  const listLoading = useOrders((s) => s.loading);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
   const [srcFilter, setSrcFilter] = useState<'todas' | string>('todas');
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [visible, setVisible] = useState(20);
+  const [term, setTerm] = useState('');
+
+  // Filters and search run in SQL (like the statistics), so the list is never
+  // capped and the counters are the real totals, not what happens to be loaded.
+  const applyQuery = (next: { status?: 'todos' | OrderStatus; source?: 'todas' | string; q?: string }) => {
+    const status = next.status ?? filter;
+    const source = next.source ?? srcFilter;
+    const q = next.q ?? term;
+    if (next.status !== undefined) setFilter(next.status);
+    if (next.source !== undefined) setSrcFilter(next.source);
+    if (next.q !== undefined) setTerm(next.q);
+    void fetchOrders({
+      status: status === 'todos' ? undefined : status,
+      source: source === 'todas' ? undefined : source,
+      q: q.trim() || undefined,
+    });
+  };
 
   // Pull the Gmail inbox (slow IMAP) in the background, then refresh the list.
   const pullInbox = useCallback(async () => {
@@ -395,16 +415,23 @@ export function OrdersPanel() {
     };
   }, [pullInbox, fetchOrders]);
 
+  // Totals over the whole history, from the server. Status counts respect the
+  // source filter and vice versa, so each badge says what clicking it would show.
+  const sumBy = (pick: (r: { status: string; source: string; n: number }) => boolean) =>
+    serverCounts.reduce((t, r) => (pick(r) ? t + r.n : t), 0);
+  const inSrc = (r: { source: string }) => srcFilter === 'todas' || r.source === srcFilter;
+  const inStatus = (r: { status: string }) => filter === 'todos' || r.status === filter;
   const counts = {
-    todos: orders.length,
-    nuevo: orders.filter((o) => o.status === 'nuevo').length,
-    en_proceso: orders.filter((o) => o.status === 'en_proceso').length,
-    listo: orders.filter((o) => o.status === 'listo').length,
-    entregado: orders.filter((o) => o.status === 'entregado').length,
+    todos: sumBy(inSrc),
+    nuevo: sumBy((r) => inSrc(r) && r.status === 'nuevo'),
+    en_proceso: sumBy((r) => inSrc(r) && r.status === 'en_proceso'),
+    listo: sumBy((r) => inSrc(r) && r.status === 'listo'),
+    entregado: sumBy((r) => inSrc(r) && r.status === 'entregado'),
   };
-  const sources = [...new Set(orders.map((o) => o.source))];
-  const byStatus = filter === 'todos' ? orders : orders.filter((o) => o.status === filter);
-  const shown = srcFilter === 'todas' ? byStatus : byStatus.filter((o) => o.source === srcFilter);
+  const sources = [...new Set(serverCounts.map((r) => r.source))];
+  const total = sumBy(() => true);
+  // The server already filtered: what came back IS what to show.
+  const shown = orders;
 
   return (
     <div className="app admin">
@@ -437,30 +464,46 @@ export function OrdersPanel() {
             <button
               type="button"
               className={`filter-tab${srcFilter === 'todas' ? ' filter-on' : ''}`}
-              onClick={() => {
-                setSrcFilter('todas');
-                setVisible(20);
-              }}
+              onClick={() => applyQuery({ source: 'todas' })}
             >
               Todas
-              <span className="filter-count">{orders.length}</span>
+              <span className="filter-count">{total}</span>
             </button>
             {sources.map((s) => (
               <button
                 key={s}
                 type="button"
                 className={`filter-tab${srcFilter === s ? ' filter-on' : ''}`}
-                onClick={() => {
-                  setSrcFilter(s);
-                  setVisible(20);
-                }}
+                onClick={() => applyQuery({ source: s })}
               >
                 {SOURCE_LABEL[s] ?? s}
-                <span className="filter-count">{orders.filter((o) => o.source === s).length}</span>
+                <span className="filter-count">{sumBy((r) => r.source === s && inStatus(r))}</span>
               </button>
             ))}
           </div>
         )}
+
+        {/* Search runs in SQL over the whole history: at a few thousand orders,
+            scrolling is not a way to find anything. */}
+        <div className="orders-search">
+          <input
+            type="search"
+            value={term}
+            placeholder="Buscar por código, email o nombre…"
+            onChange={(e) => setTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyQuery({ q: term });
+            }}
+          />
+          <button type="button" className="btn" onClick={() => applyQuery({ q: term })}>
+            Buscar
+          </button>
+          {term && (
+            <button type="button" className="chip" onClick={() => applyQuery({ q: '' })}>
+              Limpiar
+            </button>
+          )}
+        </div>
 
         <div className="orders-filters">
           <span className="filter-group-label">Estado</span>
@@ -469,10 +512,7 @@ export function OrdersPanel() {
               key={f}
               type="button"
               className={`filter-tab${filter === f ? ' filter-on' : ''}`}
-              onClick={() => {
-                setFilter(f);
-                setVisible(20);
-              }}
+              onClick={() => applyQuery({ status: f })}
             >
               {f === 'todos' ? 'Todos' : STATUS_LABEL[f]}
               <span className="filter-count">{counts[f]}</span>
@@ -489,13 +529,13 @@ export function OrdersPanel() {
         ) : (
           <>
             <div className="orders-list">
-              {shown.slice(0, visible).map((o) => (
+              {shown.map((o) => (
                 <OrderCard key={o.id} order={o} />
               ))}
             </div>
-            {shown.length > visible && (
-              <button type="button" className="btn orders-more" onClick={() => setVisible((v) => v + 20)}>
-                Ver más ({shown.length - visible})
+            {cursor && (
+              <button type="button" className="btn orders-more" onClick={() => void loadMore()} disabled={listLoading}>
+                {listLoading ? 'Cargando…' : 'Ver más pedidos'}
               </button>
             )}
           </>
