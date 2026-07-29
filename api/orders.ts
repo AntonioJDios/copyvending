@@ -1302,16 +1302,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Second sweep: files that never became an order at all (price checks,
         // abandoned carts). Driven by the upload registry (see api/presign).
         const orphans = await purgeOrphans();
-        // Que quede constancia de cada barrido. El de huérfanos llevaba horas
-        // fallando sin que nadie pudiera saberlo: si vuelve a pasar, se ve aquí.
+        // Que quede constancia, pero solo cuando hay algo que contar: un barrido
+        // que no ha borrado nada no es noticia, y esto se ejecuta cada vez que se
+        // abre Pedidos. Registrarlo siempre llenaba el registro de líneas
+        // idénticas (los pedidos importados entran en el barrido, no tienen
+        // archivos, y son miles: una línea "0 archivos de 200 pedidos" por pasada).
         const errors = orders.errors + orphans.errors;
-        await logEvent(
-          errors > 0 ? 'error' : 'info',
-          'limpieza',
-          `Limpieza: ${orders.files} archivos de ${orders.orders} pedidos y ${orphans.deleted} huérfanos` +
-            (errors > 0 ? ` — ${errors} no se pudieron borrar` : ''),
-          { detail: { days, orders, orphans } }
-        );
+        const deleted = orders.files + orphans.deleted;
+        if (deleted > 0 || errors > 0) {
+          await logEvent(
+            errors > 0 ? 'error' : 'info',
+            'limpieza',
+            `Limpieza: ${orders.files} archivos de pedidos terminados y ${orphans.deleted} huérfanos` +
+              (errors > 0 ? ` — ${errors} no se pudieron borrar` : ''),
+            { detail: { days, orders, orphans } }
+          );
+        }
         return res.status(200).json({ ok: true, days, orders, orphans });
       }
 
