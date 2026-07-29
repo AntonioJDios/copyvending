@@ -7,6 +7,8 @@ import { SuggestionBanner } from './components/SuggestionBanner';
 import { PreflightNotice } from './components/PreflightNotice';
 import { RecoverOrder } from './components/RecoverOrder';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { LegalNotice } from './components/LegalNotice';
+import { TermsOfSale } from './components/TermsOfSale';
 import { Account } from './components/Account';
 import { FileGrid } from './components/FileGrid';
 import { OptionsPanel } from './components/OptionsPanel';
@@ -96,6 +98,8 @@ function Shop() {
   if (route.startsWith('#carrito')) return <CartPage />;
   if (route.startsWith('#recoger')) return <RecoverOrder />;
   if (route.startsWith('#privacidad')) return <PrivacyPolicy />;
+  if (route.startsWith('#aviso-legal')) return <LegalNotice />;
+  if (route.startsWith('#condiciones')) return <TermsOfSale />;
   if (route.startsWith('#cuenta') || route.startsWith('#acceder')) return <Account />;
   if (route.startsWith('#asistente'))
     return (
@@ -152,6 +156,10 @@ function Shop() {
             </a>
             <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
               Recoger pedido
+            </a>
+            {/* LSSI: the legal notice has to be permanently accessible. */}
+            <a className="btn legal-link" href="#aviso-legal" onClick={() => setMenuOpen(false)}>
+              Legal
             </a>
             <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
               ⚙

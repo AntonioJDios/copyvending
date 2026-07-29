@@ -29,6 +29,10 @@ export interface Order {
   /** Applied discount coupon (code + € discount), if any. */
   couponCode?: string;
   couponDiscount?: number;
+  /** Version of the terms of sale accepted at checkout, and when. Evidence that
+   *  the customer was informed of the withdrawal-right exclusion before buying. */
+  termsVersion?: string;
+  termsAcceptedAt?: number;
   /** Set by the server when the client-sent total didn't match the recomputed one. */
   priceMismatch?: boolean;
 }

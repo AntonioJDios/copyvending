@@ -342,6 +342,11 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists label text`;
       await db()`alter table orders add column if not exists coupon_code text`;
       await db()`alter table orders add column if not exists coupon_discount double precision default 0`;
+      // Which terms of sale the customer accepted at checkout, and when: the
+      // withdrawal-right exclusion for personalised goods only holds if they
+      // were informed beforehand, so this is the evidence of it.
+      await db()`alter table orders add column if not exists terms_version text`;
+      await db()`alter table orders add column if not exists terms_accepted_at bigint`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -526,6 +531,7 @@ interface OrderRow {
   shipping_method?: string | null; shipping_cost?: string | number | null;
   tracking?: string | null; shipped_at?: string | number | null; has_label?: boolean;
   coupon_code?: string | null; coupon_discount?: string | number | null;
+  terms_version?: string | null; terms_accepted_at?: string | number | null;
 }
 function mapRow(r: OrderRow) {
   return {
@@ -536,6 +542,8 @@ function mapRow(r: OrderRow) {
     tracking: r.tracking ?? undefined, shippedAt: r.shipped_at != null ? Number(r.shipped_at) : undefined,
     hasLabel: !!r.has_label,
     couponCode: r.coupon_code ?? undefined, couponDiscount: r.coupon_discount != null ? Number(r.coupon_discount) : undefined,
+    termsVersion: r.terms_version ?? undefined,
+    termsAcceptedAt: r.terms_accepted_at != null ? Number(r.terms_accepted_at) : undefined,
   };
 }
 
@@ -688,7 +696,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
@@ -696,7 +704,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Full list exposes every customer's data → admin only.
       if (!requireAdmin(req, res)) return;
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
@@ -706,6 +714,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id?: string; createdAt?: number; source?: string; customer?: unknown;
         items?: Record<string, unknown>[]; total?: number; status?: string;
         paid?: boolean; paymentMethod?: string; shippingMethod?: string; couponCode?: string;
+        termsVersion?: string; termsAcceptedAt?: number;
       };
       if (!o || typeof o.id !== 'string') return res.status(400).json({ error: 'pedido inválido' });
 
@@ -769,11 +778,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       const ins = (await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${state.status}, ${mismatch}, ${state.paid}, ${state.paymentMethod},
-                ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount})
+                ${shippingMethod}, ${shippingCost}, ${couponCode}, ${couponDiscount},
+                ${typeof o.termsVersion === 'string' ? o.termsVersion.slice(0, 20) : null},
+                ${Number(o.termsAcceptedAt) > 0 ? Number(o.termsAcceptedAt) : null})
         on conflict (id) do nothing
         returning id`) as { id: string }[];
       // Confirmación al cliente SOLO en pedidos WEB (online) y solo si es nuevo

@@ -3,13 +3,14 @@ import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
 import { useAuth, type Address } from '../store/useAuth';
 import { useConfigurator } from '../store/useConfigurator';
-import { DEFAULT_PAYMENTS, DEFAULT_PAY_MATRIX } from '../domain/catalog';
+import { DEFAULT_PAYMENTS, DEFAULT_PAY_MATRIX, legalOf } from '../domain/catalog';
 import { hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
 import { shippingQuote } from '../lib/shipping';
 import { validateCouponRemote } from '../lib/coupons';
 import { CURRENT_SOURCE } from '../lib/source';
 import { newOrderCode } from '../lib/orderCode';
+import { TERMS_VERSION } from '../lib/legal';
 import { payWithRedsys, authorizeInsite, getRedsysConfig, type RedsysConfig } from '../lib/redsys';
 import { AccountButton } from './AccountButton';
 import { AddressForm } from './AddressForm';
@@ -64,6 +65,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const shippingCfg = useConfigurator((s) => s.catalog.shipping);
   const shippingOn = !!shippingCfg?.enabled;
   const couponsOn = (useConfigurator((s) => s.catalog.couponsEnabled) ?? true) && hasBackend;
+  // Consent wording is editable by the shop and stored in the DB.
+  const legal = legalOf(useConfigurator((s) => s.catalog));
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<Mode>('guest');
@@ -72,6 +75,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
   const [telefono, setTelefono] = useState('');
   const [consent, setConsent] = useState(false);
+  /** Acceptance of the terms of sale, incl. the withdrawal-right exclusion (§8). */
+  const [termsOk, setTermsOk] = useState(false);
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -206,6 +211,10 @@ export function Checkout({ onBack }: { onBack: () => void }) {
       shippingCost,
       couponCode: couponApplied?.code,
       couponDiscount: couponApplied ? couponDiscount : undefined,
+      // Which version of the terms this customer accepted, and when. Kept because
+      // the withdrawal-right exclusion only holds if they were informed first.
+      termsVersion: TERMS_VERSION,
+      termsAcceptedAt: Date.now(),
     });
     if (loggedIn && billing) void setDefaultBilling(billing).catch(() => {});
     if (loggedIn && shippingUsed && shipValid) void setDefaultShipping(shippingUsed).catch(() => {});
@@ -440,8 +449,8 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               <label className="checkout-consent">
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                 <span>
-                  He leído y acepto la{' '}
-                  <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a> y el tratamiento de mis datos.
+                  {legal.consentPrivacy}{' '}
+                  (<a href="#privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
                 </span>
               </label>
             )}
@@ -610,20 +619,34 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                   </>
                 )}
 
+                {/* Withdrawal-right exclusion. Personalised goods are exempt from
+                    the 14-day right, but ONLY if the customer was clearly told
+                    before buying — so this is required, shown before any payment
+                    button, and the accepted version is stored with the order. */}
+                <label className="checkout-consent">
+                  <input type="checkbox" checked={termsOk} onChange={(e) => setTermsOk(e.target.checked)} />
+                  <span>
+                    {legal.consentTerms}{' '}
+                    (<a href="#condiciones" target="_blank" rel="noopener noreferrer">ver condiciones de venta</a>)
+                  </span>
+                </label>
+
                 {payResolved === 'local' ? (
                   <>
                     <div className="pay-choice on">
                       <span className="pay-choice-name">🏪 <b>{localPay.label}</b></span>
                       <span className="muted">Pagas <b>{eur(grandTotal)}</b> en el mostrador al recoger el pedido.</span>
                     </div>
-                    <button type="button" className="btn btn-primary checkout-next" onClick={() => void finishLocal()} disabled={saving || (invoicingOn && !billingValid)}>
-                      {saving ? 'Enviando…' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
+                    <button type="button" className="btn btn-primary checkout-next" onClick={() => void finishLocal()} disabled={saving || !termsOk || (invoicingOn && !billingValid)}>
+                      {saving ? 'Enviando…' : !termsOk ? 'Acepta las condiciones de venta' : invoicingOn && !billingValid ? 'Completa la dirección de facturación' : 'Confirmar pedido'}
                     </button>
                   </>
                 ) : (
                   <div className="insite-wrap">
                     <p className="muted">💳 Pago seguro con tarjeta o Bizum ({eur(grandTotal)}).</p>
-                    {invoicingOn && !billingValid ? (
+                    {!termsOk ? (
+                      <p className="muted">Acepta las condiciones de venta de arriba para pagar.</p>
+                    ) : invoicingOn && !billingValid ? (
                       <p className="muted">Completa la dirección de facturación de arriba para pagar.</p>
                     ) : INSITE_ENABLED && redsysConfig ? (
                       <>

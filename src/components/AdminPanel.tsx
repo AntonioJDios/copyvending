@@ -15,6 +15,7 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_VAT_PERCENT,
   DEFAULT_BUSINESS,
+  DEFAULT_LEGAL,
   DEFAULT_SHIPPING,
   FINISH_LABEL,
   FOLIO_LABEL,
@@ -61,7 +62,7 @@ function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostra
   );
 }
 
-type AdminTab = 'producto' | 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'asistente' | 'herramientas';
+type AdminTab = 'producto' | 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'legal' | 'asistente' | 'herramientas';
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
@@ -157,6 +158,7 @@ export function AdminPanel() {
         payments: d.payments,
         invoicing: d.invoicing,
         business: d.business,
+        legal: d.legal,
         shipping: d.shipping,
       }));
       setDirty(true);
@@ -193,6 +195,7 @@ export function AdminPanel() {
           {API_BASE && (
             <button type="button" className={`admin-tab${tab === 'cupones' ? ' on' : ''}`} onClick={() => setTab('cupones')}>Cupones</button>
           )}
+          <button type="button" className={`admin-tab${tab === 'legal' ? ' on' : ''}`} onClick={() => setTab('legal')}>Legal</button>
           <button type="button" className={`admin-tab${tab === 'asistente' ? ' on' : ''}`} onClick={() => setTab('asistente')}>Asistente</button>
           {API_BASE && (
             <button type="button" className={`admin-tab${tab === 'herramientas' ? ' on' : ''}`} onClick={() => setTab('herramientas')}>Herramientas</button>
@@ -465,6 +468,8 @@ export function AdminPanel() {
             <SourceToggles draft={draft} change={change} mod="invoicing" label="Tickets y albaranes" />
           </>
         )}
+
+        {tab === 'legal' && <LegalEditor draft={draft} change={change} />}
 
         {tab === 'envios' && (
           <>
@@ -977,6 +982,102 @@ function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
         <textarea className="assistant-instructions" rows={2} value={b.address} onChange={(e) => set({ address: e.target.value })} />
       </label>
     </section>
+  );
+}
+
+/**
+ * Legal texts. Lives in the DB like everything else the shop owns, so the wording
+ * can be corrected (or replaced by what a lawyer sends) without a deploy.
+ *
+ * Two levels: the consent sentences + the details the templates need, and a
+ * full-text override per document for when the shop wants its own wording.
+ */
+function LegalEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const l = { ...DEFAULT_LEGAL, ...(draft.legal ?? {}) };
+  const set = (patch: Partial<typeof l>) => change((d) => { d.legal = { ...DEFAULT_LEGAL, ...d.legal, ...patch }; });
+
+  return (
+    <>
+      <section className="card">
+        <h2>Textos de consentimiento</h2>
+        <p className="muted">
+          Lo que el cliente marca antes de comprar. El enlace al documento lo añade la web; aquí solo va el texto.
+        </p>
+        <label className="field-block">
+          Consentimiento de privacidad (alta de cuenta y pedido)
+          <textarea rows={2} value={l.consentPrivacy} onChange={(e) => set({ consentPrivacy: e.target.value })} />
+        </label>
+        <label className="field-block">
+          Aceptación de condiciones y renuncia a devolución (pago)
+          <textarea rows={3} value={l.consentTerms} onChange={(e) => set({ consentTerms: e.target.value })} />
+        </label>
+        <p className="muted">
+          ⚠ El segundo es el que hace válida la <b>exclusión del derecho de desistimiento</b> en trabajos
+          personalizados: debe decir claramente que el pedido se produce según las especificaciones del cliente y que no
+          admite devolución. Si lo suavizas, pierdes la excepción.
+        </p>
+      </section>
+
+      <section className="card">
+        <h2>Datos para los documentos legales</h2>
+        <p className="muted">
+          Rellenan los huecos de las plantillas de <a href="#aviso-legal" target="_blank" rel="noopener noreferrer">aviso legal</a> y{' '}
+          <a href="#condiciones" target="_blank" rel="noopener noreferrer">condiciones de venta</a>. Lo que dejes vacío
+          aparecerá entre corchetes en la web.
+        </p>
+        <div className="admin-grid">
+          <label className="field-inline">
+            Teléfono de contacto
+            <input type="text" value={l.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="900 000 000" />
+          </label>
+          <label className="field-inline">
+            Fecha de última actualización
+            <input type="text" value={l.updatedAt} onChange={(e) => set({ updatedAt: e.target.value })} placeholder="29/07/2026" />
+          </label>
+          <label className="field-inline">
+            Plazo de preparación
+            <input type="text" value={l.prepTime} onChange={(e) => set({ prepTime: e.target.value })} placeholder="24-48 h laborables" />
+          </label>
+          <label className="field-inline">
+            Plazo de entrega (envíos)
+            <input type="text" value={l.deliveryTime} onChange={(e) => set({ deliveryTime: e.target.value })} placeholder="24-72 h laborables" />
+          </label>
+          <label className="field-inline">
+            Custodia del pedido en tienda
+            <input type="text" value={l.custodyDays} onChange={(e) => set({ custodyDays: e.target.value })} placeholder="30 días" />
+          </label>
+        </div>
+        <label className="field-block">
+          Datos registrales (solo si es sociedad)
+          <input type="text" value={l.registro} onChange={(e) => set({ registro: e.target.value })} placeholder="Registro Mercantil de …, tomo …, folio …, hoja …" />
+        </label>
+      </section>
+
+      <section className="card">
+        <h2>Reescribir los documentos completos</h2>
+        <p className="muted">
+          Opcional. Si escribes algo aquí, <b>sustituye por completo</b> el texto redactado por defecto (por ejemplo,
+          para poner el que te dé tu abogado). Déjalo vacío para seguir usando la plantilla, que se rellena sola con tus
+          precios, zonas de envío y formas de pago. Se muestra como texto plano: se respetan los saltos de línea.
+        </p>
+        <label className="field-block">
+          Aviso legal
+          <textarea rows={6} value={l.legalNoticeText} onChange={(e) => set({ legalNoticeText: e.target.value })} placeholder="(vacío = usar la plantilla)" />
+        </label>
+        <label className="field-block">
+          Condiciones de venta
+          <textarea rows={6} value={l.termsText} onChange={(e) => set({ termsText: e.target.value })} placeholder="(vacío = usar la plantilla)" />
+        </label>
+        <label className="field-block">
+          Política de privacidad
+          <textarea rows={6} value={l.privacyText} onChange={(e) => set({ privacyText: e.target.value })} placeholder="(vacío = usar la plantilla)" />
+        </label>
+        <p className="muted">
+          ⚠ Si reescribes las condiciones de venta, sube la <b>versión</b> en el código (<code>TERMS_VERSION</code>) para
+          que quede registrado con los pedidos qué texto aceptó cada cliente.
+        </p>
+      </section>
+    </>
   );
 }
 

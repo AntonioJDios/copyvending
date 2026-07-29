@@ -98,6 +98,62 @@ export const DEFAULT_SHIPPING: ShippingConfig = {
   info: '',
 };
 
+/**
+ * Legal texts, editable by the shop from the admin panel and stored in the DB
+ * (like prices — the code holds no shop-specific wording it can't change).
+ *
+ * Two levels:
+ *  - the CONSENT sentences and the shop-specific details (phone, deadlines…),
+ *    which fill the drafted templates;
+ *  - optional FULL-TEXT overrides: if one is set, that document renders as typed
+ *    instead of the template, so the owner (or their lawyer) can replace it
+ *    wholesale without a deploy.
+ *
+ * All of it is rendered as PLAIN TEXT, never as HTML.
+ */
+export interface LegalConfig {
+  /** Checkbox text for the privacy consent (account creation / checkout). */
+  consentPrivacy: string;
+  /** Checkbox text accepting the terms + the withdrawal-right exclusion. */
+  consentTerms: string;
+  /** Shop details that the drafted templates need. */
+  phone: string;
+  /** Companies only: Registro Mercantil details. */
+  registro: string;
+  /** e.g. "24-48 h laborables". */
+  prepTime: string;
+  /** e.g. "24-72 h laborables". */
+  deliveryTime: string;
+  /** How long a ready order is held at the shop, e.g. "30 días". */
+  custodyDays: string;
+  /** Date shown as "last updated" on the legal pages. */
+  updatedAt: string;
+  /** Full-text overrides (empty = use the drafted template). */
+  legalNoticeText: string;
+  termsText: string;
+  privacyText: string;
+}
+
+export const DEFAULT_LEGAL: LegalConfig = {
+  consentPrivacy: 'He leído y acepto la política de privacidad y el tratamiento de mis datos.',
+  consentTerms:
+    'He leído y acepto las condiciones de venta y entiendo que los trabajos se producen según mis propias especificaciones, por lo que no admiten devolución ni derecho de desistimiento una vez producidos.',
+  phone: '',
+  registro: '',
+  prepTime: '',
+  deliveryTime: '',
+  custodyDays: '',
+  updatedAt: '',
+  legalNoticeText: '',
+  termsText: '',
+  privacyText: '',
+};
+
+/** Effective legal config (stored values over the defaults). */
+export function legalOf(catalog: Pick<Catalog, 'legal'> | undefined): LegalConfig {
+  return { ...DEFAULT_LEGAL, ...(catalog?.legal ?? {}) };
+}
+
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */
 export interface AssistantConfig {
   /** Show the chat assistant to customers. */
@@ -152,8 +208,10 @@ export interface Catalog {
   payments?: PaymentsConfig;
   /** Invoicing config (optional; absent = disabled). */
   invoicing?: InvoicingConfig;
-  /** Shop identity/contact (for invoices + privacy policy). */
+  /** Shop identity/contact (for tickets + legal pages). */
   business?: BusinessConfig;
+  /** Legal texts and consent wording (editable in the admin). */
+  legal?: LegalConfig;
   /** Home delivery config (optional; absent = disabled). */
   shipping?: ShippingConfig;
   /** Paper sizes offered to the customer. */
@@ -281,6 +339,7 @@ export const EMPTY_CATALOG: Catalog = {
   payments: DEFAULT_PAYMENTS,
   invoicing: DEFAULT_INVOICING,
   business: DEFAULT_BUSINESS,
+  legal: DEFAULT_LEGAL,
   shipping: DEFAULT_SHIPPING,
   enabledSizes: ['A4', 'A3', 'A5'],
   ringColors: [

@@ -5,7 +5,7 @@ import { registerCustomer } from '../lib/customers';
 import { AddressForm } from './AddressForm';
 import { useConfigurator } from '../store/useConfigurator';
 import { downloadInvoice } from '../lib/invoicePdf';
-import { DEFAULT_BUSINESS } from '../domain/catalog';
+import { DEFAULT_BUSINESS, legalOf } from '../domain/catalog';
 import type { Order } from '../store/useOrders';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -37,6 +37,8 @@ export function Account() {
   const [invBusy, setInvBusy] = useState<string | null>(null);
   const invoicingOn = !!useConfigurator((s) => s.catalog.invoicing)?.enabled;
   const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
+  // Consent wording is editable by the shop and stored in the DB.
+  const legal = legalOf(useConfigurator((s) => s.catalog));
 
   const downloadFactura = async (id: string) => {
     if (invBusy) return;
@@ -287,8 +289,8 @@ export function Account() {
                 <label className="checkout-consent">
                   <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                   <span>
-                    He leído y acepto la{' '}
-                    <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a> y el tratamiento de mis datos.
+                    {legal.consentPrivacy}{' '}
+                    (<a href="#privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
                   </span>
                 </label>
                 <button type="button" className="btn btn-primary checkout-next" onClick={() => void onRegister()} disabled={busy || !registerOk}>

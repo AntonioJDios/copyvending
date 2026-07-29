@@ -1,5 +1,6 @@
 import { useConfigurator } from '../store/useConfigurator';
-import { DEFAULT_BUSINESS } from '../domain/catalog';
+import { DEFAULT_BUSINESS, legalOf } from '../domain/catalog';
+import { LegalOverride } from './LegalOverride';
 
 /**
  * Privacy policy (RGPD/LOPDGDD). The shop's identity is filled from the admin
@@ -8,22 +9,27 @@ import { DEFAULT_BUSINESS } from '../domain/catalog';
  */
 export function PrivacyPolicy() {
   const b = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
+  const legal = legalOf(useConfigurator((s) => s.catalog));
   const name = b.name || '[NOMBRE DEL NEGOCIO / TITULAR]';
   const nif = b.nif || '[NIF]';
   const address = b.address || '[DIRECCIÓN]';
   const email = b.email || '[EMAIL DE CONTACTO]';
+  const body = legal.privacyText.trim();
   return (
     <div className="app">
       <header className="topbar">
         <h1>Política de privacidad</h1>
         <nav className="topnav">
+          <a className="btn" href="#aviso-legal">Aviso legal</a>
+          <a className="btn" href="#condiciones">Condiciones de venta</a>
           <a className="btn" href="#">← Volver</a>
         </nav>
       </header>
 
+      {body ? <LegalOverride text={body} /> : (
       <div className="legal-page">
         <p className="muted">
-          Última actualización: [FECHA] · Versión 1.0. <b>Plantilla</b>: sustituye los campos entre corchetes por los datos reales del negocio.
+          Última actualización: {legal.updatedAt || '[FECHA]'} · Versión 1.0. <b>Plantilla</b>: sustituye los campos entre corchetes por los datos reales del negocio.
         </p>
 
         <h2>1. Responsable del tratamiento</h2>
@@ -79,6 +85,7 @@ export function PrivacyPolicy() {
           versión vigente en esta página.
         </p>
       </div>
+      )}
     </div>
   );
 }
