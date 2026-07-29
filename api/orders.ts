@@ -98,13 +98,26 @@ async function sendEmail(to: string, subject: string, text: string, opts: { inRe
     return;
   }
 
-  // Legacy fallback: Gmail SMTP. Works, but has a ~500/day cap, signs as Gmail
-  // (not as the shop's domain) and does not run on Workers — migrate to a provider.
-  const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
-  if (!process.env.GMAIL_USER || !pass) throw new Error('Email no configurado en el servidor (MAIL_PROVIDER/MAIL_API_KEY o GMAIL_*)');
-  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: process.env.GMAIL_USER, pass } });
+  // SMTP fallback. Host/port configurable, so this can be the shop's OWN mail
+  // hosting (smtp.fotocopiator.es) instead of Gmail: same cost as today and the
+  // domain is already authenticated by the host. Fine as a stopgap, but it has
+  // undocumented sending limits, gives no bounce tracking, shares the host's IP
+  // reputation, and does NOT run on Cloudflare Workers. Defaults to Gmail so the
+  // previous configuration keeps working untouched.
+  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const smtpPort = Number(process.env.SMTP_PORT) || 465;
+  const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER || '';
+  const smtpPass = (process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  if (!smtpUser || !smtpPass) throw new Error('Email no configurado en el servidor (MAIL_PROVIDER/MAIL_API_KEY, o SMTP_*/GMAIL_*)');
+  const t = nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    // 465 = TLS directo; 587 (habitual en hostings españoles) = STARTTLS.
+    secure: smtpPort === 465,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
   await t.sendMail({
-    from: `${MAIL_FROM_NAME} <${process.env.GMAIL_USER}>`,
+    from: `${MAIL_FROM_NAME} <${MAIL_FROM || smtpUser}>`,
     to,
     subject,
     text,

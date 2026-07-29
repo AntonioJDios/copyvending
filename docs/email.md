@@ -16,15 +16,12 @@ respuesta al pedido recibido por email.
 - Los términos de Gmail no contemplan usarlo como relé transaccional de un servicio.
 - **SMTP no funciona en Cloudflare Workers**, así que había que cambiarlo igual.
 
-## Puesta en marcha SIN dominio todavía
-
-Se puede dejar funcionando hoy, contra clientes reales, y cambiar al dominio
-después **sin tocar código** (solo variables de entorno).
+## Puesta en marcha con Brevo
 
 1. Cuenta gratuita en [Brevo](https://www.brevo.com) (300 correos/día).
-2. **Senders → Add a sender**: pon el email actual de la tienda (el Gmail sirve) y
-   valida el enlace que te llega. Brevo permite verificar un **remitente
-   individual** sin poseer un dominio.
+2. Verifica el **dominio** (`Domains → Add a domain`, ver más abajo). Si aún no
+   pudieras tocar el DNS, Brevo también permite verificar un **remitente
+   individual** (`Senders → Add a sender`) y arrancar sin dominio.
 3. **SMTP & API → API Keys** → crea una clave.
 4. En Vercel → Settings → Environment Variables:
 
@@ -43,6 +40,36 @@ Con esto ya no hay tope de 500/día ni riesgo de bloqueo de la cuenta de Google,
 tienes registro de entregas y rebotes en el panel de Brevo. Lo que **todavía no**
 tienes es autenticación con tu dominio: la entregabilidad mejora, pero no es la
 definitiva.
+
+## Alternativa: usar el correo del dominio que ya pagas
+
+Si ya tienes hosting de correo en `fotocopiator.es`, puedes enviar por su SMTP sin
+contratar nada:
+
+    SMTP_HOST=smtp.tudominio.es
+    SMTP_PORT=587
+    SMTP_USER=pedidos@fotocopiator.es
+    SMTP_PASSWORD=...
+    MAIL_FROM=pedidos@fotocopiator.es
+    MAIL_FROM_NAME=Fotocopiator
+
+**A favor:** coste cero adicional, y el dominio ya lo tiene autenticado tu hosting
+(SPF/DKIM configurados por ellos), así que la entregabilidad ya es decente.
+
+**En contra, y por eso no es el destino final:**
+
+- Los hostings compartidos tienen **límites de envío** casi siempre no
+  documentados (del orden de unos cientos por hora o por día) y, al pasarlos,
+  rechazan o bloquean la cuenta.
+- **No hay seguimiento de rebotes**: si una confirmación no llega, no te enteras.
+- Compartes la **reputación de IP** con el resto de clientes de ese hosting.
+- Es el **mismo punto único de fallo** que Gmail, cambiando de proveedor: si el
+  volumen transaccional te frena la cuenta, pierdes también tu correo humano.
+- **No funciona en Cloudflare Workers**, así que habrá que cambiarlo en la
+  migración de todas formas.
+
+Buen paso intermedio si no quieres añadir un proveedor ahora. Cuando el volumen
+crezca (o al migrar), pasas a Brevo o SES cambiando variables de entorno.
 
 ## Cuando tengas el dominio (fotocopiator.es)
 
@@ -66,10 +93,17 @@ downtime y cero riesgo para el sitio actual.
 
 ## Entrada de pedidos por email (pendiente)
 
-La lectura del buzón sigue siendo **IMAP contra Gmail** (`api/ingest-email.ts`), y
-eso no sobrevive a Cloudflare Workers. Cuando migremos se sustituye por un webhook
-de entrada (Cloudflare Email Routing, o el inbound de Brevo). No es urgente: lo
-que se envía ya está resuelto; esto es solo lo que se recibe.
+El buzón del que se leen los pedidos ya es **configurable** (no solo Gmail):
+
+    IMAP_HOST=imap.tudominio.es
+    IMAP_PORT=993
+    IMAP_USER=pedidos@fotocopiator.es
+    IMAP_PASSWORD=...
+
+Así los clientes escriben a una dirección de tu dominio y desaparece la dependencia
+de una cuenta de Google. Lo que sigue pendiente es que **IMAP no funciona en
+Cloudflare Workers**: al migrar habrá que sustituir el sondeo del buzón por un
+webhook de entrada (Cloudflare Email Routing, o el inbound de Brevo).
 
 ## Detalles de implementación
 
