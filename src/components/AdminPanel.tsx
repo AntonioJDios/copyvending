@@ -796,7 +796,7 @@ function StorageReport() {
             </>
           )}
 
-          <div className="admin-actions" style={{ padding: '12px 0 0', justifyContent: 'flex-start', gap: 8 }}>
+          <div className="block-actions">
             <button type="button" className="btn" onClick={() => void clean()} disabled={busy}>
               {busy ? 'Limpiando…' : '🧹 Limpiar ahora'}
             </button>
@@ -983,7 +983,7 @@ function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void })
         Los precios viven <b>solo en la base de datos</b>: no hay copia en el código. Descarga una copia cada vez que
         cambies precios y guárdala fuera de aquí — es tu única red de seguridad si se pierde la configuración.
       </p>
-      <div className="admin-actions" style={{ padding: 0, justifyContent: 'flex-start', gap: 8 }}>
+      <div className="block-actions">
         <button type="button" className="btn btn-primary" onClick={() => void doExport()} disabled={busy}>
           ⬇ Descargar copia (JSON)
         </button>

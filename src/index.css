@@ -4303,3 +4303,17 @@ body {
   word-break: break-word;
   overflow-x: auto;
 }
+
+/* Botones dentro de una sección.
+   NO reutilizar .admin-actions para esto: esa es la barra de guardar y va
+   `position: fixed` pegada abajo, así que los botones se iban al fondo de la
+   pantalla y quedaban tapados por el contenido — invisibles en Almacenamiento y
+   en las copias de seguridad. */
+.block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
