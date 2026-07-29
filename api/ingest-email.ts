@@ -622,6 +622,7 @@ async function processEmail(
       } catch (e) {
         // The reply is a nicety — never fail the order because of it, but log it.
         console.error('[email] respuesta a pedido', e);
+        await logEvent('warn', 'No se pudo responder al cliente que envió el pedido por correo', { detail: e });
       }
     }
 
@@ -689,7 +690,10 @@ async function readGmailAndProcess(
         if (r.body.status === 'created') created++;
         results.push({ uid, status: r.body.status ?? 'ok', orderId: r.body.orderId ?? null, error: r.body.error });
       } catch (e) {
+        // Un correo que no se convierte en pedido es un pedido que el cliente
+        // cree haber hecho y la copistería no ve. Tiene que constar.
         results.push({ uid, error: e instanceof Error ? e.message : 'error' });
+        await logEvent('error', 'Un correo del buzón no se pudo convertir en pedido', { detail: e });
       }
     }
   } finally {
@@ -697,6 +701,35 @@ async function readGmailAndProcess(
     await client.logout().catch(() => {});
   }
   return { status: 'gmail', scanned: results.length, created, results };
+}
+
+
+/**
+ * Record an incident in the shared event log (insert only, no email: the mail
+ * transport lives in api/orders, which sends these out — see flushPendingAlerts).
+ * Best-effort and never throws.
+ */
+async function logEvent(
+  level: 'error' | 'warn' | 'info',
+  message: string,
+  opts: { orderId?: string; detail?: unknown } = {}
+): Promise<void> {
+  try {
+    await db()`
+      create table if not exists events (
+        id bigserial primary key, at bigint not null, level text not null,
+        source text not null, order_id text, message text not null, detail text)`;
+    await db()`alter table events add column if not exists alerted boolean not null default false`;
+    const detail =
+      opts.detail === undefined
+        ? null
+        : String(opts.detail instanceof Error ? opts.detail.message : typeof opts.detail === 'string' ? opts.detail : JSON.stringify(opts.detail)).slice(0, 2000);
+    await db()`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, 'buzon', ${opts.orderId ?? null}, ${message.slice(0, 300)}, ${detail}, false)`;
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

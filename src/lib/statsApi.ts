@@ -21,6 +21,60 @@ export async function fetchAgg(from: number, to: number, unit: 'day' | 'month', 
   return (await res.json()) as AggResult;
 }
 
+export type LogLevel = 'error' | 'warn' | 'info';
+
+export interface LogEvent {
+  id: number;
+  at: number;
+  level: LogLevel;
+  source: string;
+  orderId: string | null;
+  message: string;
+  detail: string | null;
+}
+
+export interface EventPage {
+  events: LogEvent[];
+  /** Totals per level over the WHOLE log, for the filter badges. */
+  counts: Record<LogLevel, number>;
+  nextCursor: number | null;
+}
+
+/**
+ * Read the event log, newest first. Admin-only.
+ *
+ * Throws with the server's message instead of returning null: this screen exists
+ * precisely to find out what went wrong, so swallowing its own errors would be a
+ * bad joke.
+ */
+export async function fetchEvents(level: LogLevel | '', cursor?: number | null): Promise<EventPage> {
+  if (!API_BASE) throw new Error('Requiere el backend.');
+  const t = getAdminToken();
+  const p = new URLSearchParams({ events: '1' });
+  if (level) p.set('level', level);
+  if (cursor) p.set('beforeId', String(cursor));
+  const res = await fetch(`${API_BASE}/orders?${p.toString()}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || `Error ${res.status}`);
+  }
+  return (await res.json()) as EventPage;
+}
+
+/** Empty the log. Admin-only. */
+export async function clearEvents(): Promise<void> {
+  if (!API_BASE) throw new Error('Requiere el backend.');
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/orders?clearEvents=1`, {
+    method: 'DELETE',
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || `Error ${res.status}`);
+  }
+}
+
 export interface StorageReport {
   totals: { files: number; bytes: number; since: number | null };
   byMonth: { period: string; files: number; bytes: number }[];

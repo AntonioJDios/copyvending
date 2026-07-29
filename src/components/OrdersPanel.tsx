@@ -390,7 +390,12 @@ export function OrdersPanel() {
   const [srcFilter, setSrcFilter] = useState<'todas' | string>('todas');
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [term, setTerm] = useState('');
+  // `#pedidos?q=PS-123` opens the list already searching for that order, so the
+  // log can link straight to the order an incident is about.
+  const [term, setTerm] = useState(() => {
+    const q = window.location.hash.match(/[?&]q=([^&]+)/)?.[1];
+    return q ? decodeURIComponent(q) : '';
+  });
 
   // Filters and search run in SQL (like the statistics), so the list is never
   // capped and the counters are the real totals, not what happens to be loaded.
@@ -437,7 +442,7 @@ export function OrdersPanel() {
   // On open: load the list first (fast) and read the inbox in the background so
   // Gmail never blocks the orders. Then poll the list (15s) and inbox (90s).
   useEffect(() => {
-    void fetchOrders().finally(() => setInitialLoading(false));
+    void fetchOrders(term ? { q: term } : undefined).finally(() => setInitialLoading(false));
     void pullInbox();
     const list = setInterval(() => void fetchOrders(), 15000);
     const inbox = setInterval(() => void pullInbox(), 90000);
@@ -445,6 +450,7 @@ export function OrdersPanel() {
       clearInterval(list);
       clearInterval(inbox);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `term` solo se lee al abrir
   }, [pullInbox, fetchOrders]);
 
   // Totals over the whole history, from the server. Status counts respect the

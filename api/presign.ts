@@ -111,7 +111,10 @@ async function registerFile(key: string, projectId: string, size: number): Promi
       values (${key}, ${projectId}, ${size}, ${Date.now()})
       on conflict (key) do nothing`;
   } catch (e) {
+    // Un fichero que no queda registrado es un huérfano invisible: seguirá
+    // ocupando (y costando) en R2 y el barrido de limpieza no sabrá que existe.
     console.error('[presign] no se pudo registrar el fichero', e);
+    await logEvent('error', 'Un archivo subido no se pudo registrar (quedará sin control en el almacenamiento)', { detail: { key, size, error: e instanceof Error ? e.message : String(e) } });
   }
 }
 
@@ -132,6 +135,37 @@ function r2(): AwsClient {
  * to *.vercel.app and r2.cloudflarestorage.com, not workers.dev). R2
  * keys/secrets are server-only env vars; they never reach the client.
  */
+
+/**
+ * Record an incident in the shared event log (insert only, no email: the mail
+ * transport lives in api/orders, which sends these out — see flushPendingAlerts).
+ * Best-effort and never throws.
+ */
+async function logEvent(
+  level: 'error' | 'warn' | 'info',
+  message: string,
+  opts: { orderId?: string; detail?: unknown } = {}
+): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const db = neon(process.env.DATABASE_URL);
+    await db`
+      create table if not exists events (
+        id bigserial primary key, at bigint not null, level text not null,
+        source text not null, order_id text, message text not null, detail text)`;
+    await db`alter table events add column if not exists alerted boolean not null default false`;
+    const detail =
+      opts.detail === undefined
+        ? null
+        : String(opts.detail instanceof Error ? opts.detail.message : typeof opts.detail === 'string' ? opts.detail : JSON.stringify(opts.detail)).slice(0, 2000);
+    await db`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, 'archivos', ${opts.orderId ?? null}, ${message.slice(0, 300)}, ${detail}, false)`;
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 

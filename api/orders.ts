@@ -431,6 +431,17 @@ function ensureSchema(): Promise<void> {
       await db()`alter table orders add column if not exists payment_auth_code text`;
       await db()`alter table orders add column if not exists payment_ref text`;
       await db()`alter table orders add column if not exists payment_amount_cents integer`;
+      // Event log. The backoffice reads it, so it lives with the other tables.
+      await db()`
+        create table if not exists events (
+          id bigserial primary key, at bigint not null, level text not null,
+          source text not null, order_id text, message text not null, detail text)`;
+      await db()`create index if not exists events_at_idx on events (at desc)`;
+      // Los eventos que graban las otras funciones (cobros, buzón, altas) nacen
+      // con alerted=false y se avisan desde aquí, que es la única función con
+      // envío de correo. Índice parcial: la consulta de pendientes no toca nada.
+      await db()`alter table events add column if not exists alerted boolean not null default false`;
+      await db()`create index if not exists events_pending_idx on events (id) where not alerted`;
       // Upload registry. Created here as well as in api/presign: the report and the
       // orphan sweep both read it, and until someone uploaded something the table
       // did not exist — so the report 500'd and the sweep failed silently.
@@ -532,6 +543,109 @@ export function applySource(cat: PriceCatalog, source: string): PriceCatalog {
     ringColors: (cat.ringColors ?? []).map((c) => ({ ...c, extra: o.ringExtras?.[c.name] ?? c.extra })),
     coverColors: (cat.coverColors ?? []).map((c) => ({ ...c, extra: o.coverExtras?.[c.name] ?? c.extra })),
   };
+}
+
+// ── Event log + alerts ───────────────────────────────────────────────
+/**
+ * Record something worth knowing later.
+ *
+ * Everything used to go to console.error, which on this plan means: gone in an
+ * hour, and only visible to whoever opens the Vercel dashboard. That is how the
+ * cleanup sweep managed to fail silently for hours. Events go to the database so
+ * the shop can read them in the panel, and an `error` also sends an email.
+ *
+ * Best-effort and never throws: logging must not be able to break the thing it
+ * was logging about.
+ */
+const ALERT_TO = process.env.ALERT_EMAIL || '';
+
+async function logEvent(
+  level: 'info' | 'warn' | 'error',
+  source: string,
+  message: string,
+  opts: { orderId?: string; detail?: unknown } = {}
+): Promise<void> {
+  try {
+    const detail = opts.detail === undefined ? null : String(
+      opts.detail instanceof Error ? opts.detail.message : typeof opts.detail === 'string' ? opts.detail : JSON.stringify(opts.detail)
+    ).slice(0, 2000);
+    // alerted=true de entrada: esta función avisa aquí mismo, así que el barrido
+    // de pendientes no debe volver a mandarlo.
+    await db()`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, ${source}, ${opts.orderId ?? null}, ${message.slice(0, 300)}, ${detail}, true)`;
+    if (level === 'error') await alertOnce(source, message, detail);
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
+}
+
+/**
+ * Email the shop about an error — at most once per hour per source, because a
+ * provider being down for an afternoon must not turn into 200 emails (and into
+ * alerts nobody reads any more).
+ */
+async function alertOnce(source: string, message: string, detail: string | null): Promise<void> {
+  if (!ALERT_TO) return;
+  const gate = await rateLimit(`alert:${source}`, 1, 60 * 60 * 1000);
+  if (!gate.ok) return;
+  try {
+    await sendEmail(
+      ALERT_TO,
+      `⚠ ${SHOP_NAME}: problema en ${source}`,
+      `Se ha registrado un error en la tienda.\n\nDónde: ${source}\nQué: ${message}\n` +
+        (detail ? `Detalle: ${detail}\n` : '') +
+        `\nPuedes ver el registro completo en ${PUBLIC_URL}/#admin/registro\n\n` +
+        'No se enviará otro aviso de este mismo apartado durante una hora.'
+    );
+  } catch (e) {
+    console.error('[alert] no se pudo avisar', e);
+  }
+}
+
+/**
+ * Send the alerts left behind by the OTHER functions.
+ *
+ * api/redsys-notify, api/presign and friends record events but cannot email: the
+ * mail transport lives here and duplicating it into five files is how the schema
+ * ended up scattered in the first place. So they write the row and this picks it
+ * up. The trigger is the orders list, which the counter tablet polls every 15
+ * seconds — in practice that is a heartbeat all through opening hours.
+ *
+ * Grouped into ONE email: five failed payment notifications are one problem.
+ */
+async function flushPendingAlerts(): Promise<void> {
+  try {
+    const rows = (await db()`
+      select id::float8 as id, source, message, detail from events
+       where not alerted and level = 'error'
+       order by id limit 10`) as { id: number; source: string; message: string; detail: string | null }[];
+    if (rows.length === 0) return;
+    // Marcar SIEMPRE, aunque el correo falle: es un aviso, no un pedido, y
+    // preferimos perder uno antes que reintentarlo cada 15 segundos para siempre.
+    //
+    // Por id, no por lista de ids: pasar un array como parámetro depende de cómo
+    // lo serialice el driver, y la inferencia de tipos de Postgres ya nos ha
+    // tumbado la tienda tres veces. Como leemos los 10 primeros en orden de id,
+    // "hasta este id" es exactamente ese conjunto.
+    const maxId = rows[rows.length - 1].id;
+    await db()`update events set alerted = true
+                where not alerted and level = 'error' and id <= ${maxId}::bigint`;
+    if (!ALERT_TO) return;
+    const gate = await rateLimit('alert:pendientes', 1, 60 * 60 * 1000);
+    if (!gate.ok) return;
+    await sendEmail(
+      ALERT_TO,
+      `⚠ ${SHOP_NAME}: ${rows.length === 1 ? 'un problema' : `${rows.length} problemas`} en la tienda`,
+      'Se han registrado estos errores:\n\n' +
+        rows
+          .map((r) => `• [${r.source}] ${r.message}${r.detail ? `\n  ${r.detail.slice(0, 300)}` : ''}`)
+          .join('\n') +
+        `\n\nRegistro completo: ${PUBLIC_URL}/#admin/registro\n`
+    );
+  } catch (e) {
+    console.error('[alert] barrido de pendientes', e);
+  }
 }
 
 // ── R2 access (shared by the retention sweeps) ───────────────────────
@@ -906,6 +1020,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // the panel instead of going into the storage dashboard by hand. Each row says
       // whether it belongs to an order: deleting one that does leaves that order
       // unprintable, so it must be visible before clicking.
+      // Event log, newest first, cursor-paginated over the whole history (the id
+      // is a bigserial, so it is a total order and the cursor can't skip rows).
+      // `counts` comes from a GROUP BY so the tab badges match the whole log and
+      // not just the page on screen.
+      if (req.query.events !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const lim = Math.min(Math.max(Number(queryStr(req, 'limit')) || 50, 1), 200);
+        const beforeId = Number(queryStr(req, 'beforeId')) || 0;
+        const level = queryStr(req, 'level');
+        const wanted = level === 'error' || level === 'warn' || level === 'info' ? level : '';
+        const rows = (await sql`
+          select id::float8 as id, at::float8 as at, level, source, order_id as "orderId", message, detail
+            from events
+           where (${beforeId}::bigint = 0 or id < ${beforeId}::bigint)
+             and (${wanted}::text = '' or level = ${wanted}::text)
+           order by id desc
+           limit ${lim}`) as { id: number }[];
+        const counts = (await sql`
+          select level, count(*)::int as n from events group by level`) as { level: string; n: number }[];
+        const tally = { error: 0, warn: 0, info: 0 };
+        for (const c of counts) if (c.level in tally) tally[c.level as keyof typeof tally] = c.n;
+        return res.status(200).json({
+          events: rows,
+          counts: tally,
+          nextCursor: rows.length === lim && rows[rows.length - 1] ? rows[rows.length - 1].id : null,
+        });
+      }
       if (req.query.files !== undefined) {
         if (!requireAdmin(req, res)) return;
         const lim = Math.min(Math.max(Number(queryStr(req, 'limit')) || 40, 1), 200);
@@ -1117,6 +1258,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                or customer->>'nombre' ilike ${like} or customer->>'apellidos' ilike ${like})
         group by status, source`) as { status: string; source: string; n: number }[];
       const last = rows[rows.length - 1];
+      // El panel del mostrador consulta esto cada 15 s: aprovechamos ese latido
+      // para sacar los avisos que dejaron las otras funciones. Solo el admin, y
+      // sin await: que un correo lento no retrase la lista de pedidos.
+      if (isAdmin(req)) void flushPendingAlerts();
       return res.status(200).json({
         orders: rows.map(mapRow),
         counts,
@@ -1157,6 +1302,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Second sweep: files that never became an order at all (price checks,
         // abandoned carts). Driven by the upload registry (see api/presign).
         const orphans = await purgeOrphans();
+        // Que quede constancia de cada barrido. El de huérfanos llevaba horas
+        // fallando sin que nadie pudiera saberlo: si vuelve a pasar, se ve aquí.
+        const errors = orders.errors + orphans.errors;
+        await logEvent(
+          errors > 0 ? 'error' : 'info',
+          'limpieza',
+          `Limpieza: ${orders.files} archivos de ${orders.orders} pedidos y ${orphans.deleted} huérfanos` +
+            (errors > 0 ? ` — ${errors} no se pudieron borrar` : ''),
+          { detail: { days, orders, orphans } }
+        );
         return res.status(200).json({ ok: true, days, orders, orphans });
       }
 
@@ -1227,6 +1382,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const mismatch =
         source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
+      if (mismatch) {
+        // El servidor cobra su precio, no el del navegador. Si difieren, o el
+        // catálogo cambió con el carrito abierto o alguien tocó la petición.
+        await logEvent('warn', 'precios', `El total del cliente no coincide con el calculado (${String(o.total)} € vs ${serverTotal} €)`, { orderId: o.id });
+      }
+
       const ins = (await sql`
         insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
@@ -1245,7 +1406,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           try {
             await sendOrderMail(c.email, c.nombre ?? '', o.id, serverTotal);
           } catch (e) {
-            console.error('[email]', e); // best-effort, pero visible en logs
+            // Best-effort: el pedido ya está guardado y no se anula porque falle
+            // el correo, pero la tienda tiene que enterarse — un cliente que no
+            // recibe confirmación llama por teléfono.
+            await logEvent('error', 'email', 'No se pudo enviar la confirmación del pedido', { orderId: o.id, detail: e });
           }
         }
       }
@@ -1311,7 +1475,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           if (cust.email) await sendShipMail(cust.email, cust.nombre ?? '', id, `GLS ${g.tracking} — ${GLS_TRACK_URL}${g.tracking}`);
         } catch (e) {
-          console.error('[email]', e); // best-effort, pero visible en logs
+          await logEvent('error', 'email', 'No se pudo enviar el aviso de envío', { orderId: id, detail: e });
         }
         return res.status(200).json({ ok: true, tracking: g.tracking, shippedAt: now, hasLabel: !!g.label, trackUrl: `${GLS_TRACK_URL}${g.tracking}` });
       }
@@ -1327,7 +1491,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             try {
               await sendReadyMail(row.customer.email, row.customer.nombre ?? '', id);
             } catch (e) {
-              console.error('[email]', e); // best-effort, pero visible en logs
+              await logEvent('error', 'email', 'No se pudo enviar el aviso "listo para recoger"', { orderId: id, detail: e });
             }
           }
         } else {
@@ -1345,7 +1509,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const c = r[0]?.customer;
             if (c?.email) await sendShipMail(c.email, c.nombre ?? '', id, body.tracking ?? '');
           } catch (e) {
-            console.error('[email]', e); // best-effort, pero visible en logs
+            await logEvent('error', 'email', 'No se pudo enviar el aviso de envío', { orderId: id, detail: e });
           }
         }
       }
@@ -1398,6 +1562,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
+      // Clear the log. It is diagnostics, not business data, so the shop may empty
+      // it — unlike orders, which is why this is checked before the id.
+      if (req.query.clearEvents !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        await sql`delete from events`;
+        return res.status(200).json({ ok: true });
+      }
       const id = queryId(req);
       if (!id) return res.status(400).json({ error: 'falta id' });
       if (!requireAdmin(req, res)) return; // deleting orders is admin-only
@@ -1407,8 +1578,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
-    if (e instanceof MissingCatalog) return res.status(503).json({ error: e.message });
+    const detailFor = (x: unknown) => (x instanceof Error ? `${x.message}
+${x.stack ?? ''}` : String(x));
+    if (e instanceof MissingCatalog) {
+      await logEvent('error', 'catalogo', 'La tienda no tiene catálogo: no puede calcular precios', { detail: e });
+      return res.status(503).json({ error: e.message });
+    }
     console.error('[orders]', e);
+    // Esto es lo que esta tarde solo se veía abriendo Vercel. Ahora queda en el
+    // registro y avisa por correo: un 500 en pedidos es que la tienda no vende.
+    await logEvent('error', 'pedidos', `${req.method ?? '?'} falló con error del servidor`, { detail: detailFor(e) });
     // Customers get a generic message (no DB internals). The SHOP gets the real
     // one: hiding it from the owner just means nobody can diagnose anything, and
     // there is nothing to protect from someone who already holds the admin token.

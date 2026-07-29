@@ -136,6 +136,35 @@ function ensureSchema(): Promise<void> {
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 const uuid = () => (globalThis.crypto?.randomUUID?.() ?? `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
+
+/**
+ * Record an incident in the shared event log (insert only, no email: the mail
+ * transport lives in api/orders, which sends these out — see flushPendingAlerts).
+ * Best-effort and never throws.
+ */
+async function logEvent(
+  level: 'error' | 'warn' | 'info',
+  message: string,
+  opts: { orderId?: string; detail?: unknown } = {}
+): Promise<void> {
+  try {
+    await db()`
+      create table if not exists events (
+        id bigserial primary key, at bigint not null, level text not null,
+        source text not null, order_id text, message text not null, detail text)`;
+    await db()`alter table events add column if not exists alerted boolean not null default false`;
+    const detail =
+      opts.detail === undefined
+        ? null
+        : String(opts.detail instanceof Error ? opts.detail.message : typeof opts.detail === 'string' ? opts.detail : JSON.stringify(opts.detail)).slice(0, 2000);
+    await db()`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, 'clientes', ${opts.orderId ?? null}, ${message.slice(0, 300)}, ${detail}, false)`;
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
@@ -179,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Best-effort, but LOGGED: a silently dropped welcome email is
           // indistinguishable from a broken email provider.
           console.error('[email] bienvenida', e);
+          await logEvent('error', 'No se pudo enviar el correo de bienvenida', { detail: e });
         }
       }
       return res.status(200).json({ ok: true, id: rows[0]?.id });

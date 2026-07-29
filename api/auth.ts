@@ -259,6 +259,27 @@ async function sessionCustomer(sess: string): Promise<Customer | null> {
   return rows[0] ?? null;
 }
 
+
+/**
+ * Record an incident in the shared event log (insert only, no email: api/orders
+ * sends these out — see flushPendingAlerts). Best-effort and never throws.
+ */
+async function logEvent(level: 'error' | 'warn' | 'info', message: string, detail?: unknown): Promise<void> {
+  try {
+    await db()`
+      create table if not exists events (
+        id bigserial primary key, at bigint not null, level text not null,
+        source text not null, order_id text, message text not null, detail text)`;
+    await db()`alter table events add column if not exists alerted boolean not null default false`;
+    const d = detail === undefined ? null : String(detail instanceof Error ? detail.message : typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 2000);
+    await db()`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, 'acceso', null, ${message.slice(0, 300)}, ${d}, false)`;
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   try {
@@ -317,11 +338,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const now = Date.now();
         await sql`insert into login_tokens (token, code, email, expires_at, used, created_at) values (${tk}, ${code}, ${email}, ${now + LOGIN_TTL}, false, ${now})`;
         const link = `${PUBLIC_URL}/#acceder/${tk}`;
-        await sendMail(
-          email,
-          `Acceso a tu cuenta · ${SHOP_NAME}`,
-          `Hola ${cust[0].nombre}:\n\nEntra con este enlace (caduca en 30 minutos):\n${link}\n\nO usa este código para continuar en la web:\n${code}\n\nSi no lo has pedido, ignora este correo.\n\n${SHOP_NAME}`
-        );
+        try {
+          await sendMail(
+            email,
+            `Acceso a tu cuenta · ${SHOP_NAME}`,
+            `Hola ${cust[0].nombre}:\n\nEntra con este enlace (caduca en 30 minutos):\n${link}\n\nO usa este código para continuar en la web:\n${code}\n\nSi no lo has pedido, ignora este correo.\n\n${SHOP_NAME}`
+          );
+        } catch (e) {
+          // Sin este correo el cliente no puede entrar en su cuenta. Se lo decimos
+          // claro (antes salía un 500 sin explicación) y queda registrado.
+          await logEvent('error', 'No se pudo enviar el correo de acceso: hay clientes que no pueden entrar', e);
+          return res.status(502).json({
+            error: 'No hemos podido enviarte el correo de acceso. Inténtalo en unos minutos o llámanos y te ayudamos.',
+          });
+        }
       }
       return res.status(200).json({ ok: true });
     }

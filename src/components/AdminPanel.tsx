@@ -80,6 +80,7 @@ type AdminSection =
   | 'legal'
   | 'asistente'
   | 'almacenamiento'
+  | 'registro'
   | 'herramientas';
 
 /** Reads the section from `#admin/<section>` and follows navigation. */
@@ -102,6 +103,8 @@ import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE, apiSend } from '../lib/api';
 import { AdminNav } from './AdminNav';
+import { LogViewer } from './LogViewer';
+import { fetchEvents } from '../lib/statsApi';
 import { downloadBackup, downloadDbExport, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
@@ -122,6 +125,15 @@ export function AdminPanel() {
   const [draft, setDraft] = useState<Catalog>(() => structuredClone(catalog));
   const [dirty, setDirty] = useState(false);
   const section = useSection();
+  // Error count for the dashboard tile. A log only helps if you notice it without
+  // opening it, so the badge does the noticing.
+  const [logErrors, setLogErrors] = useState<number | null>(null);
+  useEffect(() => {
+    if (!API_BASE || section !== '') return;
+    void fetchEvents('error')
+      .then((page) => setLogErrors(page.counts.error))
+      .catch(() => setLogErrors(null)); // sin registro todavía: la tarjeta no alarma
+  }, [section]);
   const [priceSrc, setPriceSrc] = useState<SourceKey>('online');
   const [slideDir, setSlideDir] = useState<'r' | 'l'>('r');
   const pickSrc = (s: SourceKey) => {
@@ -216,6 +228,13 @@ export function AdminPanel() {
     { id: 'legal', icon: '⚖️', label: 'Legal', hint: legalMissing ? 'faltan datos' : 'textos y consentimientos', warn: legalMissing },
     { id: 'asistente', icon: '✨', label: 'Asistente', hint: draft.assistant?.enabled ? 'activado' : 'desactivado' },
     { id: 'almacenamiento', icon: '🗄️', label: 'Almacenamiento', hint: 'archivos de los clientes' },
+    {
+      id: 'registro',
+      icon: '📋',
+      label: 'Registro',
+      hint: logErrors === null ? 'avisos de la tienda' : logErrors > 0 ? `${logErrors} ${logErrors === 1 ? 'error' : 'errores'}` : 'sin incidencias',
+      warn: (logErrors ?? 0) > 0,
+    },
     { id: 'herramientas', icon: '🧰', label: 'Herramientas', hint: 'copias de seguridad y email' },
   ];
   const current = CARDS.find((c) => c.id === section);
@@ -237,7 +256,7 @@ export function AdminPanel() {
           <>
             <p className="muted">Elige qué quieres configurar.</p>
             <div className="config-grid">
-              {CARDS.filter((c) => API_BASE || (c.id !== 'cupones' && c.id !== 'almacenamiento' && c.id !== 'herramientas')).map((c) => (
+              {CARDS.filter((c) => API_BASE || (c.id !== 'cupones' && c.id !== 'almacenamiento' && c.id !== 'registro' && c.id !== 'herramientas')).map((c) => (
                 <a key={c.id} className={`config-card${c.warn ? ' warn' : ''}`} href={`#admin/${c.id}`}>
                   <span className="config-card-icon" aria-hidden>{c.icon}</span>
                   <span className="config-card-label">{c.label}</span>
@@ -574,6 +593,8 @@ export function AdminPanel() {
         </section>
         </>
         )}
+
+        {section === 'registro' && API_BASE && <LogViewer />}
 
         {section === 'almacenamiento' && API_BASE && (
           <>

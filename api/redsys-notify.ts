@@ -62,6 +62,13 @@ function ensureSchema(): Promise<void> {
           applied boolean not null,
           reason text)`;
       await db()`create index if not exists payment_events_order_idx on payment_events (order_id)`;
+      // Event log. Definido igual que en api/orders: hoy hemos tenido dos caídas
+      // por leer una tabla que solo creaba otra función.
+      await db()`
+        create table if not exists events (
+          id bigserial primary key, at bigint not null, level text not null,
+          source text not null, order_id text, message text not null, detail text)`;
+      await db()`alter table events add column if not exists alerted boolean not null default false`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -115,6 +122,37 @@ export function decideNotification(
   return { pay: true, reason: 'autorizado' };
 }
 
+/**
+ * Record an incident in the shared event log.
+ *
+ * Insert only, no email: the mail transport lives in api/orders, and duplicating
+ * it into five functions is exactly how the schema ended up scattered across the
+ * codebase. Rows land with alerted=false and api/orders sends them out.
+ *
+ * Never throws — and in particular never turns a payment notification into a 500,
+ * because Redsys would then retry a notification we already applied.
+ */
+async function logEvent(
+  level: 'error' | 'warn' | 'info',
+  message: string,
+  opts: { orderId?: string; detail?: unknown } = {}
+): Promise<void> {
+  try {
+    await ensureSchema();
+    const detail =
+      opts.detail === undefined
+        ? null
+        : String(
+            opts.detail instanceof Error ? opts.detail.message : typeof opts.detail === 'string' ? opts.detail : JSON.stringify(opts.detail)
+          ).slice(0, 2000);
+    await db()`
+      insert into events (at, level, source, order_id, message, detail, alerted)
+      values (${Date.now()}, ${level}, 'cobros', ${opts.orderId ?? null}, ${message.slice(0, 300)}, ${detail}, false)`;
+  } catch (e) {
+    console.error('[events] no se pudo registrar', e);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).send('method not allowed');
   try {
@@ -132,6 +170,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Verify the signature FIRST: everything below trusts these values.
     if (norm(sign(paramsB64, dsOrder)) !== norm(sigReceived)) {
       console.error('[redsys] firma no válida', { dsOrder });
+      // Alguien ha mandado una notificación de pago sin la clave. Puede ser una
+      // prueba, o puede ser un intento de marcar pedidos como pagados.
+      await logEvent('error', 'Notificación de pago con firma no válida (se ha rechazado)', { detail: { dsOrder } });
       return res.status(403).send('firma no válida');
     }
 
@@ -167,6 +208,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Loud, because these are the cases someone has to look at: a denial is
       // normal, but a mismatched amount is either an attack or our own bug.
       console.error('[redsys] notificación NO aplicada', { orderId, dsOrder, reason: decision.reason });
+      // Un rechazo del banco es normal y no es noticia; que no cuadre el importe
+      // o que no exista el pedido sí lo es: o es un ataque o es un fallo nuestro.
+      const routine = /denegad|rechazad/i.test(decision.reason ?? '');
+      await logEvent(routine ? 'info' : 'error', `Cobro no aplicado: ${decision.reason ?? 'sin motivo'}`, {
+        orderId: orderId ?? undefined,
+        detail: { dsOrder },
+      });
     }
 
     // Log it either way — applied or not.
@@ -182,6 +230,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // A 500 DOES make Redsys retry, which is what we want for a transient failure
     // (e.g. the database being briefly unavailable): the payment is not lost.
     console.error('[redsys] error procesando la notificación', e);
+    // Redsys reintentará, pero si el fallo persiste el cliente ha pagado y el
+    // pedido no lo refleja: es lo más urgente que puede pasar en esta tienda.
+    await logEvent('error', 'Error procesando una notificación de pago (el cliente puede haber pagado)', { detail: e });
     return res.status(500).send('error');
   }
 }
