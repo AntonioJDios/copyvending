@@ -11,6 +11,7 @@ import { downloadGlsLabel, glsTrackUrl } from '../lib/glsLabel';
 import { DEFAULT_BUSINESS, DEFAULT_VAT_PERCENT } from '../domain/catalog';
 import { AdminLogoutButton } from './AdminLogoutButton';
 import { CartDocsPreview } from './CartProjectCard';
+import { useStoredImage } from '../lib/thumbs';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -42,6 +43,16 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Mug/badge preview: from storage when available, inline for older orders. */
+function ProductPreview({ item }: { item: Exclude<CartProject, { kind: 'copias' }> }) {
+  const url = useStoredImage(item.previewKey, item.storageToken, item.preview);
+  return (
+    <div className={`cart-product-preview${item.kind === 'chapa' ? ' round' : ''}`}>
+      <img src={url} alt="" />
+    </div>
+  );
+}
+
 function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: string; editable: boolean }) {
   const isCopias = item.kind === 'copias';
   const catalog = useConfigurator((s) => s.catalog);
@@ -64,9 +75,7 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
         {isCopias ? (
           <CartDocsPreview project={item} />
         ) : (
-          <div className={`cart-product-preview${item.kind === 'chapa' ? ' round' : ''}`}>
-            <img src={item.preview} alt="" />
-          </div>
+          <ProductPreview item={item} />
         )}
       </div>
       <div className="ord-item-info">

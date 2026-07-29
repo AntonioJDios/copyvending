@@ -194,6 +194,7 @@ export const useConfigurator = create<ConfiguratorState>()((set) => ({
         name: d.name,
         pages: d.pages,
         thumb: d.thumb,
+        thumbKey: d.thumbKey,
         color: d.color,
         storageKey: d.storageKey,
         uploadStatus: d.storageKey ? ('done' as const) : undefined,

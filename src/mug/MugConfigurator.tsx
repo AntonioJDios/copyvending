@@ -9,6 +9,7 @@ import { CartButton } from '../components/CartButton';
 import { AccountButton } from '../components/AccountButton';
 import { uploadService } from '../lib/uploads';
 import { dataUrlToFile, downscaleDataUrl } from '../lib/imageDownscale';
+import { uploadThumb } from '../lib/thumbs';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -51,7 +52,20 @@ export function MugConfigurator() {
       const file = await dataUrlToFile(textureUrl, 'taza.png');
       const { key, token } = await uploadService.upload(file, { projectId: id });
       const preview = await downscaleDataUrl(snapshot, 480);
-      addToCart({ id, kind: 'taza', nombre, preview, printImageKey: key, storageToken: token, cantidad, total: price * cantidad });
+      // The preview goes to storage too: keeping it inline would put a ~50 KB
+      // image inside the order row (see lib/thumbs).
+      const previewKey = await uploadThumb(preview, id, 'taza-preview.jpg');
+      addToCart({
+        id,
+        kind: 'taza',
+        nombre,
+        previewKey: previewKey ?? undefined,
+        preview: previewKey ? undefined : preview,
+        printImageKey: key,
+        storageToken: token,
+        cantidad,
+        total: price * cantidad,
+      });
       setOriginalUrl(null);
       setTextureUrl(null);
       setNombre('');

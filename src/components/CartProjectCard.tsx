@@ -1,5 +1,6 @@
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 import type { Configuracion } from '../domain/types';
+import { useStoredImage } from '../lib/thumbs';
 import { useCart, type CartDoc, type CartProject, type CopiasProject } from '../store/useCart';
 import { useConfigurator } from '../store/useConfigurator';
 import { deleteProjectFiles } from '../lib/projectFiles';
@@ -32,6 +33,7 @@ function MiniDoc({
   showBinding,
   pages,
   grouped = false,
+  storageToken,
 }: {
   doc?: CartDoc;
   config: Configuracion;
@@ -40,7 +42,11 @@ function MiniDoc({
   showBinding: boolean;
   pages: number;
   grouped?: boolean;
+  /** Project capability token, needed to read the thumbnail from storage. */
+  storageToken?: string;
 }) {
+  // Prefer the stored thumbnail; older orders still carry it inline.
+  const thumbUrl = useStoredImage(doc?.thumbKey, storageToken, doc?.thumb);
   const long = config.ladoEncuadernacion === 'largo';
   const pageInColor = config.color === 'Color' || doc?.color === 'all' || doc?.color === 'cover';
 
@@ -69,8 +75,8 @@ function MiniDoc({
       <div className="doc-page">
         {showBinding && <PeekBehind acabado={config.acabado} coverHex={coverHex} foliosDetras={config.foliosDetras} depth={depth} />}
         <div className="doc-clip" style={{ boxShadow: stackShadow }}>
-          {doc?.thumb ? (
-            <img src={doc.thumb} alt="" draggable={false} style={{ filter: pageInColor ? 'none' : 'grayscale(1)' }} />
+          {thumbUrl ? (
+            <img src={thumbUrl} alt="" draggable={false} style={{ filter: pageInColor ? 'none' : 'grayscale(1)' }} />
           ) : (
             <div className="file-noimg" />
           )}
@@ -106,7 +112,7 @@ export function CartDocsPreview({ project }: { project: CopiasProject }) {
   return (
     <div className={`cart-docs${stacked ? ' stacked' : ''}`}>
       {combined ? (
-        <MiniDoc doc={docs.find((d) => d.thumb) ?? docs[0]} config={config} ringHex={ringHex} coverHex={coverHex} showBinding pages={totalPages} grouped />
+        <MiniDoc doc={docs.find((d) => d.thumbKey || d.thumb) ?? docs[0]} config={config} ringHex={ringHex} coverHex={coverHex} showBinding pages={totalPages} grouped storageToken={project.storageToken} />
       ) : (
         docs.slice(0, MAX_VISIBLE).map((d, i) => (
           <div
@@ -114,7 +120,7 @@ export function CartDocsPreview({ project }: { project: CopiasProject }) {
             className="cart-doc-slot"
             style={stacked ? { marginLeft: i ? -42 : 0, marginTop: i * 9, zIndex: i } : undefined}
           >
-            <MiniDoc doc={d} config={config} ringHex={ringHex} coverHex={coverHex} showBinding={bound} pages={d.pages} />
+            <MiniDoc doc={d} config={config} ringHex={ringHex} coverHex={coverHex} showBinding={bound} pages={d.pages} storageToken={project.storageToken} />
           </div>
         ))
       )}
@@ -133,6 +139,7 @@ export function CartProjectCard({ project, onEditDone }: { project: CartProject;
 function ProductCard({ project }: { project: Exclude<CartProject, CopiasProject> }) {
   const remove = useCart((s) => s.remove);
   const isChapa = project.kind === 'chapa';
+  const previewUrl = useStoredImage(project.previewKey, project.storageToken, project.preview);
   const fallback = isChapa ? 'Chapa personalizada' : 'Taza personalizada';
   const summary = isChapa
     ? `Ø ${project.sizeMm} mm · ${project.back}`
@@ -141,7 +148,7 @@ function ProductCard({ project }: { project: Exclude<CartProject, CopiasProject>
   return (
     <div className="cart-item">
       <div className={`cart-product-preview${isChapa ? ' round' : ''}`}>
-        <img src={project.preview} alt="" />
+        <img src={previewUrl} alt="" />
       </div>
       <div className="cart-item-info">
         <strong className="cart-item-name">{project.nombre.trim() || fallback}</strong>

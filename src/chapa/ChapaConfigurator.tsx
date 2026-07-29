@@ -9,6 +9,7 @@ import { CartButton } from '../components/CartButton';
 import { AccountButton } from '../components/AccountButton';
 import { uploadService } from '../lib/uploads';
 import { dataUrlToFile, downscaleDataUrl } from '../lib/imageDownscale';
+import { uploadThumb } from '../lib/thumbs';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
@@ -54,11 +55,14 @@ export function ChapaConfigurator() {
       const file = await dataUrlToFile(imageUrl, 'chapa.png');
       const { key, token } = await uploadService.upload(file, { projectId: id });
       const preview = await downscaleDataUrl(imageUrl, 480);
+      // Preview to storage as well, so the order row stays small (lib/thumbs).
+      const previewKey = await uploadThumb(preview, id, 'chapa-preview.jpg');
       addToCart({
         id,
         kind: 'chapa',
         nombre,
-        preview,
+        previewKey: previewKey ?? undefined,
+        preview: previewKey ? undefined : preview,
         printImageKey: key,
         storageToken: token,
         back: backLabel,

@@ -48,6 +48,8 @@ export interface DocFile {
   pages: number;
   /** Thumbnail data URL (page 1). */
   thumb?: string;
+  /** Storage key of the uploaded thumbnail (set once the file is uploaded). */
+  thumbKey?: string;
   /** Source file, kept in memory so other pages can be rendered on demand. */
   source?: File;
   /** 'no' = B/N, 'cover' = only cover in color, 'all' = whole doc in color. */

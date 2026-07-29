@@ -6,6 +6,10 @@ export interface CartDoc {
   id: string;
   name: string;
   pages: number;
+  /** Storage key of the preview image. Preferred over `thumb`: keeps the order
+   *  row small (see lib/thumbs). */
+  thumbKey?: string;
+  /** Inline preview of older orders, kept so they still render. */
   thumb?: string;
   color: DocFile['color'];
   /** Storage key of the uploaded file (so the shop can fetch it to print). */
@@ -38,8 +42,10 @@ export interface CopiasProject extends CartBase {
 /** A personalised mug. */
 export interface TazaProject extends CartBase {
   kind: 'taza';
-  /** Small display preview (downscaled data URL) — e.g. the 3D render snapshot. */
-  preview: string;
+  /** Storage key of the display preview (the 3D render snapshot). */
+  previewKey?: string;
+  /** Inline preview of older orders, kept so they still render. */
+  preview?: string;
   /** Storage key of the print-ready edited artwork (full-res, in R2/local). */
   printImageKey?: string;
   /** Legacy inline artwork (older orders); prefer printImageKey. */
@@ -50,7 +56,10 @@ export interface TazaProject extends CartBase {
 /** A personalised badge/pin. */
 export interface ChapaProject extends CartBase {
   kind: 'chapa';
-  preview: string;
+  /** Storage key of the display preview. */
+  previewKey?: string;
+  /** Inline preview of older orders, kept so they still render. */
+  preview?: string;
   /** Storage key of the print-ready edited artwork (full-res, in R2/local). */
   printImageKey?: string;
   /** Legacy inline artwork (older orders); prefer printImageKey. */

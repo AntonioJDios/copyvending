@@ -11,6 +11,7 @@ import { hasBackend } from '../lib/api';
 import type { Configuracion, DocFile } from '../domain/types';
 import type { Catalog } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
+import { uploadThumb } from '../lib/thumbs';
 import { SpiralBinding } from './SpiralBinding';
 import { PeekBehind, PeekFront } from './DocPeeks';
 
@@ -363,11 +364,18 @@ export function FileGrid() {
       for (const { doc, file } of started) {
         uploadService
           .upload(file, { projectId: proyectoId, onProgress: (p) => patchFile(doc.id, { uploadProgress: p }) })
-          .then(({ key, token }) => {
+          .then(async ({ key, token }) => {
             // Keep the project's capability token: it's what lets us read or
             // delete these files afterwards.
             setProyectoToken(token);
             patchFile(doc.id, { uploadStatus: 'done', uploadProgress: 1, storageKey: key });
+            // The preview goes to storage too, so the order row stays small.
+            // Best-effort: a failure here just leaves the inline thumbnail.
+            const thumb = useConfigurator.getState().files.find((f) => f.id === doc.id)?.thumb;
+            if (thumb) {
+              const thumbKey = await uploadThumb(thumb, proyectoId, `thumb-${doc.name}.jpg`);
+              if (thumbKey) patchFile(doc.id, { thumbKey });
+            }
           })
           .catch((e: unknown) => patchFile(doc.id, { uploadStatus: 'error', uploadError: e instanceof Error ? e.message : 'Error' }));
       }

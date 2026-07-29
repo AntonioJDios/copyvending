@@ -33,7 +33,17 @@ export function PriceBar() {
     // Travels with the project so its files stay readable/deletable later.
     storageToken: proyectoToken,
     config: { ...config },
-    docs: fileList.map((f) => ({ id: f.id, name: f.name, pages: f.pages, thumb: f.thumb, color: f.color, storageKey: f.storageKey })),
+    // Only the KEY travels with the order; the inline data URL is kept only
+    // when the upload didn't happen (local mode or a failed upload).
+    docs: fileList.map((f) => ({
+      id: f.id,
+      name: f.name,
+      pages: f.pages,
+      thumbKey: f.thumbKey,
+      thumb: f.thumbKey ? undefined : f.thumb,
+      color: f.color,
+      storageKey: f.storageKey,
+    })),
     copias,
     comentario,
     colorAnillas,
