@@ -33,6 +33,9 @@ export interface Order {
    *  the customer was informed of the withdrawal-right exclusion before buying. */
   termsVersion?: string;
   termsAcceptedAt?: number;
+  /** When the customer's files were deleted from storage (retention). The order
+   *  itself is kept; only the documents are gone. */
+  filesPurgedAt?: number;
   /** Payment reconciliation, filled by the Redsys notification: when it was paid,
    *  the bank's authorisation code, the Redsys order reference (what you search for
    *  in their portal) and the amount actually charged, in cents. */

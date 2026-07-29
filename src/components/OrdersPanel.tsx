@@ -165,6 +165,11 @@ function OrderCard({ order }: { order: Order }) {
           <span className={`status-pill st-${order.status}`}>{STATUS_LABEL[order.status]}</span>
           <span className={`pay-pill ${order.paid ? 'pay-yes' : 'pay-no'}`}>{order.paid ? '💶 Pagado' : '⏳ Pendiente'}</span>
           {order.shippingMethod === 'envio' && order.shippedAt && <span className="pay-pill pay-yes">🚚 Enviado</span>}
+          {order.filesPurgedAt && (
+            <span className="pay-pill" title={`Los archivos del cliente se borraron el ${new Date(order.filesPurgedAt).toLocaleDateString('es-ES')} por la política de conservación. El pedido se conserva.`}>
+              🗑 Archivos borrados
+            </span>
+          )}
           {order.priceMismatch && (
             <span className="price-flag" title="El precio enviado por el cliente no coincidía con el recalculado en el servidor. Se muestra el del servidor.">
               ⚠ precio recalculado
@@ -363,6 +368,13 @@ export function OrdersPanel() {
         } catch {
           /* no backend / no Gmail configured → ignore */
         }
+      }
+      // Retention sweep: costs one query that returns nothing when there is
+      // nothing old enough to purge.
+      try {
+        await apiSend('POST', '/orders?purge=1');
+      } catch {
+        /* best-effort housekeeping; never block the panel */
       }
       await fetchOrders();
     } finally {

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { AwsClient } from 'aws4fetch';
 import nodemailer from 'nodemailer';
 import { createHmac, timingSafeEqual } from 'crypto';
 
@@ -418,6 +419,10 @@ function ensureSchema(): Promise<void> {
       // were informed beforehand, so this is the evidence of it.
       await db()`alter table orders add column if not exists terms_version text`;
       await db()`alter table orders add column if not exists terms_accepted_at bigint`;
+      // When the customer's files were purged from storage. The ORDER stays (it is
+      // the sales record: statistics, the 303 summary and coupon-usage counts all
+      // read from it); only the documents go.
+      await db()`alter table orders add column if not exists files_purged_at bigint`;
     })().catch((e) => {
       _ready = null;
       throw e;
@@ -507,6 +512,82 @@ export function applySource(cat: PriceCatalog, source: string): PriceCatalog {
     ringColors: (cat.ringColors ?? []).map((c) => ({ ...c, extra: o.ringExtras?.[c.name] ?? c.extra })),
     coverColors: (cat.coverColors ?? []).map((c) => ({ ...c, extra: o.coverExtras?.[c.name] ?? c.extra })),
   };
+}
+
+// ── File retention ───────────────────────────────────────────────────
+/**
+ * Delete the customer's uploaded files once an order is finished and old enough.
+ *
+ * Deletes FILES, never the order: the row is the sales record (statistics, the
+ * quarterly VAT summary and the coupon-usage counts are all derived from it) and
+ * has to be kept for years for tax purposes. What must not be kept forever are
+ * other people's documents — that is both a storage cost and a GDPR obligation.
+ *
+ * "Finished" = delivered, or shipped, or ready for pickup (`listo`), because at
+ * that point the job is printed and the file is no longer needed.
+ */
+const RETENTION_DAYS = Number(process.env.FILE_RETENTION_DAYS) || 10;
+
+/** Every storage key an order item references. */
+function itemKeys(item: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.startsWith('jobs/')) keys.push(v);
+  };
+  push(item.printImageKey);
+  push(item.previewKey);
+  const docs = Array.isArray(item.docs) ? (item.docs as Record<string, unknown>[]) : [];
+  for (const d of docs) {
+    push(d?.storageKey);
+    push(d?.thumbKey);
+  }
+  return keys;
+}
+
+async function purgeOldFiles(days = RETENTION_DAYS): Promise<{ orders: number; files: number; errors: number }> {
+  const cutoff = Date.now() - days * 86400000;
+  const rows = (await db()`
+    select id, items from orders
+     where files_purged_at is null
+       and created_at < ${cutoff}
+       and (status in ('listo', 'entregado') or shipped_at is not null)
+     limit 200`) as { id: string; items: Record<string, unknown>[] }[];
+  if (rows.length === 0) return { orders: 0, files: 0, errors: 0 };
+
+  const client = new AwsClient({
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  });
+  const account = process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3';
+  const bucket = process.env.R2_BUCKET || 'copyvending';
+  const base = `https://${account}.r2.cloudflarestorage.com/${bucket}`;
+
+  let files = 0;
+  let errors = 0;
+  for (const row of rows) {
+    const items = Array.isArray(row.items) ? row.items : [];
+    const keys = items.flatMap(itemKeys);
+    let ok = true;
+    for (const key of keys) {
+      try {
+        const signed = await client.sign(`${base}/${key}`, { method: 'DELETE', aws: { signQuery: true } });
+        const res = await fetch(signed.url, { method: 'DELETE' });
+        // 404 means it is already gone, which is the state we want anyway.
+        if (res.ok || res.status === 404) files++;
+        else {
+          ok = false;
+          errors++;
+        }
+      } catch {
+        ok = false;
+        errors++;
+      }
+    }
+    // Only mark it purged if everything went; otherwise it is retried next time
+    // instead of leaving orphan files nobody will ever look at again.
+    if (ok) await db()`update orders set files_purged_at = ${Date.now()} where id = ${row.id}`;
+  }
+  return { orders: rows.length, files, errors };
 }
 
 // ── Coupons ─────────────────────────────────────────────────────────
@@ -603,6 +684,7 @@ interface OrderRow {
   tracking?: string | null; shipped_at?: string | number | null; has_label?: boolean;
   coupon_code?: string | null; coupon_discount?: string | number | null;
   terms_version?: string | null; terms_accepted_at?: string | number | null;
+  files_purged_at?: string | number | null;
   paid_at?: string | number | null; payment_auth_code?: string | null;
   payment_ref?: string | null; payment_amount_cents?: string | number | null;
 }
@@ -615,6 +697,7 @@ function mapRow(r: OrderRow) {
     tracking: r.tracking ?? undefined, shippedAt: r.shipped_at != null ? Number(r.shipped_at) : undefined,
     hasLabel: !!r.has_label,
     couponCode: r.coupon_code ?? undefined, couponDiscount: r.coupon_discount != null ? Number(r.coupon_discount) : undefined,
+    filesPurgedAt: r.files_purged_at != null ? Number(r.files_purged_at) : undefined,
     termsVersion: r.terms_version ?? undefined,
     termsAcceptedAt: r.terms_accepted_at != null ? Number(r.terms_accepted_at) : undefined,
     paidAt: r.paid_at != null ? Number(r.paid_at) : undefined,
@@ -773,7 +856,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         const rows = (await sql`
-          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
+          select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
           from orders where id = ${id}`) as OrderRow[];
         if (rows.length === 0) return res.status(404).json({ error: 'pedido no encontrado' });
         return res.status(200).json(mapRow(rows[0]));
@@ -781,12 +864,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Full list exposes every customer's data → admin only.
       if (!requireAdmin(req, res)) return;
       const rows = (await sql`
-        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
+        select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
         from orders order by created_at desc limit 2000`) as OrderRow[];
       return res.status(200).json(rows.map(mapRow));
     }
 
     if (req.method === 'POST') {
+      // Retention sweep: delete the files of finished orders older than the
+      // retention window. The orders themselves are never touched.
+      if (req.query.purge !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const q = Array.isArray(req.query.days) ? req.query.days[0] : req.query.days;
+        const days = Number(q) > 0 ? Number(q) : RETENTION_DAYS;
+        const r = await purgeOldFiles(days);
+        return res.status(200).json({ ok: true, days, ...r });
+      }
+
       const o = req.body as {
         id?: string; createdAt?: number; source?: string; customer?: unknown;
         items?: Record<string, unknown>[]; total?: number; status?: string;
@@ -855,7 +948,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         source !== 'email' && Math.round((Number(o.total) || 0) * 100) !== Math.round(serverTotal * 100);
 
       const ins = (await sql`
-        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents)
+        insert into orders (id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents)
         values (${o.id}, ${o.createdAt ?? Date.now()}, ${source},
                 ${JSON.stringify(o.customer ?? {})}::jsonb, ${JSON.stringify(pricedItems)}::jsonb,
                 ${serverTotal}, ${state.status}, ${mismatch}, ${state.paid}, ${state.paymentMethod},
