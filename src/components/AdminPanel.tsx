@@ -3,7 +3,7 @@ import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSetting
 import { loadCoupons, saveCoupons } from '../lib/coupons';
 import { NEW_COUPON, type Coupon, type CouponType } from '../domain/coupons';
 import { monthWindow, pivotCouponAgg, type CouponAnalytics } from '../lib/stats';
-import { fetchCouponAgg, fetchStorage, runPurge, type StorageReport as StorageReportData } from '../lib/statsApi';
+import { deleteStoredFile, fetchCouponAgg, fetchFiles, fetchStorage, runPurge, type StoredFile, type StorageReport as StorageReportData } from '../lib/statsApi';
 import {
   ALL_FINISHES,
   ALL_FOLIOS,
@@ -102,7 +102,7 @@ import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE, apiSend } from '../lib/api';
 import { AdminNav } from './AdminNav';
-import { downloadBackup, parseBackup, restoreBackup } from '../lib/catalogBackup';
+import { downloadBackup, downloadDbExport, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -575,7 +575,12 @@ export function AdminPanel() {
         </>
         )}
 
-        {section === 'almacenamiento' && API_BASE && <StorageReport />}
+        {section === 'almacenamiento' && API_BASE && (
+          <>
+            <StorageReport />
+            <FileList />
+          </>
+        )}
 
         {section === 'herramientas' && API_BASE && (
           <>
@@ -796,6 +801,98 @@ function StorageReport() {
 }
 
 /**
+ * Paginated list of stored files, with per-file deletion.
+ *
+ * Each row says whether an order references the file, because deleting one that
+ * does leaves that order unprintable — the shop has to see that before clicking,
+ * not discover it when a customer asks for a reprint.
+ */
+function FileList() {
+  const [files, setFiles] = useState<StoredFile[]>([]);
+  const [cursor, setCursor] = useState<{ at: number; key: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState('');
+  const [err, setErr] = useState('');
+
+  const load = (next?: { at: number; key: string } | null) => {
+    setLoading(true);
+    fetchFiles(next)
+      .then((r) => {
+        if (!r) return;
+        setFiles((prev) => (next ? [...prev, ...r.files] : r.files));
+        setCursor(r.nextCursor);
+      })
+      .catch(() => setErr('No se pudo cargar la lista de archivos.'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => load(), []);
+
+  const del = async (f: StoredFile) => {
+    const warn = f.inOrder
+      ? '\n\n⚠ Este archivo PERTENECE A UN PEDIDO. Si lo borras, ese pedido ya no se podrá imprimir.'
+      : '';
+    if (!window.confirm(`¿Borrar este archivo de forma permanente?${warn}`)) return;
+    setBusyKey(f.key);
+    setErr('');
+    try {
+      await deleteStoredFile(f.key);
+      setFiles((prev) => prev.filter((x) => x.key !== f.key));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo borrar.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  // The stored name is a uuid; what identifies the file for a human is its date,
+  // its size and which order it belongs to.
+  const shortName = (key: string) => key.split('/').pop() ?? key;
+
+  return (
+    <section className="card">
+      <h2>Archivos guardados</h2>
+      <p className="muted">
+        Los más recientes primero. Los que pertenecen a un pedido están <b>protegidos</b>: hacen falta para reimprimirlo
+        y solo se borran desde el propio pedido. Los que no pertenecen a ninguno (alguien subió algo y no llegó a pedir)
+        se pueden borrar aquí.
+      </p>
+      {err && <p className="admin-login-err">⚠ {err}</p>}
+      {files.length === 0 && !loading ? (
+        <p className="muted">No hay archivos registrados.</p>
+      ) : (
+        <div className="file-rows">
+          {files.map((f) => (
+            <div key={f.key} className="file-row">
+              <span className="file-row-main">
+                <b>{new Date(f.at).toLocaleString('es-ES')}</b>
+                <span className="muted">{shortName(f.key)}</span>
+              </span>
+              <span className="muted">{humanBytes(f.size || 0)}</span>
+              <span className={f.inOrder ? 'file-row-tag' : 'muted'}>{f.inOrder ? 'de un pedido' : 'sin pedido'}</span>
+              {f.inOrder ? (
+                <span className="muted" title="Pertenece a un pedido. Para borrarlo, hazlo desde el pedido.">
+                  protegido
+                </span>
+              ) : (
+                <button type="button" className="chip chip-danger" disabled={busyKey === f.key} onClick={() => void del(f)}>
+                  {busyKey === f.key ? '…' : 'Borrar'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {loading && <p className="muted">Cargando…</p>}
+      {cursor && !loading && (
+        <button type="button" className="btn" onClick={() => load(cursor)}>
+          Ver más archivos
+        </button>
+      )}
+    </section>
+  );
+}
+
+/**
  * Catalog backup. Prices exist ONLY in the database (there are no default prices
  * in the code), so the owner needs a file of their own: without it, losing that
  * row means losing every price with no way back.
@@ -812,6 +909,21 @@ function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void })
     try {
       const name = await downloadBackup();
       setMsg(`Copia descargada: ${name}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'No se pudo exportar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Everything in the database, not just the configuration. */
+  const doFullExport = async () => {
+    setBusy(true);
+    setMsg('');
+    setErr('');
+    try {
+      const name = await downloadDbExport();
+      setMsg(`Copia completa descargada: ${name}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'No se pudo exportar.');
     } finally {
@@ -854,6 +966,9 @@ function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void })
         <button type="button" className="btn btn-primary" onClick={() => void doExport()} disabled={busy}>
           ⬇ Descargar copia (JSON)
         </button>
+        <button type="button" className="btn" onClick={() => void doFullExport()} disabled={busy}>
+          ⬇ Copia completa (todo)
+        </button>
         <label className="btn" style={{ cursor: busy ? 'default' : 'pointer' }}>
           ⬆ Restaurar desde archivo
           <input
@@ -871,8 +986,14 @@ function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void })
       {msg && <p className="muted">✓ {msg}</p>}
       {err && <p className="admin-login-err">⚠ {err}</p>}
       <p className="muted">
-        La copia incluye precios (de todos los canales), perfiles, colores, envíos, datos del negocio y cupones. No
-        incluye la credencial de GLS ni ningún secreto del servidor.
+        <b>Descargar copia</b> guarda la configuración: precios de todos los canales, perfiles, colores, envíos, datos
+        del negocio y cupones. Es la que puedes volver a restaurar aquí. No incluye la credencial de GLS ni ningún
+        secreto del servidor.
+      </p>
+      <p className="muted">
+        <b>Copia completa</b> descarga además <b>todos los pedidos y clientes</b>. Es la que importa si se pierde la base
+        de datos. No se puede restaurar desde el panel (haría falta hacerlo a mano), pero es tu copia de los datos del
+        negocio: guárdala fuera de aquí y renuévala de vez en cuando.
       </p>
     </section>
   );

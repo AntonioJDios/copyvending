@@ -27,6 +27,44 @@ export interface StorageReport {
   top: { project: string; files: number; bytes: number }[];
 }
 
+export interface StoredFile {
+  key: string;
+  project_id: string;
+  size: number;
+  at: number;
+  /** True when an order references it: deleting it makes that order unprintable. */
+  inOrder: boolean;
+}
+
+/** Paginated list of stored files, newest first. Admin-only. */
+export async function fetchFiles(cursor?: { at: number; key: string } | null): Promise<{ files: StoredFile[]; nextCursor: { at: number; key: string } | null } | null> {
+  if (!API_BASE) return null;
+  const t = getAdminToken();
+  const p = new URLSearchParams({ files: '1' });
+  if (cursor) {
+    p.set('before', String(cursor.at));
+    p.set('beforeKey', cursor.key);
+  }
+  const res = await fetch(`${API_BASE}/orders?${p.toString()}`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) return null;
+  return (await res.json()) as { files: StoredFile[]; nextCursor: { at: number; key: string } | null };
+}
+
+/** Delete a single stored file. Admin-only. */
+export async function deleteStoredFile(key: string): Promise<void> {
+  if (!API_BASE) throw new Error('Requiere el backend.');
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/orders?deleteFile=1`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+    body: JSON.stringify({ key }),
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || `Error ${res.status}`);
+  }
+}
+
 /** What is stored, how it grows and what it costs. Admin-only. */
 export async function fetchStorage(): Promise<StorageReport | null> {
   if (!API_BASE) return null;

@@ -1991,6 +1991,43 @@ body {
   align-self: flex-start;
 }
 
+/* Listado de archivos guardados (Configuración → Almacenamiento). */
+.file-rows {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+.file-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.file-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.file-row-main .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-row-tag {
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .file-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 4px;
+  }
+}
+
 /* Búsqueda de pedidos (se resuelve en SQL sobre todo el histórico). */
 .orders-search {
   display: flex;

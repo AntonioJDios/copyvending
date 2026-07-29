@@ -100,6 +100,35 @@ export function parseBackup(text: string): ParsedBackup {
   };
 }
 
+/**
+ * Download EVERYTHING in the database as JSON: orders, customers, settings, the
+ * file registry and the payment log.
+ *
+ * The catalogue backup above protects the configuration; this protects the
+ * business. It is not a pg_dump (no schema), but it is the copy the owner can take
+ * themselves and the one that matters if the database is lost.
+ */
+export async function downloadDbExport(): Promise<string> {
+  if (!API_BASE) throw new Error('Requiere el backend.');
+  const res = await fetch(`${API_BASE}/orders?export=1`, { headers: authHeaders() });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || `Error ${res.status}`);
+  }
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const filename = `copia-completa-${stamp}.json`;
+  const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return filename;
+}
+
 /** Write a validated backup back to the server (catalog + coupons). */
 export async function restoreBackup(parsed: ParsedBackup): Promise<void> {
   if (!API_BASE) throw new Error('Restaurar requiere el backend.');

@@ -873,6 +873,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const totals = series.reduce((a, r) => ({ revenue: a.revenue + r.revenue, orders: a.orders + r.orders }), { revenue: 0, orders: 0 });
         return res.status(200).json({ totals, series, bySource, allMonths: monthsRows.map((m) => m.period) });
       }
+      // Full database export: every table, as JSON, downloadable from the panel.
+      //
+      // This is the shop's own copy of its data. Not a substitute for a proper
+      // pg_dump (no schema, no indexes) but it is the one backup the owner can take
+      // by themselves, in one click, and the one that matters if the database is
+      // lost: orders, customers, catalogue and coupons.
+      if (req.query.export !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const table = async (name: string, q: Promise<unknown>) => {
+          try {
+            return await q;
+          } catch {
+            return []; // a table that doesn't exist yet must not sink the export
+          }
+        };
+        const [orders, customers, settings, files, payments] = await Promise.all([
+          table('orders', sql`select * from orders order by created_at`),
+          table('customers', sql`select * from customers order by created_at`),
+          table('settings', sql`select * from settings`),
+          table('files', sql`select * from files order by created_at`),
+          table('payment_events', sql`select * from payment_events order by received_at`),
+        ]);
+        return res.status(200).json({
+          format: 'copisteria-db-export',
+          formatVersion: 1,
+          exportedAt: new Date().toISOString(),
+          tables: { orders, customers, settings, files, payment_events: payments },
+        });
+      }
+      // Paginated file list, so files can be reviewed and deleted one by one from
+      // the panel instead of going into the storage dashboard by hand. Each row says
+      // whether it belongs to an order: deleting one that does leaves that order
+      // unprintable, so it must be visible before clicking.
+      if (req.query.files !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const lim = Math.min(Math.max(Number(queryStr(req, 'limit')) || 40, 1), 200);
+        const beforeAt = Number(queryStr(req, 'before')) || 0;
+        const beforeKey = queryStr(req, 'beforeKey');
+        const rows = (await sql`
+          select key, project_id, size_bytes::float8 as size, created_at::float8 as at
+            from files
+           where (${beforeAt}::bigint = 0
+                  or created_at < ${beforeAt}::bigint
+                  or (created_at = ${beforeAt}::bigint and key < ${beforeKey}::text))
+           order by created_at desc, key desc
+           limit ${lim}`) as { key: string; project_id: string; size: number; at: number }[];
+        // One query for the whole referenced set, then a lookup per row: marking
+        // each row with its own subquery would scan the orders table 40 times.
+        const keep = await referencedKeys();
+        const last = rows[rows.length - 1];
+        return res.status(200).json({
+          files: rows.map((r) => ({ ...r, inOrder: keep.has(r.key) })),
+          nextCursor: rows.length === lim && last ? { at: last.at, key: last.key } : null,
+        });
+      }
       // Storage report: what is stored, how it grows and what it costs. Built from
       // the upload registry (see api/presign), so it only knows about files
       // uploaded since the registry exists — the UI says so rather than pretending
@@ -1045,7 +1100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = (await sql`
         select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
         from orders
-        where (${beforeAt} = 0
+        where (${beforeAt}::bigint = 0
                or created_at < ${beforeAt}::bigint
                or (created_at = ${beforeAt}::bigint and id < ${beforeId}::text))
           and (${fStatus} = '' or status = ${fStatus})
@@ -1071,6 +1126,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
+      // Delete ONE file on request, from the storage list.
+      if (req.query.deleteFile !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const key = String((req.body as { key?: string } | undefined)?.key ?? '');
+        if (!key.startsWith('jobs/')) return res.status(400).json({ error: 'key inválida' });
+        // A file that belongs to an order cannot be deleted from here: it would
+        // leave that order unprintable. Enforced on the SERVER — hiding the button
+        // is a hint, not a rule. To remove those, use the order's own action (which
+        // marks the whole order as purged) or wait for the retention sweep.
+        if ((await referencedKeys()).has(key)) {
+          return res.status(409).json({
+            error: 'Este archivo pertenece a un pedido y no se puede borrar por separado. Bórralo desde el pedido.',
+          });
+        }
+        const ok = await deleteObject(r2Client(), r2Base(), key);
+        if (!ok) return res.status(502).json({ error: 'No se pudo borrar el archivo del almacenamiento.' });
+        // Out of the registry too, so it stops appearing in the list and in the report.
+        await sql`delete from files where key = ${key}`;
+        return res.status(200).json({ ok: true });
+      }
+
       // Retention sweep: delete the files of finished orders older than the
       // retention window. The orders themselves are never touched.
       if (req.query.purge !== undefined) {
