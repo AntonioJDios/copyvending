@@ -674,10 +674,7 @@ function StorageReport() {
     }
   };
 
-  // R2: 10 GB free, then $0.015/GB/month.
   const bytes = data?.totals.bytes ?? 0;
-  const gb = bytes / GB;
-  const cost = Math.max(0, gb - 10) * 0.015;
 
   return (
     <section className="card">
@@ -693,13 +690,10 @@ function StorageReport() {
             <div className="field-inline">
               Espacio ocupado<b>{humanBytes(bytes)}</b>
             </div>
-            <div className="field-inline">
-              Coste estimado<b>{cost > 0 ? `${cost.toFixed(2)} $/mes` : '0 € (dentro del plan gratuito)'}</b>
-            </div>
           </div>
           <p className="muted">
-            El plan gratuito de Cloudflare incluye 10 GB; a partir de ahí cuesta 0,015 $ por GB y mes. Llevas{' '}
-            <b>{Math.min(100, Math.round((gb / 10) * 100))}%</b> de ese margen.
+            Son los documentos e imágenes que suben tus clientes con sus pedidos. Se borran solos cuando el pedido ya
+            está terminado, así no se guardan más tiempo del necesario.
           </p>
 
           {data.byMonth.length > 0 && (
@@ -739,8 +733,8 @@ function StorageReport() {
           </p>
           {data.totals.since && (
             <p className="muted">
-              ⚠ Solo se cuentan los archivos subidos desde el {new Date(data.totals.since).toLocaleDateString('es-ES')},
-              cuando empezó a registrarse cada subida. Lo anterior está en el almacenamiento pero no en este recuento.
+              El recuento empieza el {new Date(data.totals.since).toLocaleDateString('es-ES')}; los archivos anteriores a
+              esa fecha no aparecen aquí.
             </p>
           )}
         </>
