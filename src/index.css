@@ -149,7 +149,7 @@ body {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 24px;
-  padding: 20px 28px 150px;
+  padding: 20px 28px 28px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
@@ -944,10 +944,12 @@ body {
 /* ---- Price bar ---- */
 
 .pricebar {
-  position: fixed;
+  /* Sticky, not fixed: it behaves like a fixed bar while you configure the job
+     (the total is always visible), but it takes up real space in the flow, so the
+     page can end with a normal footer underneath instead of hiding behind it. */
+  position: sticky;
   bottom: 0;
-  left: 0;
-  right: 0;
+  z-index: 5;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: saturate(1.4) blur(10px);
   border-top: 1px solid var(--border);
@@ -1034,10 +1036,6 @@ body {
   }
   .pricebar-row > button {
     flex: 1 1 100%;
-  }
-  /* The stacked bar is taller → leave room so it doesn't cover the files. */
-  .layout {
-    padding-bottom: 250px;
   }
 }
 
@@ -1918,6 +1916,38 @@ body {
   margin: 6px 0;
   padding-left: 22px;
 }
+/* Storefront footer: legal links where every shop puts them. */
+.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 22px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+}
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 20px;
+}
+.site-footer-links a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.site-footer-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.site-footer-legal {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Legal document typed by the shop in the admin: rendered as plain text (never as
    HTML), so line breaks and blank lines have to be honoured. */
 .legal-raw {
@@ -1926,8 +1956,8 @@ body {
 /* Clause the customer must not be able to miss (withdrawal-right exclusion): the
    exception only holds if they were clearly informed before buying. */
 .legal-highlight {
-  border-left: 3px solid var(--brand, #0ea5b7);
-  background: color-mix(in srgb, var(--brand, #0ea5b7) 8%, transparent);
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
   padding: 10px 14px;
   border-radius: 6px;
   margin: 10px 0;

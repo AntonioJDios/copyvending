@@ -20,6 +20,7 @@ import { CartButton } from './components/CartButton';
 import { AccountButton } from './components/AccountButton';
 import { AdminGate } from './components/AdminGate';
 import { CounterGate } from './components/CounterGate';
+import { SiteFooter } from './components/SiteFooter';
 import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
@@ -55,6 +56,9 @@ export default function App() {
   return <Shop />;
 }
 
+/** Backoffice routes: no storefront footer there. */
+const ADMIN_ROUTES = ['#admin', '#pedidos', '#estadisticas', '#clientes'];
+
 function Shop() {
   const route = useHashRoute();
   const fetchCatalog = useConfigurator((s) => s.fetchCatalog);
@@ -75,6 +79,18 @@ function Shop() {
     void restoreSession();
   }, [restoreSession]);
 
+  // The legal links live in the footer, like in any other shop — rendered once
+  // here so every customer-facing page gets them.
+  const isAdminRoute = ADMIN_ROUTES.some((r) => route.startsWith(r));
+  const page = renderPage();
+  return (
+    <>
+      {page}
+      {!isAdminRoute && <SiteFooter />}
+    </>
+  );
+
+  function renderPage() {
   if (route.startsWith('#admin'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
@@ -157,10 +173,6 @@ function Shop() {
             <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
               Recoger pedido
             </a>
-            {/* LSSI: the legal notice has to be permanently accessible. */}
-            <a className="btn legal-link" href="#aviso-legal" onClick={() => setMenuOpen(false)}>
-              Legal
-            </a>
             <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
               ⚙
             </a>
@@ -206,4 +218,5 @@ function Shop() {
       {hasBackend && <AssistantChat />}
     </div>
   );
+  }
 }
