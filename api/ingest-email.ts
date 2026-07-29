@@ -83,6 +83,73 @@ function ensureSchema(): Promise<void> {
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+// ── Transactional email (provider-agnostic, over HTTP) ───────────────
+// Sends through Brevo or Resend depending on MAIL_PROVIDER, and falls back to the
+// legacy Gmail SMTP when nothing is configured (so a deploy without the new env
+// vars keeps working). See docs/email.md.
+//
+// HTTP on purpose: SMTP does not work on Cloudflare Workers, so this is also the
+// version that survives the migration. Duplicated across the api/ functions that
+// send mail because Vercel functions have to be self-contained.
+const MAIL_PROVIDER = (process.env.MAIL_PROVIDER || '').toLowerCase();
+const MAIL_KEY = process.env.MAIL_API_KEY || '';
+const MAIL_FROM = process.env.MAIL_FROM || process.env.GMAIL_USER || '';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || process.env.SHOP_NAME || 'Copistería';
+const MAIL_REPLY_TO = process.env.MAIL_REPLY_TO || '';
+
+/** Send a plain-text email. Throws on failure so the caller can log it. */
+async function sendEmail(to: string, subject: string, text: string, opts: { inReplyTo?: string } = {}): Promise<void> {
+  if (!to || !MAIL_FROM) return;
+  // Threading headers, so a reply lands in the customer's original conversation.
+  const headers = opts.inReplyTo ? { 'In-Reply-To': opts.inReplyTo, References: opts.inReplyTo } : undefined;
+
+  if (MAIL_KEY && (MAIL_PROVIDER === 'brevo' || MAIL_PROVIDER === 'resend')) {
+    const brevo = MAIL_PROVIDER === 'brevo';
+    const url = brevo ? 'https://api.brevo.com/v3/smtp/email' : 'https://api.resend.com/emails';
+    const body = brevo
+      ? {
+          sender: { email: MAIL_FROM, name: MAIL_FROM_NAME },
+          to: [{ email: to }],
+          subject,
+          textContent: text,
+          ...(MAIL_REPLY_TO ? { replyTo: { email: MAIL_REPLY_TO } } : {}),
+          ...(headers ? { headers } : {}),
+        }
+      : {
+          from: `${MAIL_FROM_NAME} <${MAIL_FROM}>`,
+          to: [to],
+          subject,
+          text,
+          ...(MAIL_REPLY_TO ? { reply_to: MAIL_REPLY_TO } : {}),
+          ...(headers ? { headers } : {}),
+        };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(brevo ? { 'api-key': MAIL_KEY, accept: 'application/json' } : { Authorization: `Bearer ${MAIL_KEY}` }),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`${MAIL_PROVIDER} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return;
+  }
+
+  // Legacy fallback: Gmail SMTP. Works, but has a ~500/day cap, signs as Gmail
+  // (not as the shop's domain) and does not run on Workers — migrate to a provider.
+  const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  if (!process.env.GMAIL_USER || !pass) throw new Error('Email no configurado en el servidor (MAIL_PROVIDER/MAIL_API_KEY o GMAIL_*)');
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: process.env.GMAIL_USER, pass } });
+  await t.sendMail({
+    from: `${MAIL_FROM_NAME} <${process.env.GMAIL_USER}>`,
+    to,
+    subject,
+    text,
+    ...(MAIL_REPLY_TO ? { replyTo: MAIL_REPLY_TO } : {}),
+    ...(opts.inReplyTo ? { inReplyTo: opts.inReplyTo, references: opts.inReplyTo } : {}),
+  });
+}
+
 // ── Internal auth + order codes (mirrors the client; self-contained) ──
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
 
@@ -346,13 +413,6 @@ async function sendOrderReply(opts: {
   subject?: string;
   messageId?: string;
 }): Promise<void> {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
-  const transport = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  });
   // Looking an order up needs code + email, so carry the address in the link.
   const link = `${PUBLIC_URL}/#recoger/${opts.orderId}?e=${encodeURIComponent(opts.to)}`;
   const lines = opts.items.map((it) => {
@@ -377,13 +437,8 @@ async function sendOrderReply(opts: {
     '',
     'Gracias.',
   ].join('\n');
-  await transport.sendMail({
-    from: process.env.GMAIL_USER,
-    to: opts.to,
-    subject: opts.subject ? `Re: ${opts.subject}` : `Tu pedido ${opts.orderId}`,
-    text,
+  await sendEmail(opts.to, opts.subject ? `Re: ${opts.subject}` : `Tu pedido ${opts.orderId}`, text, {
     inReplyTo: opts.messageId,
-    references: opts.messageId,
   });
 }
 
@@ -538,8 +593,9 @@ async function processEmail(
           subject: email.subject,
           messageId: email.messageId,
         });
-      } catch {
-        /* the reply is a nicety — never fail the order because of it */
+      } catch (e) {
+        // The reply is a nicety — never fail the order because of it, but log it.
+        console.error('[email] respuesta a pedido', e);
       }
     }
 
