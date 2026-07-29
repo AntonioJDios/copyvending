@@ -423,6 +423,14 @@ function ensureSchema(): Promise<void> {
       // the sales record: statistics, the 303 summary and coupon-usage counts all
       // read from it); only the documents go.
       await db()`alter table orders add column if not exists files_purged_at bigint`;
+      // Payment reconciliation columns. Written by api/redsys-notify, but READ here,
+      // so they have to be created here too: a function must not depend on another
+      // one having run first. (The real fix is versioned migrations instead of DDL
+      // scattered across functions — this is the second time it bites today.)
+      await db()`alter table orders add column if not exists paid_at bigint`;
+      await db()`alter table orders add column if not exists payment_auth_code text`;
+      await db()`alter table orders add column if not exists payment_ref text`;
+      await db()`alter table orders add column if not exists payment_amount_cents integer`;
       // Upload registry. Created here as well as in api/presign: the report and the
       // orphan sweep both read it, and until someone uploaded something the table
       // did not exist — so the report 500'd and the sweep failed silently.
