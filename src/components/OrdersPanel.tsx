@@ -385,6 +385,7 @@ export function OrdersPanel() {
   const serverCounts = useOrders((s) => s.counts);
   const cursor = useOrders((s) => s.cursor);
   const listLoading = useOrders((s) => s.loading);
+  const listError = useOrders((s) => s.error);
   const [filter, setFilter] = useState<'todos' | OrderStatus>('todos');
   const [srcFilter, setSrcFilter] = useState<'todas' | string>('todas');
   const [initialLoading, setInitialLoading] = useState(true);
@@ -553,6 +554,8 @@ export function OrdersPanel() {
 
         {initialLoading && orders.length === 0 ? (
           <p className="orders-empty">Cargando pedidos…</p>
+        ) : listError ? (
+          <p className="orders-empty">⚠ {listError}</p>
         ) : shown.length === 0 ? (
           <p className="orders-empty">
             {orders.length === 0 ? 'Aún no hay pedidos. Los que se confirmen en la tienda aparecerán aquí.' : 'No hay pedidos con estos filtros.'}

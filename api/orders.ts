@@ -1037,7 +1037,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = (await sql`
         select id, created_at, source, customer, items, total, status, price_mismatch, paid, payment_method, shipping_method, shipping_cost, tracking, shipped_at, (label is not null) as has_label, coupon_code, coupon_discount, terms_version, terms_accepted_at, files_purged_at, paid_at, payment_auth_code, payment_ref, payment_amount_cents
         from orders
-        where (${beforeAt} = 0 or (created_at, id) < (${beforeAt}, ${beforeId}))
+        where (${beforeAt} = 0
+               or created_at < ${beforeAt}::bigint
+               or (created_at = ${beforeAt}::bigint and id < ${beforeId}::text))
           and (${fStatus} = '' or status = ${fStatus})
           and (${fSource} = '' or source = ${fSource})
           and (${term} = '' or id ilike ${like} or customer->>'email' ilike ${like}
@@ -1322,8 +1324,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     if (e instanceof MissingCatalog) return res.status(503).json({ error: e.message });
-    // Don't leak internals (DB errors, connection strings) to the client.
     console.error('[orders]', e);
-    return res.status(500).json({ error: 'Error del servidor al procesar el pedido.' });
+    // Customers get a generic message (no DB internals). The SHOP gets the real
+    // one: hiding it from the owner just means nobody can diagnose anything, and
+    // there is nothing to protect from someone who already holds the admin token.
+    const detail = e instanceof Error ? e.message : String(e);
+    return res.status(500).json({
+      error: isAdmin(req) ? `Error del servidor: ${detail}` : 'Error del servidor al procesar el pedido.',
+    });
   }
 }

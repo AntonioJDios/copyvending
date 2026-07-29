@@ -88,6 +88,9 @@ interface OrdersState {
   cursor: Cursor;
   /** Filters the loaded list corresponds to. */
   query: OrderQuery;
+  /** Last load error. An empty list because the request failed must not look the
+   *  same as a shop with no orders. */
+  error: string | null;
   /** Load the FIRST page for a set of filters (replaces the list). */
   fetchOrders: (query?: OrderQuery) => Promise<void>;
   /** Load the next page and append it. */
@@ -113,6 +116,7 @@ export const useOrders = create<OrdersState>()((set, get) => ({
   counts: [],
   cursor: null,
   query: {},
+  error: null,
 
   fetchOrders: async (query) => {
     if (!API_BASE) return;
@@ -125,9 +129,9 @@ export const useOrders = create<OrdersState>()((set, get) => ({
       if (q.q) p.set('q', q.q);
       if (q.limit) p.set('limit', String(q.limit));
       const r = await apiGet<{ orders: Order[]; counts: OrderCounts; nextCursor: Cursor }>(`/orders?${p.toString()}`);
-      set({ orders: r.orders, counts: r.counts, cursor: r.nextCursor });
-    } catch {
-      /* keep whatever we had; backoffice shows a stale-but-usable list */
+      set({ orders: r.orders, counts: r.counts, cursor: r.nextCursor, error: null });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'No se pudieron cargar los pedidos.' });
     } finally {
       set({ loading: false });
     }
@@ -146,9 +150,9 @@ export const useOrders = create<OrdersState>()((set, get) => ({
       const r = await apiGet<{ orders: Order[]; counts: OrderCounts; nextCursor: Cursor }>(`/orders?${p.toString()}`);
       // Guard against a double click appending the same page twice.
       const known = new Set(orders.map((o) => o.id));
-      set({ orders: [...orders, ...r.orders.filter((o) => !known.has(o.id))], cursor: r.nextCursor });
-    } catch {
-      /* leave the list as it is */
+      set({ orders: [...orders, ...r.orders.filter((o) => !known.has(o.id))], cursor: r.nextCursor, error: null });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'No se pudieron cargar más pedidos.' });
     } finally {
       set({ loading: false });
     }
