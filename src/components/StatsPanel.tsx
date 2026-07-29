@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOrders, type Order } from '../store/useOrders';
-import { aggregate, couponAnalytics, couponDaily, monthKey, pivotItemAgg, seedFromAgg, seriesBy, splitVat, type Bucket, type ConfigStats, type CouponRow, type ItemAggRow, type SeriesPoint, type Unit } from '../lib/stats';
+import { aggregate, couponAnalytics, couponDaily, monthKey, monthWindow, pivotCouponAgg, pivotItemAgg, seedFromAgg, seriesBy, splitVat, type Bucket, type ConfigStats, type CouponAggRow, type CouponRow, type ItemAggRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { vatRateOf } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
 import { AdminLogoutButton } from './AdminLogoutButton';
-import { fetchAgg, fetchItemAgg, type AggResult } from '../lib/statsApi';
+import { fetchAgg, fetchCouponAgg, fetchItemAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
 
@@ -106,8 +106,9 @@ export function StatsPanel() {
   const [agg, setAgg] = useState<AggResult | null>(null);
 
   useEffect(() => {
-    // Coupon analytics still run client-side over this list. TODO: move to SQL.
-    void fetchOrders({ limit: 200 });
+    // The list feeds the local fallbacks only; every figure on screen comes from
+    // the SQL aggregations (totals, evolution, configurations and coupons).
+    void fetchOrders();
   }, [fetchOrders]);
 
   const range = useMemo(() => rangeOf(period), [period]);
@@ -671,7 +672,39 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
   const [sort, setSort] = useState<CSort>('uses');
   const [selected, setSelected] = useState(initialCoupon); // '' = all coupons
   const [drillMonth, setDrillMonth] = useState(''); // 'YYYY-MM' → daily breakdown
-  const data = useMemo(() => couponAnalytics(orders, months, source), [orders, months, source]);
+  // Coupon figures come from SQL over the WHOLE history in the window: computing
+  // them from the loaded orders would describe a sample, not the shop. Falls back
+  // to the local computation when there is no backend.
+  const win = useMemo(() => monthWindow(months), [months]);
+  const [agg, setAgg] = useState<{ rows: CouponAggRow[]; ordersTotal: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchCouponAgg(win.from, win.to, source)
+      .then((r) => { if (alive) setAgg(r); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [win.from, win.to, source]);
+
+  const data = useMemo(
+    () => (agg ? pivotCouponAgg(agg.rows, win.months, agg.ordersTotal) : couponAnalytics(orders, months, source)),
+    [agg, win.months, orders, months, source]
+  );
+
+  // Daily drill-down for a clicked month (respects the selected coupon).
+  // MUST live above the early return below: a hook after a conditional return is
+  // called in a different order between renders and React breaks.
+  const [dailyAgg, setDailyAgg] = useState<{ period: string; uses: number; discount: number }[] | null>(null);
+  useEffect(() => {
+    if (!drillMonth) {
+      setDailyAgg(null);
+      return;
+    }
+    let alive = true;
+    fetchCouponAgg(win.from, win.to, source, { month: drillMonth, code: selected })
+      .then((r) => { if (alive) setDailyAgg(r ? r.daily : null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [drillMonth, win.from, win.to, source, selected]);
 
   const monthsToggle = (
     <div className="seg-toggle sm">
@@ -708,9 +741,8 @@ function CouponStats({ orders, source, initialCoupon = '' }: { orders: Order[]; 
   const cmax = Math.max(1, ...pts.map(cval));
   const cellVal = (v?: { uses: number; discount: number }) => (v ? (cmetric === 'discount' ? v.discount : v.uses) : 0);
   const pct = data.totals.ordersTotal > 0 ? Math.round((data.totals.ordersWithCoupon / data.totals.ordersTotal) * 100) : 0;
-  // Daily drill-down for the clicked month (respects the selected coupon).
   const dailyPts: SeriesPoint[] = drillMonth
-    ? couponDaily(orders, drillMonth, source, sel?.code ?? '').map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }))
+    ? (dailyAgg ?? couponDaily(orders, drillMonth, source, sel?.code ?? '')).map((p) => ({ period: p.period, revenue: p.discount, orders: p.uses }))
     : [];
   const dailyMax = Math.max(1, ...dailyPts.map(cval));
   // KPI values: for the selected coupon, else the totals.

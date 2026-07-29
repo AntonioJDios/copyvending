@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSettings } from '../lib/glsSettings';
 import { loadCoupons, saveCoupons } from '../lib/coupons';
 import { NEW_COUPON, type Coupon, type CouponType } from '../domain/coupons';
-import { useOrders } from '../store/useOrders';
+import { monthWindow, pivotCouponAgg, type CouponAnalytics } from '../lib/stats';
+import { fetchCouponAgg } from '../lib/statsApi';
 import {
   ALL_FINISHES,
   ALL_FOLIOS,
@@ -1284,8 +1285,7 @@ function CouponsEditor() {
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState('');
   const [visible, setVisible] = useState(12);
-  const orders = useOrders((s) => s.orders);
-  const fetchOrders = useOrders((s) => s.fetchOrders);
+  const [agg, setAgg] = useState<CouponAnalytics | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1293,19 +1293,22 @@ function CouponsEditor() {
       .then((c) => { if (alive) setList(c); })
       .catch(() => { /* keep empty */ })
       .finally(() => { if (alive) setLoading(false); });
-    // Coupon usage is still counted client-side, so ask for a big page: with the
-    // default page size it would count only the first one. TODO: aggregate in SQL
-    // like the statistics do.
-    void fetchOrders({ limit: 200 });
+    // Usage counts come from SQL over the whole history: counting the loaded page
+    // would show a coupon as unused just because its orders are older.
+    const { months, from, to } = monthWindow(1);
+    fetchCouponAgg(from, to, 'all')
+      .then((r) => { if (alive && r) setAgg(pivotCouponAgg(r.rows, months, r.ordersTotal)); })
+      .catch(() => {});
     return () => { alive = false; };
-  }, [fetchOrders]);
+  }, []);
 
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+  // Total uses ever, and uses this month, per coupon.
   const usage = (code: string) => {
     const c = code.trim().toUpperCase();
-    if (!c) return { total: 0, month: 0 };
-    const used = orders.filter((o) => (o.couponCode ?? '').toUpperCase() === c);
-    return { total: used.length, month: used.filter((o) => o.createdAt >= monthStart).length };
+    if (!c || !agg) return { total: 0, month: 0 };
+    const row = agg.rows.find((r) => r.code === c);
+    if (!row) return { total: 0, month: 0 };
+    return { total: row.uses, month: row.byMonth[agg.months[0]]?.uses ?? 0 };
   };
 
   const update = (i: number, patch: Partial<Coupon>) => {

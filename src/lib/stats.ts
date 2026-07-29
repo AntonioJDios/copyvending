@@ -262,6 +262,71 @@ export function couponAnalytics(orders: Order[], monthsBack: number, source = 'a
   return { months, rows, totals, monthly };
 }
 
+/** One grouped row of the server's coupon aggregation. */
+export interface CouponAggRow {
+  code: string;
+  period: string; // 'YYYY-MM'
+  uses: number;
+  discount: number;
+  revenue: number;
+}
+
+/**
+ * Pivot the server's coupon rows into the same CouponAnalytics the local
+ * computation produces — same fields, same sorting — so the screen doesn't change
+ * meaning now that the numbers cover the whole history instead of a page.
+ */
+export function pivotCouponAgg(rows: CouponAggRow[], months: string[], ordersTotal: number): CouponAnalytics {
+  const rowMap = new Map<string, CouponRow>();
+  const monthly = months.map((period) => ({ period, uses: 0, discount: 0 }));
+  const monthlyIdx = new Map(monthly.map((m) => [m.period, m]));
+  const totals = { uses: 0, discount: 0, revenue: 0, ordersWithCoupon: 0, ordersTotal };
+
+  for (const r of rows) {
+    const code = (r.code ?? '').trim().toUpperCase();
+    if (!code) continue;
+    const uses = Number(r.uses) || 0;
+    const discount = Number(r.discount) || 0;
+    const revenue = Number(r.revenue) || 0;
+    let row = rowMap.get(code);
+    if (!row) {
+      row = { code, uses: 0, discount: 0, revenue: 0, avgOrder: 0, byMonth: {} };
+      rowMap.set(code, row);
+    }
+    row.uses += uses;
+    row.discount += discount;
+    row.revenue += revenue;
+    const bm = row.byMonth[r.period] ?? { uses: 0, discount: 0 };
+    bm.uses += uses;
+    bm.discount += discount;
+    row.byMonth[r.period] = bm;
+    const mm = monthlyIdx.get(r.period);
+    if (mm) {
+      mm.uses += uses;
+      mm.discount += discount;
+    }
+    totals.uses += uses;
+    totals.discount += discount;
+    totals.revenue += revenue;
+  }
+  totals.ordersWithCoupon = totals.uses;
+  const out = [...rowMap.values()]
+    .map((r) => ({ ...r, avgOrder: r.uses > 0 ? r.revenue / r.uses : 0 }))
+    .sort((a, b) => b.uses - a.uses);
+  return { months, rows: out, totals, monthly };
+}
+
+/** Month keys for a window of `monthsBack` months ending this month. */
+export function monthWindow(monthsBack: number): { months: string[]; from: number; to: number } {
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    months.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1).getTime()));
+  }
+  const from = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1).getTime();
+  return { months, from, to: Date.now() };
+}
+
 /** Daily coupon series for a single month ('YYYY-MM'), seeded for every day.
  *  Optionally scoped to one coupon `code` and/or `source`. */
 export function couponDaily(orders: Order[], month: string, source = 'all', code = ''): { period: string; uses: number; discount: number }[] {

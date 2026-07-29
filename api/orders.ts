@@ -857,6 +857,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const totals = series.reduce((a, r) => ({ revenue: a.revenue + r.revenue, orders: a.orders + r.orders }), { revenue: 0, orders: 0 });
         return res.status(200).json({ totals, series, bySource, allMonths: monthsRows.map((m) => m.period) });
       }
+      // Coupon analytics in SQL, over the WHOLE history in the requested window.
+      // Computing them from the loaded orders would mean the figures describe a
+      // sample instead of the shop: a statistic over a page is not a statistic.
+      if (req.query.coupons !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const from = Number(queryStr(req, 'from')) || 0;
+        const to = Number(queryStr(req, 'to')) || Number.MAX_SAFE_INTEGER;
+        const src = queryStr(req, 'source') || 'all';
+        const month = queryStr(req, 'month'); // 'YYYY-MM' → daily drill-down
+        const code = queryStr(req, 'code').trim().toUpperCase();
+        const inRange = { from, to, src };
+
+        // Per coupon and per month: everything the matrix, the chart and the
+        // totals need, in one grouped query.
+        const rows = (await sql`
+          select upper(trim(coupon_code)) as code,
+                 to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', 'YYYY-MM') as period,
+                 count(*)::int as uses,
+                 coalesce(sum(coupon_discount), 0)::float8 as discount,
+                 coalesce(sum(total), 0)::float8 as revenue
+            from orders
+           where coupon_code is not null and trim(coupon_code) <> ''
+             and created_at >= ${inRange.from} and created_at <= ${inRange.to}
+             and (${inRange.src} = 'all' or source = ${inRange.src})
+           group by 1, 2`) as { code: string; period: string; uses: number; discount: number; revenue: number }[];
+
+        // Orders in the window WITHOUT filtering by coupon, for the "share of
+        // orders that used one" metric.
+        const tot = (await sql`
+          select count(*)::int as n from orders
+           where created_at >= ${inRange.from} and created_at <= ${inRange.to}
+             and (${inRange.src} = 'all' or source = ${inRange.src})`) as { n: number }[];
+
+        const daily = month
+          ? ((await sql`
+              select to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', 'YYYY-MM-DD') as period,
+                     count(*)::int as uses,
+                     coalesce(sum(coupon_discount), 0)::float8 as discount
+                from orders
+               where coupon_code is not null and trim(coupon_code) <> ''
+                 and to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', 'YYYY-MM') = ${month}
+                 and (${inRange.src} = 'all' or source = ${inRange.src})
+                 and (${code} = '' or upper(trim(coupon_code)) = ${code})
+               group by 1 order by 1`) as { period: string; uses: number; discount: number }[])
+          : [];
+
+        return res.status(200).json({ rows, ordersTotal: tot[0]?.n ?? 0, daily });
+      }
       // Breakdown by print CONFIGURATION over the full history. Needs the detail
       // of each item, so it unnests the items jsonb and groups in SQL — otherwise
       // the client would have to do it over the 2000 orders it can hold, which
