@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Secretos. Cualquier fichero .env queda fuera salvo la plantilla: `vercel env pull`
+# escribe TODAS las variables en claro (clave de firma de Redsys, claves de R2, la
+# cadena de conexión de la BD, la contraseña del backoffice) y un despiste
+# commiteándolo obliga a rotarlas todas.
+.env
+.env.*
+!.env.example
+
+# Vercel CLI
+.vercel
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
