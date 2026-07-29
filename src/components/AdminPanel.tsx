@@ -992,8 +992,11 @@ function CatalogBackupTool({ onRestored }: { onRestored: (c: Catalog) => void })
       </p>
       <p className="muted">
         <b>Copia completa</b> descarga además <b>todos los pedidos y clientes</b>. Es la que importa si se pierde la base
-        de datos. No se puede restaurar desde el panel (haría falta hacerlo a mano), pero es tu copia de los datos del
-        negocio: guárdala fuera de aquí y renuévala de vez en cuando.
+        de datos: con ella se puede reconstruir la tienda entera. Guárdala fuera de aquí y renuévala de vez en cuando.
+      </p>
+      <p className="admin-login-err">
+        ⚠ La copia completa contiene <b>datos personales de tus clientes y la credencial de GLS</b>. Guárdala en un sitio
+        seguro y no la envíes por correo ni la subas a ningún sitio compartido.
       </p>
     </section>
   );
