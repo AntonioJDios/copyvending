@@ -514,6 +514,22 @@ export function applySource(cat: PriceCatalog, source: string): PriceCatalog {
   };
 }
 
+// ── R2 access (shared by the retention sweeps) ───────────────────────
+const r2Client = () =>
+  new AwsClient({
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  });
+const r2Base = () =>
+  `https://${process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3'}.r2.cloudflarestorage.com/${process.env.R2_BUCKET || 'copyvending'}`;
+
+/** Delete one object. A 404 counts as success: gone is the state we want. */
+async function deleteObject(client: AwsClient, base: string, key: string): Promise<boolean> {
+  const signed = await client.sign(`${base}/${key}`, { method: 'DELETE', aws: { signQuery: true } });
+  const res = await fetch(signed.url, { method: 'DELETE' });
+  return res.ok || res.status === 404;
+}
+
 // ── File retention ───────────────────────────────────────────────────
 /**
  * Delete the customer's uploaded files once an order is finished and old enough.
@@ -554,13 +570,8 @@ async function purgeOldFiles(days = RETENTION_DAYS): Promise<{ orders: number; f
      limit 200`) as { id: string; items: Record<string, unknown>[] }[];
   if (rows.length === 0) return { orders: 0, files: 0, errors: 0 };
 
-  const client = new AwsClient({
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-  });
-  const account = process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3';
-  const bucket = process.env.R2_BUCKET || 'copyvending';
-  const base = `https://${account}.r2.cloudflarestorage.com/${bucket}`;
+  const client = r2Client();
+  const base = r2Base();
 
   let files = 0;
   let errors = 0;
@@ -588,6 +599,70 @@ async function purgeOldFiles(days = RETENTION_DAYS): Promise<{ orders: number; f
     if (ok) await db()`update orders set files_purged_at = ${Date.now()} where id = ${row.id}`;
   }
   return { orders: rows.length, files, errors };
+}
+
+/**
+ * Orphan files: uploaded to storage but referenced by NO order.
+ *
+ * Files land in storage the moment the customer drops them in the configurator —
+ * before there is any order. So anyone who uploads a PDF just to check the price
+ * and leaves, or who fills a cart and never checks out, leaves files behind that
+ * the order-driven purge above can never see. On a shop with normal cart
+ * abandonment this is likely MORE data than the real orders, and it is other
+ * people's documents, so it is a GDPR matter as much as a storage bill.
+ *
+ * Matching is by FULL KEY, never by folder: the assistant studio uploads under
+ * `jobs/<sessionId>/` while the resulting cart project gets a different id, so a
+ * folder-based match would delete files belonging to real orders.
+ */
+const ORPHAN_DAYS = Number(process.env.ORPHAN_FILE_DAYS) || 10;
+
+/** Every storage key still referenced by an order that hasn't been purged. */
+async function referencedKeys(): Promise<Set<string>> {
+  const rows = (await db()`select items from orders where files_purged_at is null`) as { items: Record<string, unknown>[] }[];
+  const set = new Set<string>();
+  for (const r of rows) {
+    for (const it of Array.isArray(r.items) ? r.items : []) for (const k of itemKeys(it)) set.add(k);
+  }
+  return set;
+}
+
+/**
+ * Files registered on upload (see api/presign) that are old enough and still
+ * belong to no order: price-checkers who left, abandoned carts, failed checkouts.
+ *
+ * Driven by the `files` registry rather than by listing the bucket: it is one SQL
+ * query instead of paginating thousands of objects, and it doubles as an inventory
+ * of what is actually stored.
+ */
+async function purgeOrphans(days = ORPHAN_DAYS, maxDeletes = 500): Promise<{ candidates: number; deleted: number; errors: number }> {
+  const cutoff = Date.now() - days * 86400000;
+  const rows = (await db()`
+    select key from files where created_at < ${cutoff} order by created_at limit ${maxDeletes}`) as { key: string }[];
+  if (rows.length === 0) return { candidates: 0, deleted: 0, errors: 0 };
+
+  const keep = await referencedKeys();
+  const client = r2Client();
+  const base = r2Base();
+  let deleted = 0;
+  let errors = 0;
+  for (const { key } of rows) {
+    if (keep.has(key)) {
+      // It became a real order: stop tracking it here, the order-driven sweep
+      // owns it from now on.
+      await db()`delete from files where key = ${key}`;
+      continue;
+    }
+    try {
+      if (await deleteObject(client, base, key)) {
+        await db()`delete from files where key = ${key}`;
+        deleted++;
+      } else errors++;
+    } catch {
+      errors++;
+    }
+  }
+  return { candidates: rows.length, deleted, errors };
 }
 
 // ── Coupons ─────────────────────────────────────────────────────────
@@ -876,8 +951,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!requireAdmin(req, res)) return;
         const q = Array.isArray(req.query.days) ? req.query.days[0] : req.query.days;
         const days = Number(q) > 0 ? Number(q) : RETENTION_DAYS;
-        const r = await purgeOldFiles(days);
-        return res.status(200).json({ ok: true, days, ...r });
+        const orders = await purgeOldFiles(days);
+        // Second sweep: files that never became an order at all (price checks,
+        // abandoned carts). Driven by the upload registry (see api/presign).
+        const orphans = await purgeOrphans();
+        return res.status(200).json({ ok: true, days, orders, orphans });
       }
 
       const o = req.body as {

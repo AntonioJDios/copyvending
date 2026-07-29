@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { AwsClient } from 'aws4fetch';
+import { neon } from '@neondatabase/serverless';
 import { createHmac, timingSafeEqual } from 'crypto';
 
 // Self-contained (no relative imports) to avoid any ESM module-resolution
@@ -72,6 +73,36 @@ function mayAccess(req: VercelRequest, key: string, token: unknown): boolean {
   return safeEq(token, projectToken(proj));
 }
 
+/**
+ * Registry of every uploaded file.
+ *
+ * A file reaches storage the moment the customer drops it in the configurator —
+ * long before there is an order, and possibly without ever becoming one (someone
+ * checking a price, an abandoned cart). Without a record of it, that file is
+ * invisible: nothing references it and nothing can ever clean it up.
+ *
+ * So every upload is registered here with its date, and the retention sweep in
+ * api/orders can then delete whatever is old enough and still belongs to no
+ * order. Best-effort: a registry failure must never block a customer's upload.
+ */
+async function registerFile(key: string, projectId: string, size: number): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const sql = neon(process.env.DATABASE_URL);
+    await sql`
+      create table if not exists files (
+        key text primary key, project_id text not null, size_bytes bigint,
+        created_at bigint not null)`;
+    await sql`create index if not exists files_created_idx on files (created_at)`;
+    await sql`
+      insert into files (key, project_id, size_bytes, created_at)
+      values (${key}, ${projectId}, ${size}, ${Date.now()})
+      on conflict (key) do nothing`;
+  } catch (e) {
+    console.error('[presign] no se pudo registrar el fichero', e);
+  }
+}
+
 function extOf(name: string): string {
   const i = name.lastIndexOf('.');
   return i > 0 ? name.slice(i).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 12) : '';
@@ -123,6 +154,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Server-generated key with a UUID — the client filename is never the path.
       const objectKey = `jobs/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
       const signed = await client.sign(`${BASE}/${objectKey}?X-Amz-Expires=${EXPIRES}`, { method: 'PUT', aws: { signQuery: true } });
+      // Registered BEFORE handing out the URL, so nothing can be uploaded without
+      // leaving a trace we can clean up later.
+      await registerFile(objectKey, projectId, size);
       // The token travels with the project (cart → order), so the customer can
       // later re-open or delete their own files.
       return res.status(200).json({ key: objectKey, url: signed.url, token: projectToken(projectId) });
