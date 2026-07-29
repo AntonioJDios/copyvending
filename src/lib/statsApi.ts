@@ -21,6 +21,33 @@ export async function fetchAgg(from: number, to: number, unit: 'day' | 'month', 
   return (await res.json()) as AggResult;
 }
 
+export interface StorageReport {
+  totals: { files: number; bytes: number; since: number | null };
+  byMonth: { period: string; files: number; bytes: number }[];
+  top: { project: string; files: number; bytes: number }[];
+}
+
+/** What is stored, how it grows and what it costs. Admin-only. */
+export async function fetchStorage(): Promise<StorageReport | null> {
+  if (!API_BASE) return null;
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/orders?storage=1`, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) return null;
+  return (await res.json()) as StorageReport;
+}
+
+/** Run the retention sweeps now (finished orders + files that never became one). */
+export async function runPurge(): Promise<{ orders: { orders: number; files: number }; orphans: { deleted: number } } | null> {
+  if (!API_BASE) return null;
+  const t = getAdminToken();
+  const res = await fetch(`${API_BASE}/orders?purge=1`, {
+    method: 'POST',
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as { orders: { orders: number; files: number }; orphans: { deleted: number } };
+}
+
 /** Coupon analytics over the whole history in a window. Admin-only. */
 export async function fetchCouponAgg(
   from: number,

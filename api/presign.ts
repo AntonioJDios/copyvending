@@ -59,10 +59,22 @@ function isAdmin(req: VercelRequest): boolean {
 const projectToken = (projectId: string) =>
   createHmac('sha256', FILE_SECRET || 'insecure-dev-secret').update(`proj.${projectId}`).digest('base64url');
 
-/** The `<projectId>` segment of a `jobs/<projectId>/<file>` key, if any. */
+/**
+ * The project id inside a storage key.
+ *
+ * Two layouts exist and both must keep working:
+ *   jobs/<projectId>/<file>            (original)
+ *   jobs/<YYYY-MM>/<projectId>/<file>  (current: browsable by month in the
+ *                                       Cloudflare dashboard)
+ * So instead of assuming a position, take the first segment that IS a uuid. Get
+ * this wrong and every customer loses access to their own files.
+ */
 function projectOf(key: string): string | null {
-  const m = /^jobs\/([^/]+)\//.exec(key);
-  return m && UUID_RE.test(m[1]) ? m[1] : null;
+  if (!key.startsWith('jobs/')) return null;
+  for (const seg of key.slice(5).split('/')) {
+    if (UUID_RE.test(seg)) return seg;
+  }
+  return null;
 }
 
 /** True when the caller may read/delete this key. */
@@ -152,7 +164,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'projectId inválido' });
       }
       // Server-generated key with a UUID — the client filename is never the path.
-      const objectKey = `jobs/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
+      // Grouped by upload month so the bucket is navigable by hand in the
+      // Cloudflare dashboard; the project folder inside keeps the capability model
+      // intact (see projectOf).
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const objectKey = `jobs/${month}/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
       const signed = await client.sign(`${BASE}/${objectKey}?X-Amz-Expires=${EXPIRES}`, { method: 'PUT', aws: { signQuery: true } });
       // Registered BEFORE handing out the URL, so nothing can be uploaded without
       // leaving a trace we can clean up later.

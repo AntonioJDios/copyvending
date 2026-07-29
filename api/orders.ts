@@ -857,6 +857,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const totals = series.reduce((a, r) => ({ revenue: a.revenue + r.revenue, orders: a.orders + r.orders }), { revenue: 0, orders: 0 });
         return res.status(200).json({ totals, series, bySource, allMonths: monthsRows.map((m) => m.period) });
       }
+      // Storage report: what is stored, how it grows and what it costs. Built from
+      // the upload registry (see api/presign), so it only knows about files
+      // uploaded since the registry exists — the UI says so rather than pretending
+      // the total is complete.
+      if (req.query.storage !== undefined) {
+        if (!requireAdmin(req, res)) return;
+        const totals = (await sql`
+          select count(*)::int as files, coalesce(sum(size_bytes), 0)::float8 as bytes,
+                 min(created_at)::float8 as since
+            from files`) as { files: number; bytes: number; since: number | null }[];
+        const byMonth = (await sql`
+          select to_char(to_timestamp(created_at / 1000.0) at time zone 'Europe/Madrid', 'YYYY-MM') as period,
+                 count(*)::int as files, coalesce(sum(size_bytes), 0)::float8 as bytes
+            from files group by 1 order by 1 desc limit 24`) as { period: string; files: number; bytes: number }[];
+        const top = (await sql`
+          select project_id as project, count(*)::int as files, coalesce(sum(size_bytes), 0)::float8 as bytes
+            from files group by 1 order by bytes desc limit 10`) as { project: string; files: number; bytes: number }[];
+        return res.status(200).json({
+          totals: { files: totals[0]?.files ?? 0, bytes: totals[0]?.bytes ?? 0, since: totals[0]?.since ?? null },
+          byMonth,
+          top,
+        });
+      }
       // Coupon analytics in SQL, over the WHOLE history in the requested window.
       // Computing them from the loaded orders would mean the figures describe a
       // sample instead of the shop: a statistic over a page is not a statistic.

@@ -3,7 +3,7 @@ import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSetting
 import { loadCoupons, saveCoupons } from '../lib/coupons';
 import { NEW_COUPON, type Coupon, type CouponType } from '../domain/coupons';
 import { monthWindow, pivotCouponAgg, type CouponAnalytics } from '../lib/stats';
-import { fetchCouponAgg } from '../lib/statsApi';
+import { fetchCouponAgg, fetchStorage, runPurge, type StorageReport as StorageReportData } from '../lib/statsApi';
 import {
   ALL_FINISHES,
   ALL_FOLIOS,
@@ -528,6 +528,7 @@ export function AdminPanel() {
 
         {tab === 'herramientas' && API_BASE && (
           <>
+            <StorageReport />
             <CatalogBackupTool onRestored={(c) => { setDraft(c); setCatalog(c); setDirty(false); }} />
             <section className="card">
               <h2>Entrada de pedidos por email</h2>
@@ -633,6 +634,121 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Dev tool: builds a fake email with a sample PDF and sends it to the email
  *  ingestion endpoint, to test the whole pipeline before Gmail is wired. */
+const GB = 1024 ** 3;
+const humanBytes = (b: number) => (b >= GB ? `${(b / GB).toFixed(2)} GB` : `${Math.max(0, Math.round(b / 1024 / 1024))} MB`);
+const monthLabel = (p: string) => {
+  const [y, m] = p.split('-').map(Number);
+  return `${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][m - 1]} ${y}`;
+};
+
+/**
+ * Storage report, from the upload registry. Answers the question you would
+ * otherwise open the Cloudflare dashboard for: how much is stored, how fast it
+ * grows and what it costs.
+ */
+function StorageReport() {
+  const [data, setData] = useState<StorageReportData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const load = () => {
+    fetchStorage()
+      .then(setData)
+      .catch(() => {});
+  };
+  useEffect(load, []);
+
+  const clean = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const r = await runPurge();
+      setMsg(
+        r
+          ? `Limpieza hecha: ${r.orders.files} archivos de ${r.orders.orders} pedidos terminados y ${r.orphans.deleted} de pedidos que nunca se completaron.`
+          : 'No se pudo ejecutar la limpieza.'
+      );
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // R2: 10 GB free, then $0.015/GB/month.
+  const bytes = data?.totals.bytes ?? 0;
+  const gb = bytes / GB;
+  const cost = Math.max(0, gb - 10) * 0.015;
+
+  return (
+    <section className="card">
+      <h2>Almacenamiento</h2>
+      {!data ? (
+        <p className="muted">Cargando…</p>
+      ) : (
+        <>
+          <div className="admin-grid">
+            <div className="field-inline">
+              Archivos guardados<b>{data.totals.files.toLocaleString('es-ES')}</b>
+            </div>
+            <div className="field-inline">
+              Espacio ocupado<b>{humanBytes(bytes)}</b>
+            </div>
+            <div className="field-inline">
+              Coste estimado<b>{cost > 0 ? `${cost.toFixed(2)} $/mes` : '0 € (dentro del plan gratuito)'}</b>
+            </div>
+          </div>
+          <p className="muted">
+            El plan gratuito de Cloudflare incluye 10 GB; a partir de ahí cuesta 0,015 $ por GB y mes. Llevas{' '}
+            <b>{Math.min(100, Math.round((gb / 10) * 100))}%</b> de ese margen.
+          </p>
+
+          {data.byMonth.length > 0 && (
+            <>
+              <h3 style={{ margin: '16px 0 6px', fontSize: 15 }}>Por mes de subida</h3>
+              <div className="stats-break">
+                {data.byMonth.map((m) => (
+                  <div key={m.period} className="statbar">
+                    <span className="statbar-label">{monthLabel(m.period)}</span>
+                    <span className="statbar-track">
+                      <span
+                        className="statbar-fill"
+                        style={{ width: `${(m.bytes / Math.max(1, ...data.byMonth.map((x) => x.bytes))) * 100}%` }}
+                      />
+                    </span>
+                    <span className="statbar-val">
+                      {humanBytes(m.bytes)} <em>{m.files} arch.</em>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="admin-actions" style={{ padding: '12px 0 0', justifyContent: 'flex-start', gap: 8 }}>
+            <button type="button" className="btn" onClick={() => void clean()} disabled={busy}>
+              {busy ? 'Limpiando…' : '🧹 Limpiar ahora'}
+            </button>
+            <button type="button" className="chip" onClick={load}>
+              Actualizar
+            </button>
+          </div>
+          {msg && <p className="muted">{msg}</p>}
+          <p className="muted">
+            La limpieza borra los archivos de los pedidos ya terminados y los de quien nunca llegó a pedir. Se ejecuta
+            sola al abrir Pedidos; este botón solo la adelanta.
+          </p>
+          {data.totals.since && (
+            <p className="muted">
+              ⚠ Solo se cuentan los archivos subidos desde el {new Date(data.totals.since).toLocaleDateString('es-ES')},
+              cuando empezó a registrarse cada subida. Lo anterior está en el almacenamiento pero no en este recuento.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /**
  * Catalog backup. Prices exist ONLY in the database (there are no default prices
  * in the code), so the owner needs a file of their own: without it, losing that
