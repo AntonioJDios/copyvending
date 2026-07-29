@@ -83,6 +83,16 @@ function ensureSchema(): Promise<void> {
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+// ── Inbox to read orders from (IMAP) ─────────────────────────────────
+// Configurable, not hardcoded to Gmail: the shop already owns a mailbox on its own
+// domain (e.g. pedidos@fotocopiator.es), and reading orders from that address is
+// both more coherent for customers and one less Google account to depend on.
+// Defaults keep the previous Gmail behaviour so nothing breaks.
+const IMAP_HOST = process.env.IMAP_HOST || 'imap.gmail.com';
+const IMAP_PORT = Number(process.env.IMAP_PORT) || 993;
+const IMAP_USER = process.env.IMAP_USER || process.env.GMAIL_USER || '';
+const IMAP_PASS = (process.env.IMAP_PASSWORD || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+
 // ── Transactional email (provider-agnostic, over HTTP) ───────────────
 // Sends through Brevo or Resend depending on MAIL_PROVIDER, and falls back to the
 // legacy Gmail SMTP when nothing is configured (so a deploy without the new env
@@ -621,10 +631,10 @@ async function readGmailAndProcess(
   settings: { ring: string[]; cover: string[]; instructions: string }
 ): Promise<Record<string, unknown>> {
   const client = new ImapFlow({
-    host: 'imap.gmail.com',
-    port: 993,
+    host: IMAP_HOST,
+    port: IMAP_PORT,
     secure: true,
-    auth: { user: process.env.GMAIL_USER || '', pass: process.env.GMAIL_APP_PASSWORD || '' },
+    auth: { user: IMAP_USER, pass: IMAP_PASS },
     logger: false,
   });
   const sql = db();
@@ -695,8 +705,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Gmail mode: read the inbox and process new messages. Skipped if the owner
     // turned the email source off from the panel.
     if (!settings.emailEnabled) return res.status(200).json({ skipped: 'La entrada por email está desactivada.' });
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-      return res.status(400).json({ error: 'Falta GMAIL_USER / GMAIL_APP_PASSWORD (o envía un email en el cuerpo para probar).' });
+    if (!IMAP_USER || !IMAP_PASS) {
+      return res.status(400).json({ error: 'Falta el buzón a leer: IMAP_USER / IMAP_PASSWORD (o GMAIL_USER / GMAIL_APP_PASSWORD). También puedes enviar un email en el cuerpo para probar.' });
     }
     const summary = await readGmailAndProcess(settings);
     return res.status(200).json(summary);
