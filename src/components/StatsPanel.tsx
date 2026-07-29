@@ -3,7 +3,7 @@ import { useOrders, type Order } from '../store/useOrders';
 import { aggregate, couponAnalytics, couponDaily, monthKey, monthWindow, pivotCouponAgg, pivotItemAgg, seedFromAgg, seriesBy, splitVat, type Bucket, type ConfigStats, type CouponAggRow, type CouponRow, type ItemAggRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { vatRateOf } from '../domain/catalog';
 import { useConfigurator } from '../store/useConfigurator';
-import { AdminLogoutButton } from './AdminLogoutButton';
+import { AdminNav } from './AdminNav';
 import { fetchAgg, fetchCouponAgg, fetchItemAgg, type AggResult } from '../lib/statsApi';
 import { downloadFiscalPdf } from '../lib/fiscalPdf';
 import { FINISH_LABEL, SIZE_LABEL } from '../domain/catalog';
@@ -303,16 +303,7 @@ export function StatsPanel() {
 
   return (
     <div className="app admin">
-      <header className="topbar">
-        <h1>Estadísticas</h1>
-        <nav className="topnav">
-          <a className="btn" href="#pedidos">Pedidos</a>
-          <a className="btn" href="#admin">Catálogo</a>
-          <a className="btn" href="#clientes">👥 Clientes</a>
-          <a className="btn" href="#">← Tienda</a>
-          <AdminLogoutButton />
-        </nav>
-      </header>
+      <AdminNav title="Estadísticas" current="#estadisticas" />
 
       <div className="admin-body stats">
         {/* Controles */}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { searchCustomers, customerOrders, type ClientRow, type ClientOrder } from '../lib/clients';
 import type { Address } from '../store/useAuth';
-import { AdminLogoutButton } from './AdminLogoutButton';
+import { AdminNav } from './AdminNav';
 import { useConfigurator } from '../store/useConfigurator';
 import { apiGet } from '../lib/api';
 import { downloadInvoice } from '../lib/invoicePdf';
@@ -76,16 +76,7 @@ export function ClientsPanel() {
 
   return (
     <div className="app admin">
-      <header className="topbar">
-        <h1>Clientes</h1>
-        <nav className="topnav">
-          <a className="btn" href="#pedidos">Pedidos</a>
-          <a className="btn" href="#estadisticas">📊 Estadísticas</a>
-          <a className="btn" href="#admin">Catálogo</a>
-          <a className="btn" href="#">← Tienda</a>
-          <AdminLogoutButton />
-        </nav>
-      </header>
+      <AdminNav title="Clientes" current="#clientes" />
 
       <div className="admin-body">
         <section className="card">

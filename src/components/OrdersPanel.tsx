@@ -9,7 +9,7 @@ import { downloadOrderZip } from '../lib/downloadZip';
 import { downloadInvoice } from '../lib/invoicePdf';
 import { downloadGlsLabel, glsTrackUrl } from '../lib/glsLabel';
 import { DEFAULT_BUSINESS, DEFAULT_VAT_PERCENT } from '../domain/catalog';
-import { AdminLogoutButton } from './AdminLogoutButton';
+import { AdminNav } from './AdminNav';
 import { CartDocsPreview } from './CartProjectCard';
 import { useStoredImage } from '../lib/thumbs';
 
@@ -467,29 +467,15 @@ export function OrdersPanel() {
 
   return (
     <div className="app admin">
-      <header className="topbar">
-        <h1>Pedidos</h1>
-        <nav className="topnav">
+      <AdminNav title="Pedidos" current="#pedidos" />
+
+      <div className="orders-body">
+        <div className="orders-search">
           <button type="button" className="btn" onClick={() => void pullInbox()} disabled={refreshing}>
             {refreshing ? 'Actualizando…' : '↻ Actualizar'}
           </button>
-          <a className="btn" href="#admin">
-            Catálogo
-          </a>
-          <a className="btn" href="#estadisticas">
-            📊 Estadísticas
-          </a>
-          <a className="btn" href="#clientes">
-            👥 Clientes
-          </a>
-          <a className="btn" href="#">
-            Tienda
-          </a>
-          <AdminLogoutButton />
-        </nav>
-      </header>
-
-      <div className="orders-body">
+          <a className="btn" href="#clientes">👥 Clientes</a>
+        </div>
         {sources.length > 1 && (
           <div className="orders-filters orders-filters-src">
             <span className="filter-group-label">Origen</span>

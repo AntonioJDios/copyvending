@@ -63,12 +63,45 @@ function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostra
   );
 }
 
-type AdminTab = 'producto' | 'catalogo' | 'pagos' | 'envios' | 'cupones' | 'legal' | 'asistente' | 'herramientas';
+/**
+ * Configuration sections. `''` is the dashboard.
+ *
+ * The section lives in the hash (`#admin/precios`), not in component state, so the
+ * tablet's back gesture returns to the dashboard instead of leaving the backoffice,
+ * and a section can be linked to directly.
+ */
+type AdminSection =
+  | ''
+  | 'producto'
+  | 'precios'
+  | 'pagos'
+  | 'envios'
+  | 'cupones'
+  | 'legal'
+  | 'asistente'
+  | 'almacenamiento'
+  | 'herramientas';
+
+/** Reads the section from `#admin/<section>` and follows navigation. */
+function useSection(): AdminSection {
+  const read = () => (window.location.hash.match(/^#admin\/([a-z]+)/)?.[1] ?? '') as AdminSection;
+  const [section, setSection] = useState<AdminSection>(read);
+  useEffect(() => {
+    const on = () => setSection(read());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return section;
+}
+
+/** Sections that edit the shared catalog draft, so they need the save bar. */
+const EDITS_CATALOG: AdminSection[] = ['producto', 'precios', 'pagos', 'envios', 'legal', 'asistente'];
+
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
 import { saveCatalog, useConfigurator } from '../store/useConfigurator';
 import { API_BASE, apiSend } from '../lib/api';
-import { AdminLogoutButton } from './AdminLogoutButton';
+import { AdminNav } from './AdminNav';
 import { downloadBackup, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
@@ -88,7 +121,7 @@ export function AdminPanel() {
   const setCatalog = useConfigurator((s) => s.setCatalog);
   const [draft, setDraft] = useState<Catalog>(() => structuredClone(catalog));
   const [dirty, setDirty] = useState(false);
-  const [tab, setTab] = useState<AdminTab>('catalogo');
+  const section = useSection();
   const [priceSrc, setPriceSrc] = useState<SourceKey>('online');
   const [slideDir, setSlideDir] = useState<'r' | 'l'>('r');
   const pickSrc = (s: SourceKey) => {
@@ -166,44 +199,60 @@ export function AdminPanel() {
     }
   };
 
+  // One-line status per card, from the draft itself (no extra requests): the point
+  // of a dashboard is seeing what is left to configure without opening everything.
+  const priced = Object.keys(draft.pagePrices ?? {}).length;
+  const legalMissing = !draft.legal?.phone?.trim() || !draft.legal?.updatedAt?.trim();
+  const pays = [
+    draft.payments?.local?.enabled !== false ? 'mostrador' : null,
+    draft.payments?.redsys?.enabled ? 'tarjeta' : null,
+  ].filter(Boolean);
+  const CARDS: { id: AdminSection; icon: string; label: string; hint: string; warn?: boolean }[] = [
+    { id: 'producto', icon: '📐', label: 'Producto', hint: `${draft.enabledSizes.length} tamaños · ${draft.presets.length} perfiles` },
+    { id: 'precios', icon: '🏷️', label: 'Precios', hint: priced > 0 ? `${priced} tarifas` : 'sin configurar', warn: priced === 0 },
+    { id: 'pagos', icon: '💳', label: 'Pagos y docs', hint: pays.length ? pays.join(' · ') : 'sin métodos de pago', warn: pays.length === 0 },
+    { id: 'envios', icon: '🚚', label: 'Envíos', hint: draft.shipping?.enabled ? 'activados' : 'desactivados' },
+    { id: 'cupones', icon: '🎟️', label: 'Cupones', hint: 'descuentos por código' },
+    { id: 'legal', icon: '⚖️', label: 'Legal', hint: legalMissing ? 'faltan datos' : 'textos y consentimientos', warn: legalMissing },
+    { id: 'asistente', icon: '✨', label: 'Asistente', hint: draft.assistant?.enabled ? 'activado' : 'desactivado' },
+    { id: 'almacenamiento', icon: '🗄️', label: 'Almacenamiento', hint: 'archivos de los clientes' },
+    { id: 'herramientas', icon: '🧰', label: 'Herramientas', hint: 'copias de seguridad y email' },
+  ];
+  const current = CARDS.find((c) => c.id === section);
+
+  /** Back to the dashboard, warning if there are unsaved changes. */
+  const backToDashboard = () => {
+    if (dirty && !window.confirm('Tienes cambios sin guardar. ¿Salir de todas formas y perderlos?')) return;
+    if (dirty) setDraft(structuredClone(catalog));
+    setDirty(false);
+    window.location.hash = 'admin';
+  };
+
   return (
     <div className="app admin">
-      <header className="topbar">
-        <h1>Administración</h1>
-        <nav className="topnav">
-          <a className="btn" href="#pedidos">
-            Pedidos
-          </a>
-          <a className="btn" href="#estadisticas">
-            📊 Estadísticas
-          </a>
-          <a className="btn" href="#clientes">
-            👥 Clientes
-          </a>
-          <a className="btn" href="#">
-            ← Volver a la tienda
-          </a>
-          <AdminLogoutButton />
-        </nav>
-      </header>
+      <AdminNav title={current ? `Configuración · ${current.label}` : 'Configuración'} current="#admin" />
 
       <div className="admin-body">
-        <nav className="admin-tabs">
-          <button type="button" className={`admin-tab${tab === 'producto' ? ' on' : ''}`} onClick={() => setTab('producto')}>Producto</button>
-          <button type="button" className={`admin-tab${tab === 'catalogo' ? ' on' : ''}`} onClick={() => setTab('catalogo')}>Precios</button>
-          <button type="button" className={`admin-tab${tab === 'pagos' ? ' on' : ''}`} onClick={() => setTab('pagos')}>Pagos y documentos</button>
-          <button type="button" className={`admin-tab${tab === 'envios' ? ' on' : ''}`} onClick={() => setTab('envios')}>Envíos</button>
-          {API_BASE && (
-            <button type="button" className={`admin-tab${tab === 'cupones' ? ' on' : ''}`} onClick={() => setTab('cupones')}>Cupones</button>
-          )}
-          <button type="button" className={`admin-tab${tab === 'legal' ? ' on' : ''}`} onClick={() => setTab('legal')}>Legal</button>
-          <button type="button" className={`admin-tab${tab === 'asistente' ? ' on' : ''}`} onClick={() => setTab('asistente')}>Asistente</button>
-          {API_BASE && (
-            <button type="button" className={`admin-tab${tab === 'herramientas' ? ' on' : ''}`} onClick={() => setTab('herramientas')}>Herramientas</button>
-          )}
-        </nav>
+        {!section ? (
+          <>
+            <p className="muted">Elige qué quieres configurar.</p>
+            <div className="config-grid">
+              {CARDS.filter((c) => API_BASE || (c.id !== 'cupones' && c.id !== 'almacenamiento' && c.id !== 'herramientas')).map((c) => (
+                <a key={c.id} className={`config-card${c.warn ? ' warn' : ''}`} href={`#admin/${c.id}`}>
+                  <span className="config-card-icon" aria-hidden>{c.icon}</span>
+                  <span className="config-card-label">{c.label}</span>
+                  <span className="config-card-hint">{c.hint}</span>
+                </a>
+              ))}
+            </div>
+          </>
+        ) : (
+          <button type="button" className="btn config-back" onClick={backToDashboard}>
+            ← Configuración
+          </button>
+        )}
 
-        {tab === 'producto' && (
+        {section === 'producto' && (
           <>
         <section className="card">
           <p className="muted">Estas opciones son <b>comunes</b> a Web, Papelería y Email (los precios se ponen en la pestaña “Precios”).</p>
@@ -261,7 +310,7 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'catalogo' && (
+        {section === 'precios' && (
           <>
         {/* Selector de canal para los PRECIOS (lo demás es común) */}
         <section className="card src-price-bar">
@@ -460,7 +509,7 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'pagos' && (
+        {section === 'pagos' && (
           <>
             <BusinessEditor draft={draft} change={change} />
             <PaymentsEditor draft={draft} change={change} />
@@ -470,9 +519,9 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'legal' && <LegalEditor draft={draft} change={change} />}
+        {section === 'legal' && <LegalEditor draft={draft} change={change} />}
 
-        {tab === 'envios' && (
+        {section === 'envios' && (
           <>
             <ShippingEditor draft={draft} change={change} />
             <SourceToggles draft={draft} change={change} mod="shipping" label="Envíos" sources={['online', 'mostrador']} />
@@ -480,9 +529,9 @@ export function AdminPanel() {
           </>
         )}
 
-        {tab === 'cupones' && <CouponsEditor />}
+        {section === 'cupones' && <CouponsEditor />}
 
-        {tab === 'asistente' && (
+        {section === 'asistente' && (
         <>
         <SourceToggles draft={draft} change={change} mod="assistant" label="Asistente" sources={['online', 'mostrador']} />
         <section className="card">
@@ -526,9 +575,10 @@ export function AdminPanel() {
         </>
         )}
 
-        {tab === 'herramientas' && API_BASE && (
+        {section === 'almacenamiento' && API_BASE && <StorageReport />}
+
+        {section === 'herramientas' && API_BASE && (
           <>
-            <StorageReport />
             <CatalogBackupTool onRestored={(c) => { setDraft(c); setCatalog(c); setDirty(false); }} />
             <section className="card">
               <h2>Entrada de pedidos por email</h2>
@@ -543,14 +593,16 @@ export function AdminPanel() {
         )}
       </div>
 
-      <footer className="admin-actions">
-        <button type="button" className="btn" onClick={restore}>
-          Restaurar valores por defecto
-        </button>
-        <button type="button" className="btn btn-primary" onClick={save} disabled={!dirty}>
-          {dirty ? 'Guardar cambios' : 'Guardado'}
-        </button>
-      </footer>
+      {EDITS_CATALOG.includes(section) && (
+        <footer className="admin-actions">
+          <button type="button" className="btn" onClick={restore}>
+            Restaurar valores por defecto
+          </button>
+          <button type="button" className="btn btn-primary" onClick={save} disabled={!dirty}>
+            {dirty ? 'Guardar cambios' : 'Guardado'}
+          </button>
+        </footer>
+      )}
     </div>
   );
 }
