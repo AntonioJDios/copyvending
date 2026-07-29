@@ -1923,12 +1923,25 @@ body {
   color: #fff;
 }
 
-/* Rejilla táctil: objetivos grandes, pensada para la tablet del mostrador. */
+/* Rejilla táctil: objetivos grandes, pensada para la tablet del mostrador.
+   Tres columnas fijas (no `auto-fill`, que según el ancho disponible acababa
+   apilándolas); baja a dos y a una en pantallas estrechas. */
 .config-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin: 14px 0 24px;
+  width: 100%;
+}
+@media (max-width: 860px) {
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .config-card {
   display: flex;
