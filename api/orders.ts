@@ -423,6 +423,14 @@ function ensureSchema(): Promise<void> {
       // the sales record: statistics, the 303 summary and coupon-usage counts all
       // read from it); only the documents go.
       await db()`alter table orders add column if not exists files_purged_at bigint`;
+      // Upload registry. Created here as well as in api/presign: the report and the
+      // orphan sweep both read it, and until someone uploaded something the table
+      // did not exist — so the report 500'd and the sweep failed silently.
+      await db()`
+        create table if not exists files (
+          key text primary key, project_id text not null, size_bytes bigint,
+          created_at bigint not null)`;
+      await db()`create index if not exists files_created_idx on files (created_at)`;
       // Pagination + the stats queries all sort by date; the id breaks ties so a
       // cursor can never skip or repeat a row (the PrestaShop import created
       // orders sharing the same millisecond).
