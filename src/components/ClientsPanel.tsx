@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { searchCustomers, customerOrders, type ClientRow, type ClientOrder } from '../lib/clients';
 import type { Address } from '../store/useAuth';
 import { AdminLogoutButton } from './AdminLogoutButton';
+import { useConfigurator } from '../store/useConfigurator';
+import { apiGet } from '../lib/api';
+import { downloadInvoice } from '../lib/invoicePdf';
+import { DEFAULT_BUSINESS, DEFAULT_VAT_PERCENT } from '../domain/catalog';
+import type { Order } from '../store/useOrders';
 
 const eur = (n: number) => `${(Number(n) || 0).toFixed(2).replace('.', ',')} €`;
 const fmtDate = (ts: number | string) => new Date(Number(ts)).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -20,6 +25,24 @@ export function ClientsPanel() {
   const [selected, setSelected] = useState<ClientRow | null>(null);
   const [orders, setOrders] = useState<ClientOrder[] | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [docBusy, setDocBusy] = useState('');
+  const business = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
+  const vatPercent = useConfigurator((s) => s.catalog.invoicing)?.vatPercent ?? DEFAULT_VAT_PERCENT;
+
+  // Fetch the FULL order (admin token bypasses the email check) and build its
+  // Albarán/Ticket PDF. The lightweight list rows don't carry items/customer.
+  const genDoc = async (o: ClientOrder) => {
+    if (docBusy) return;
+    setDocBusy(o.id);
+    try {
+      const full = await apiGet<Order>(`/orders?id=${encodeURIComponent(o.id)}`);
+      await downloadInvoice(full, business, vatPercent);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'No se pudo generar el documento.');
+    } finally {
+      setDocBusy('');
+    }
+  };
 
   const search = async () => {
     const t = term.trim();
@@ -155,6 +178,7 @@ export function ClientsPanel() {
                       <th>Estado</th>
                       <th>Pago</th>
                       <th>Total</th>
+                      <th>Documento</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -166,6 +190,11 @@ export function ClientsPanel() {
                         <td>{STATUS_LABEL[o.status] ?? o.status}</td>
                         <td>{o.paid ? '💶 Pagado' : '⏳ Pend.'}</td>
                         <td>{eur(o.total)}</td>
+                        <td>
+                          <button type="button" className="chip" onClick={() => void genDoc(o)} disabled={docBusy === o.id}>
+                            {docBusy === o.id ? '…' : `🧾 ${o.paid ? 'Ticket' : 'Albarán'}`}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
