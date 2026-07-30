@@ -2,7 +2,18 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import nodemailer from 'nodemailer';
 
-const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
+/**
+ * URL pública de ESTE despliegue.
+ *
+ * Sin dominio fijo de reserva: antes caía a copyvending.vercel.app, y con dos
+ * negocios distintos eso significa mandar a los clientes de una tienda a la web de
+ * la otra (enlaces de acceso, seguimiento del pedido y vuelta del pago). Si falta
+ * la variable, se usa la URL del propio despliegue, que nunca será la del vecino.
+ */
+const PUBLIC_URL =
+  process.env.PUBLIC_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
 const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
 
 // ── Transactional email (provider-agnostic, over HTTP) ───────────────

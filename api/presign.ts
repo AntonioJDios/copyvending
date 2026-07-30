@@ -8,9 +8,28 @@ import { createHmac, timingSafeEqual } from 'crypto';
 const MAX_MB = 300;
 const ACCEPTED = ['application/pdf', 'image/'];
 const EXPIRES = 3600; // presigned URL validity (seconds)
-const ACCOUNT = process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3';
-const BUCKET = process.env.R2_BUCKET || 'copyvending';
-const BASE = `https://${ACCOUNT}.r2.cloudflarestorage.com/${BUCKET}`;
+/**
+ * Almacenamiento R2. SIN valor por defecto, a propósito.
+ *
+ * Antes caían a la cuenta y el bucket de Fotocopiator. Con un único despliegue eso
+ * era una comodidad; con dos negocios distintos es una fuga de datos: a la segunda
+ * tienda se le olvida una variable y los archivos de SUS clientes acaban en el
+ * almacenamiento de la otra, donde además la limpieza de una borraría los de la
+ * otra. Mejor romper ruidosamente al arrancar que mezclar dos negocios en silencio.
+ */
+function r2Config(): { account: string; bucket: string } {
+  const account = process.env.R2_ACCOUNT_ID || '';
+  const bucket = process.env.R2_BUCKET || '';
+  if (!account || !bucket) {
+    throw new Error('Falta R2_ACCOUNT_ID o R2_BUCKET en el servidor: el almacenamiento no está configurado');
+  }
+  return { account, bucket };
+}
+const r2BaseUrl = () => {
+  const { account, bucket } = r2Config();
+  return `https://${account}.r2.cloudflarestorage.com/${bucket}`;
+};
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || '';
@@ -204,7 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const now = new Date();
       const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const objectKey = `jobs/${month}/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
-      const signed = await client.sign(`${BASE}/${objectKey}?X-Amz-Expires=${EXPIRES}`, { method: 'PUT', aws: { signQuery: true } });
+      const signed = await client.sign(`${r2BaseUrl()}/${objectKey}?X-Amz-Expires=${EXPIRES}`, { method: 'PUT', aws: { signQuery: true } });
       // Registered BEFORE handing out the URL, so nothing can be uploaded without
       // leaving a trace we can clean up later.
       await registerFile(objectKey, projectId, size);
@@ -216,14 +235,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (op === 'get') {
       if (typeof key !== 'string' || !key.startsWith('jobs/')) return res.status(400).json({ error: 'key inválida' });
       if (!mayAccess(req, key, token)) return res.status(403).json({ error: 'sin permiso para este archivo' });
-      const signed = await client.sign(`${BASE}/${key}?X-Amz-Expires=${EXPIRES}`, { method: 'GET', aws: { signQuery: true } });
+      const signed = await client.sign(`${r2BaseUrl()}/${key}?X-Amz-Expires=${EXPIRES}`, { method: 'GET', aws: { signQuery: true } });
       return res.status(200).json({ url: signed.url });
     }
 
     if (op === 'delete') {
       if (typeof key !== 'string' || !key.startsWith('jobs/')) return res.status(400).json({ error: 'key inválida' });
       if (!mayAccess(req, key, token)) return res.status(403).json({ error: 'sin permiso para este archivo' });
-      const signed = await client.sign(`${BASE}/${key}`, { method: 'DELETE', aws: { signQuery: true } });
+      const signed = await client.sign(`${r2BaseUrl()}/${key}`, { method: 'DELETE', aws: { signQuery: true } });
       await fetch(signed.url, { method: 'DELETE' });
       return res.status(200).json({ ok: true });
     }

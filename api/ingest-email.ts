@@ -11,11 +11,22 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 export const maxDuration = 60;
 
 // Stable public URL for customer-facing links (not the per-deploy VERCEL_URL).
-const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
+/**
+ * URL pública de ESTE despliegue.
+ *
+ * Sin dominio fijo de reserva: antes caía a copyvending.vercel.app, y con dos
+ * negocios distintos eso significa mandar a los clientes de una tienda a la web de
+ * la otra (enlaces de acceso, seguimiento del pedido y vuelta del pago). Si falta
+ * la variable, se usa la URL del propio despliegue, que nunca será la del vecino.
+ */
+const PUBLIC_URL =
+  process.env.PUBLIC_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
 
 // Self-contained (no ../src imports — they break the Vercel runtime). Pricing
 // and the order insert are delegated to /api/orders, which is authoritative.
-const SELF_URL = process.env.SELF_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://copyvending.vercel.app');
+const SELF_URL = process.env.SELF_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : PUBLIC_URL);
 
 /**
  * Email → print order pipeline. This endpoint processes ONE normalised email
@@ -30,9 +41,28 @@ const SELF_URL = process.env.SELF_URL || (process.env.VERCEL_URL ? `https://${pr
  */
 
 // ── R2 (self-contained, like /api/presign) ──────────────────────────
-const ACCOUNT = process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3';
-const BUCKET = process.env.R2_BUCKET || 'copyvending';
-const R2_BASE = `https://${ACCOUNT}.r2.cloudflarestorage.com/${BUCKET}`;
+/**
+ * Almacenamiento R2. SIN valor por defecto, a propósito.
+ *
+ * Antes caían a la cuenta y el bucket de Fotocopiator. Con un único despliegue eso
+ * era una comodidad; con dos negocios distintos es una fuga de datos: a la segunda
+ * tienda se le olvida una variable y los archivos de SUS clientes acaban en el
+ * almacenamiento de la otra, donde además la limpieza de una borraría los de la
+ * otra. Mejor romper ruidosamente al arrancar que mezclar dos negocios en silencio.
+ */
+function r2Config(): { account: string; bucket: string } {
+  const account = process.env.R2_ACCOUNT_ID || '';
+  const bucket = process.env.R2_BUCKET || '';
+  if (!account || !bucket) {
+    throw new Error('Falta R2_ACCOUNT_ID o R2_BUCKET en el servidor: el almacenamiento no está configurado');
+  }
+  return { account, bucket };
+}
+const r2BaseUrl = () => {
+  const { account, bucket } = r2Config();
+  return `https://${account}.r2.cloudflarestorage.com/${bucket}`;
+};
+
 const ACCEPTED = ['application/pdf', 'image/'];
 const MAX_MB = 300;
 
@@ -45,7 +75,7 @@ function extOf(name: string): string {
 }
 async function uploadToR2(projectId: string, name: string, type: string, bytes: Uint8Array): Promise<string> {
   const key = `jobs/${projectId}/${crypto.randomUUID()}${extOf(name)}`;
-  const signed = await r2().sign(`${R2_BASE}/${key}?X-Amz-Expires=3600`, { method: 'PUT', aws: { signQuery: true } });
+  const signed = await r2().sign(`${r2BaseUrl()}/${key}?X-Amz-Expires=3600`, { method: 'PUT', aws: { signQuery: true } });
   const put = await fetch(signed.url, { method: 'PUT', body: bytes as BodyInit, headers: type ? { 'Content-Type': type } : undefined });
   if (!put.ok) throw new Error(`R2 PUT ${put.status}`);
   return key;

@@ -44,7 +44,18 @@ function requireAdmin(req: VercelRequest, res: VercelResponse): boolean {
 
 // Shipment-notification email (folded in here to stay under the Hobby 12-function
 // limit). Best-effort; uses the shop Gmail SMTP.
-const PUBLIC_URL = process.env.PUBLIC_URL || 'https://copyvending.vercel.app';
+/**
+ * URL pública de ESTE despliegue.
+ *
+ * Sin dominio fijo de reserva: antes caía a copyvending.vercel.app, y con dos
+ * negocios distintos eso significa mandar a los clientes de una tienda a la web de
+ * la otra (enlaces de acceso, seguimiento del pedido y vuelta del pago). Si falta
+ * la variable, se usa la URL del propio despliegue, que nunca será la del vecino.
+ */
+const PUBLIC_URL =
+  process.env.PUBLIC_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
 const SHOP_NAME = process.env.SHOP_NAME || 'Copistería';
 
 // ── Transactional email (provider-agnostic, over HTTP) ───────────────
@@ -654,8 +665,20 @@ const r2Client = () =>
     accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
   });
-const r2Base = () =>
-  `https://${process.env.R2_ACCOUNT_ID || '5e9102f62162d87f67622085dc6528b3'}.r2.cloudflarestorage.com/${process.env.R2_BUCKET || 'copyvending'}`;
+/**
+ * SIN valor por defecto, a propósito: antes caía a la cuenta y el bucket de
+ * Fotocopiator. Con dos negocios distintos eso es una fuga de datos — a la segunda
+ * tienda se le olvida una variable y los archivos de sus clientes acaban en el
+ * almacenamiento de la otra, cuya limpieza además los borraría.
+ */
+const r2Base = () => {
+  const account = process.env.R2_ACCOUNT_ID || '';
+  const bucket = process.env.R2_BUCKET || '';
+  if (!account || !bucket) {
+    throw new Error('Falta R2_ACCOUNT_ID o R2_BUCKET en el servidor: el almacenamiento no está configurado');
+  }
+  return `https://${account}.r2.cloudflarestorage.com/${bucket}`;
+};
 
 /** Delete one object. A 404 counts as success: gone is the state we want. */
 async function deleteObject(client: AwsClient, base: string, key: string): Promise<boolean> {
