@@ -21,6 +21,7 @@ import { AccountButton } from './components/AccountButton';
 import { AdminGate } from './components/AdminGate';
 import { CounterGate } from './components/CounterGate';
 import { SiteFooter } from './components/SiteFooter';
+import { Landing } from './components/Landing';
 import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
@@ -67,6 +68,7 @@ function Shop() {
   const [optionsCollapsed, setOptionsCollapsed] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const shopName = useConfigurator((s) => s.catalog.business?.name) || 'Copistería';
 
   // Pull the shared admin catalog (prices) so every device shows the same shop.
   useEffect(() => {
@@ -90,6 +92,58 @@ function Shop() {
     </>
   );
 
+  /**
+   * Cabecera de la tienda, compartida por la portada y el configurador.
+   *
+   * Es una función y no un componente a propósito: un componente definido dentro
+   * de otro se vuelve a montar en cada render, y aquí eso significa perder el
+   * menú desplegado a media interacción.
+   */
+  function renderHeader() {
+    return (
+      <header className="topbar">
+        <h1>
+          {/* El nombre sale de la ficha del negocio, igual que en el pie: el mismo
+              código tiene que poder vestirse de cualquier tienda. En el mostrador
+              no es enlace, porque la tablet no necesita la portada comercial. */}
+          {CURRENT_SOURCE === 'mostrador' ? shopName : <a href="#inicio">{shopName}</a>}
+          <span className={`source-badge src-${CURRENT_SOURCE}`}>
+            {CURRENT_SOURCE === 'mostrador' ? '🏪 Papelería' : '🌐 Web'}
+          </span>
+        </h1>
+        <nav className="topnav">
+          <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
+            {hasBackend && (
+              <a className="btn" href="#asistente" onClick={() => setMenuOpen(false)}>
+                ✨ Asistente
+              </a>
+            )}
+            <a className="btn" href="#imprimir" onClick={() => setMenuOpen(false)}>
+              Imprimir
+            </a>
+            <a className="btn" href="#tazas" onClick={() => setMenuOpen(false)}>
+              Tazas
+            </a>
+            <a className="btn" href="#chapas" onClick={() => setMenuOpen(false)}>
+              Chapas
+            </a>
+            <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
+              Recoger pedido
+            </a>
+            <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
+              ⚙
+            </a>
+          </div>
+          <AccountButton />
+          <CartButton onClick={() => setCartOpen(true)} />
+          <button type="button" className="burger" aria-label="Menú" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+            ☰
+          </button>
+        </nav>
+      </header>
+    );
+  }
+
   function renderPage() {
   if (route.startsWith('#admin'))
     return (
@@ -110,6 +164,13 @@ function Shop() {
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <ChapaConfigurator />
       </Suspense>
+    );
+  if (CURRENT_SOURCE !== 'mostrador' && (route === '' || route === '#' || route.startsWith('#inicio')))
+    return (
+      <div className="app">
+        {renderHeader()}
+        <Landing />
+      </div>
     );
   if (route.startsWith('#carrito')) return <CartPage />;
   if (route.startsWith('#recoger')) return <RecoverOrder />;
@@ -150,40 +211,7 @@ function Shop() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <h1>
-          Copistería
-          <span className={`source-badge src-${CURRENT_SOURCE}`}>
-            {CURRENT_SOURCE === 'mostrador' ? '🏪 Papelería' : '🌐 Web'}
-          </span>
-        </h1>
-        <nav className="topnav">
-          <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
-            {hasBackend && (
-              <a className="btn" href="#asistente" onClick={() => setMenuOpen(false)}>
-                ✨ Asistente
-              </a>
-            )}
-            <a className="btn" href="#tazas" onClick={() => setMenuOpen(false)}>
-              Tazas
-            </a>
-            <a className="btn" href="#chapas" onClick={() => setMenuOpen(false)}>
-              Chapas
-            </a>
-            <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
-              Recoger pedido
-            </a>
-            <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
-              ⚙
-            </a>
-          </div>
-          <AccountButton />
-          <CartButton onClick={() => setCartOpen(true)} />
-          <button type="button" className="burger" aria-label="Menú" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-            ☰
-          </button>
-        </nav>
-      </header>
+      {renderHeader()}
       <div className="hero">
         <h2>Imprime tus documentos online</h2>
         <p>Sube tus PDF o imágenes, elige cómo imprimirlos y añade al carrito. El precio se calcula al instante.</p>

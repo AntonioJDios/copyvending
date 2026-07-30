@@ -154,6 +154,40 @@ export function legalOf(catalog: Pick<Catalog, 'legal'> | undefined): LegalConfi
   return { ...DEFAULT_LEGAL, ...(catalog?.legal ?? {}) };
 }
 
+/**
+ * Home page texts.
+ *
+ * In the database, not in the code: the same build has to be able to dress up as
+ * any shop, and «cámbiame la frase de la portada» must not require a deploy — ni
+ * una llamada al desarrollador. Plain text only, never HTML: it is rendered as
+ * text by React, like the legal overrides, so a stored XSS is impossible.
+ */
+export interface LandingConfig {
+  /** Frase principal de la portada. */
+  claim: string;
+  /** Frase de apoyo, debajo del claim. */
+  subclaim: string;
+  /** Frase corta de confianza (vacía = no se muestra). */
+  trust: string;
+  /** Mostrar la tarjeta de tazas personalizadas. */
+  showMugs: boolean;
+  /** Mostrar la tarjeta de chapas personalizadas. */
+  showBadges: boolean;
+}
+
+export const DEFAULT_LANDING: LandingConfig = {
+  claim: 'Tu copistería online',
+  subclaim:
+    'Sube tus PDF o imágenes, elige cómo imprimirlos y el precio se calcula al instante. Recíbelos en casa o recógelos en tienda.',
+  trust: '',
+  showMugs: true,
+  showBadges: true,
+};
+
+export function landingOf(catalog: Pick<Catalog, 'landing'> | undefined): LandingConfig {
+  return { ...DEFAULT_LANDING, ...(catalog?.landing ?? {}) };
+}
+
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */
 export interface AssistantConfig {
   /** Show the chat assistant to customers. */
@@ -212,6 +246,8 @@ export interface Catalog {
   business?: BusinessConfig;
   /** Legal texts and consent wording (editable in the admin). */
   legal?: LegalConfig;
+  /** Home page texts (optional; absent = the generic defaults). */
+  landing?: LandingConfig;
   /** Home delivery config (optional; absent = disabled). */
   shipping?: ShippingConfig;
   /** Paper sizes offered to the customer. */

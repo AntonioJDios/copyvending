@@ -16,7 +16,9 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_VAT_PERCENT,
   DEFAULT_BUSINESS,
+  DEFAULT_LANDING,
   DEFAULT_LEGAL,
+  landingOf,
   DEFAULT_SHIPPING,
   FINISH_LABEL,
   FOLIO_LABEL,
@@ -78,6 +80,7 @@ type AdminSection =
   | 'envios'
   | 'cupones'
   | 'legal'
+  | 'portada'
   | 'asistente'
   | 'almacenamiento'
   | 'registro'
@@ -96,7 +99,7 @@ function useSection(): AdminSection {
 }
 
 /** Sections that edit the shared catalog draft, so they need the save bar. */
-const EDITS_CATALOG: AdminSection[] = ['producto', 'precios', 'pagos', 'envios', 'legal', 'asistente'];
+const EDITS_CATALOG: AdminSection[] = ['producto', 'precios', 'pagos', 'envios', 'legal', 'portada', 'asistente'];
 
 import type { Acabado, Configuracion, DobleCara, Grosor, Size } from '../domain/types';
 import type { Preset } from '../domain/presets';
@@ -225,6 +228,7 @@ export function AdminPanel() {
     { id: 'pagos', icon: '💳', label: 'Pagos y docs', hint: pays.length ? pays.join(' · ') : 'sin métodos de pago', warn: pays.length === 0 },
     { id: 'envios', icon: '🚚', label: 'Envíos', hint: draft.shipping?.enabled ? 'activados' : 'desactivados' },
     { id: 'cupones', icon: '🎟️', label: 'Cupones', hint: 'descuentos por código' },
+    { id: 'portada', icon: '🏠', label: 'Portada', hint: 'textos de la página de inicio' },
     { id: 'legal', icon: '⚖️', label: 'Legal', hint: legalMissing ? 'faltan datos' : 'textos y consentimientos', warn: legalMissing },
     { id: 'asistente', icon: '✨', label: 'Asistente', hint: draft.assistant?.enabled ? 'activado' : 'desactivado' },
     { id: 'almacenamiento', icon: '🗄️', label: 'Almacenamiento', hint: 'archivos de los clientes' },
@@ -537,6 +541,8 @@ export function AdminPanel() {
             <SourceToggles draft={draft} change={change} mod="invoicing" label="Tickets y albaranes" />
           </>
         )}
+
+        {section === 'portada' && <LandingEditor draft={draft} change={change} />}
 
         {section === 'legal' && <LegalEditor draft={draft} change={change} />}
 
@@ -1300,6 +1306,53 @@ function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
  * Two levels: the consent sentences + the details the templates need, and a
  * full-text override per document for when the shop wants its own wording.
  */
+/**
+ * Textos de la portada.
+ *
+ * Están aquí y no en el código para que la tienda pueda cambiar la frase de
+ * bienvenida o quitar un producto de la portada sin esperar a un despliegue. Solo
+ * texto plano: la web lo pinta como texto, nunca como HTML.
+ */
+function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const t = landingOf(draft);
+  const set = (patch: Partial<typeof t>) => change((d) => { d.landing = { ...DEFAULT_LANDING, ...d.landing, ...patch }; });
+
+  return (
+    <section className="card">
+      <h2>Página de inicio</h2>
+      <p className="muted">
+        Lo que ve quien entra en la web por primera vez. El nombre, la dirección y el teléfono no se ponen aquí: salen
+        de los datos del negocio y de la ficha legal, para no tenerlos escritos en dos sitios distintos.
+      </p>
+      <label className="field-block">
+        Frase principal
+        <input value={t.claim} onChange={(e) => set({ claim: e.target.value })} maxLength={70} />
+      </label>
+      <label className="field-block">
+        Frase de apoyo
+        <textarea rows={3} value={t.subclaim} onChange={(e) => set({ subclaim: e.target.value })} maxLength={300} />
+      </label>
+      <label className="field-block">
+        Frase de confianza (opcional)
+        <input
+          value={t.trust}
+          onChange={(e) => set({ trust: e.target.value })}
+          maxLength={120}
+          placeholder="Ej.: Miles de opositores ya imprimen sus temarios con nosotros"
+        />
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={t.showMugs} onChange={(e) => set({ showMugs: e.target.checked })} />
+        Mostrar tazas personalizadas en la portada
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={t.showBadges} onChange={(e) => set({ showBadges: e.target.checked })} />
+        Mostrar chapas personalizadas en la portada
+      </label>
+    </section>
+  );
+}
+
 function LegalEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const l = { ...DEFAULT_LEGAL, ...(draft.legal ?? {}) };
   const set = (patch: Partial<typeof l>) => change((d) => { d.legal = { ...DEFAULT_LEGAL, ...d.legal, ...patch }; });

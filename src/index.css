@@ -2,6 +2,13 @@
   --brand: #0ea5b7;
   --brand-dark: #0b7f8d;
   --brand-soft: #e6f7f9;
+  /* Magenta: el segundo color de la marca de Fotocopiator. Se usa como acento
+     (segunda llamada a la acción, numeración de los pasos, tarjetas de producto),
+     nunca para texto largo — sobre blanco cansa. Cambiar estas dos líneas viste la
+     tienda entera de otro color. */
+  --accent-2: #d81b7d;
+  --accent-2-dark: #a81461;
+  --accent-2-soft: #fdeaf4;
   --accent: var(--brand);
   --accent-dark: var(--brand-dark);
   --border: #e7ebf0;
@@ -4316,4 +4323,241 @@ body {
   align-items: center;
   gap: 8px;
   margin: 14px 0 4px;
+}
+
+/* ── Portada (landing) ───────────────────────────────────────────────
+   Estática a propósito: es lo primero que ve un cliente, muchas veces desde el
+   móvil con datos, así que no hay imágenes que descargar — el dibujo de la
+   portada son tres divs con CSS. */
+.landing {
+  /* `width: 100%` no es decorativo: .app es un flex column, y un hijo con
+     `margin: 0 auto` NO se estira — se encoge a su contenido. Sin esto la portada
+     quedaba estrecha (solo dos tarjetas por fila) y en el móvil podía salirse. */
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 48px;
+}
+.lp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 32px;
+  align-items: center;
+  padding: 40px 0 28px;
+}
+.lp-hero-text h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  /* Color sólido primero: si el degradado recortado no se soporta, el titular se
+     lee igual. Poner `color: transparent` sin esta red deja el título INVISIBLE. */
+  color: var(--brand-dark);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .lp-hero-text h2 {
+    /* El degradado de la marca: turquesa a magenta. */
+    background: linear-gradient(100deg, var(--brand-dark), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.lp-hero-text p {
+  margin: 0 0 22px;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.lp-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lp-cta-main {
+  padding: 13px 22px;
+  font-size: 1.02rem;
+}
+.lp-cta-alt {
+  padding: 13px 20px;
+  border-color: var(--accent-2);
+  color: var(--accent-2-dark);
+}
+.lp-trust {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Tres folios apilados, girados. Decoración pura: aria-hidden en el marcado. */
+.lp-hero-art {
+  position: relative;
+  height: 220px;
+}
+.lp-sheet {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 132px;
+  height: 186px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.lp-sheet-1 {
+  transform: translateX(-50%) rotate(-4deg);
+}
+.lp-sheet-2 {
+  transform: translateX(-32%) rotate(5deg);
+  background: var(--brand-soft);
+  border-color: #cdeef2;
+}
+.lp-sheet-3 {
+  transform: translateX(-68%) rotate(-13deg);
+  background: var(--accent-2-soft);
+  border-color: #f7d4e6;
+}
+
+.lp-cards {
+  display: grid;
+  /* Tres fijas, no auto-fit: con auto-fit la tercera tarjeta caía sola a una
+     segunda fila y quedaba huérfana. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0 44px;
+}
+.lp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--brand);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.lp-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
+}
+.lp-card-mug {
+  border-top-color: var(--accent-2);
+}
+.lp-card-badge {
+  border-top-color: #f59e0b;
+}
+.lp-card-icon {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+.lp-card h3 {
+  margin: 0;
+  font-size: 1.14rem;
+}
+.lp-card p {
+  margin: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.lp-card-go {
+  margin-top: 6px;
+  color: var(--brand-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.lp-card-mug .lp-card-go {
+  color: var(--accent-2-dark);
+}
+.lp-card-badge .lp-card-go {
+  color: #b45309;
+}
+
+.lp-how h3,
+.lp-contact h3 {
+  margin: 0 0 18px;
+  font-size: 1.3rem;
+}
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0 0 44px;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+.lp-steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.lp-step-n {
+  flex: 0 0 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-2-soft);
+  color: var(--accent-2-dark);
+  font-weight: 700;
+}
+.lp-steps strong {
+  display: block;
+  margin-bottom: 3px;
+}
+.lp-steps p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.lp-contact {
+  padding: 24px;
+  background: var(--brand-soft);
+  border-radius: var(--radius);
+}
+.lp-contact ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.lp-contact a {
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .lp-hero,
+  .lp-cards,
+  .lp-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lp-hero {
+    padding-top: 26px;
+  }
+  /* El dibujo decorativo no compite con el contenido en un móvil. */
+  .lp-hero-art {
+    display: none;
+  }
+}
+
+/* El nombre de la tienda en la cabecera es un enlace a la portada, pero se lee
+   como marca: sin subrayado y con el color del titular, no el de un enlace. */
+.topbar h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+.topbar h1 a:hover {
+  color: var(--brand-dark);
 }
