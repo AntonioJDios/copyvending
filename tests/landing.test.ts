@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LANDING, landingOf } from '../src/domain/catalog';
+import { cheapestPagePrice, DEFAULT_LANDING, landingOf } from '../src/domain/catalog';
 
 /**
  * The home page reads its texts from the shop's configuration. A catalogue saved
@@ -33,5 +33,40 @@ describe('textos de la portada', () => {
     for (const brand of ['fotocopiator', 'aljaybe', 'copyvending']) {
       expect(texts).not.toContain(brand);
     }
+  });
+
+  it('el aviso y el tablón nacen vacíos', () => {
+    // Una tienda recién instalada no debe mostrar una tira de aviso en blanco ni
+    // una sección de anuncios sin anuncios.
+    expect(DEFAULT_LANDING.banner).toBe('');
+    expect(DEFAULT_LANDING.notices).toEqual([]);
+  });
+
+  it('conserva los anuncios guardados', () => {
+    const notices = [{ title: 'Vuelta al cole', text: 'Ya tenemos el material.' }];
+    expect(landingOf({ landing: { ...DEFAULT_LANDING, notices } }).notices).toEqual(notices);
+  });
+});
+
+/**
+ * El «desde X €» de la portada sale de la tarifa real. Es publicidad: si sale un
+ * número inventado (o un cero porque la tienda aún no tiene precios), es
+ * publicidad engañosa, no un fallo estético.
+ */
+describe('precio «desde» de la portada', () => {
+  it('es el más bajo de la tarifa', () => {
+    expect(cheapestPagePrice({ pagePrices: { a: 0.05, b: 0.019, c: 0.12 } })).toBe(0.019);
+  });
+
+  it('sin precios cargados no dice nada, en lugar de anunciar 0 €', () => {
+    expect(cheapestPagePrice({ pagePrices: {} })).toBeNull();
+    expect(cheapestPagePrice(undefined)).toBeNull();
+  });
+
+  it('ignora los ceros y los valores no numéricos', () => {
+    // Un 0 en la tarifa suele ser una tarifa a medio rellenar, no impresión gratis.
+    expect(cheapestPagePrice({ pagePrices: { a: 0, b: 0.04 } })).toBe(0.04);
+    expect(cheapestPagePrice({ pagePrices: { a: Number.NaN, b: 0.04 } })).toBe(0.04);
+    expect(cheapestPagePrice({ pagePrices: { a: 0 } })).toBeNull();
   });
 });

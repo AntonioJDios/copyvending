@@ -69,6 +69,7 @@ function Shop() {
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const shopName = useConfigurator((s) => s.catalog.business?.name) || 'Copistería';
+  const shopLogo = useConfigurator((s) => s.catalog.business?.logo) || '';
 
   // Pull the shared admin catalog (prices) so every device shows the same shop.
   useEffect(() => {
@@ -102,7 +103,9 @@ function Shop() {
   function renderHeader() {
     return (
       <header className="topbar">
-        <h1>
+        {/* Con logo se quita la marca dibujada por CSS, para no tener dos. */}
+        <h1 className={shopLogo ? 'has-logo' : ''}>
+          {shopLogo && <img className="brand-logo" src={shopLogo} alt={shopName} />}
           {/* El nombre sale de la ficha del negocio, igual que en el pie: el mismo
               código tiene que poder vestirse de cualquier tienda. En el mostrador
               no es enlace, porque la tablet no necesita la portada comercial. */}
@@ -167,7 +170,7 @@ function Shop() {
     );
   if (CURRENT_SOURCE !== 'mostrador' && (route === '' || route === '#' || route.startsWith('#inicio')))
     return (
-      <div className="app">
+      <div className="app app-landing">
         {renderHeader()}
         <Landing />
       </div>

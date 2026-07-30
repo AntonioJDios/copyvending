@@ -55,8 +55,22 @@ export interface BusinessConfig {
   nif: string;
   address: string;
   email: string;
+  /**
+   * Logo de la tienda como data URL, o vacío para usar la marca dibujada.
+   *
+   * Va aquí dentro y no en el almacenamiento a propósito: las URLs firmadas de R2
+   * caducan en una hora y el logo tiene que verlo cualquier visitante sin permiso
+   * alguno. Un logo son unos pocos kilobytes, la configuración ya se carga en cada
+   * página, y así no hay ni una petición extra ni nada que se rompa al migrar de
+   * proveedor de almacenamiento. El admin limita el tamaño al guardarlo.
+   */
+  logo?: string;
 }
-export const DEFAULT_BUSINESS: BusinessConfig = { name: '', nif: '', address: '', email: '' };
+export const DEFAULT_BUSINESS: BusinessConfig = { name: '', nif: '', address: '', email: '', logo: '' };
+
+/** Tamaño máximo del logo. Viaja dentro del catálogo, que se pide en cada carga
+ *  de página: un logo de 2 MB penalizaría a todos los clientes de la tienda. */
+export const MAX_LOGO_BYTES = 64 * 1024;
 
 /** Invoicing (optional). Uses the shop's `business` data for the header. */
 export interface InvoicingConfig {
@@ -162,6 +176,11 @@ export function legalOf(catalog: Pick<Catalog, 'legal'> | undefined): LegalConfi
  * una llamada al desarrollador. Plain text only, never HTML: it is rendered as
  * text by React, like the legal overrides, so a stored XSS is impossible.
  */
+export interface Notice {
+  title: string;
+  text: string;
+}
+
 export interface LandingConfig {
   /** Frase principal de la portada. */
   claim: string;
@@ -169,6 +188,23 @@ export interface LandingConfig {
   subclaim: string;
   /** Frase corta de confianza (vacía = no se muestra). */
   trust: string;
+  /**
+   * Aviso en la tira superior de la web (vacío = no aparece la tira).
+   *
+   * Para lo urgente y temporal: cerrado por vacaciones, un cupón, un cambio de
+   * horario. Separado del tablón porque esto se ve sin bajar la página.
+   */
+  banner: string;
+  /** Tablón de anuncios de la tienda. Vacío = no se muestra la sección. */
+  notices: Notice[];
+  /**
+   * Mostrar «desde X € la página» con el precio más bajo de la tarifa.
+   *
+   * Sale de los precios reales, no de un texto: un precio escrito a mano acaba
+   * desactualizado y un precio desactualizado en la portada es publicidad
+   * engañosa. Se puede apagar si la tienda prefiere no competir por precio.
+   */
+  showPriceFrom: boolean;
   /** Mostrar la tarjeta de tazas personalizadas. */
   showMugs: boolean;
   /** Mostrar la tarjeta de chapas personalizadas. */
@@ -180,9 +216,24 @@ export const DEFAULT_LANDING: LandingConfig = {
   subclaim:
     'Sube tus PDF o imágenes, elige cómo imprimirlos y el precio se calcula al instante. Recíbelos en casa o recógelos en tienda.',
   trust: '',
+  banner: '',
+  notices: [],
+  showPriceFrom: true,
   showMugs: true,
   showBadges: true,
 };
+
+/**
+ * Precio por página más bajo de la tarifa, para el «desde X €» de la portada.
+ *
+ * Null si la tienda no tiene precios cargados: es preferible no decir nada a
+ * anunciar un cero. Solo mira el precio por página (sin encuadernado ni
+ * recargos), que es justo lo que significa «desde».
+ */
+export function cheapestPagePrice(catalog: Pick<Catalog, 'pagePrices'> | undefined): number | null {
+  const prices = Object.values(catalog?.pagePrices ?? {}).filter((n) => Number.isFinite(n) && n > 0);
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
 
 export function landingOf(catalog: Pick<Catalog, 'landing'> | undefined): LandingConfig {
   return { ...DEFAULT_LANDING, ...(catalog?.landing ?? {}) };

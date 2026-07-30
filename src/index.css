@@ -4325,31 +4325,84 @@ body {
   margin: 14px 0 4px;
 }
 
+.logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Cuadros grises: un logo blanco sobre fondo blanco parecería no haberse
+     subido, y con fondo transparente hay que ver qué se está subiendo. */
+  background-image: linear-gradient(45deg, #eef1f5 25%, transparent 25%, transparent 75%, #eef1f5 75%),
+    linear-gradient(45deg, #eef1f5 25%, transparent 25%, transparent 75%, #eef1f5 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.logo-preview img {
+  height: 46px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+}
+
 /* ── Portada (landing) ───────────────────────────────────────────────
+   Bandas a todo el ancho que alternan blanco y un tinte muy suave, para que las
+   secciones se lean como bloques distintos sin recurrir a colores fuertes. Cada
+   banda lleva dentro un .lp-inner centrado: de ahí el marcado duplicado.
    Estática a propósito: es lo primero que ve un cliente, muchas veces desde el
-   móvil con datos, así que no hay imágenes que descargar — el dibujo de la
-   portada son tres divs con CSS. */
+   móvil con datos, así que no hay ni una imagen que descargar. */
 .landing {
-  /* `width: 100%` no es decorativo: .app es un flex column, y un hijo con
-     `margin: 0 auto` NO se estira — se encoge a su contenido. Sin esto la portada
-     quedaba estrecha (solo dos tarjetas por fila) y en el móvil podía salirse. */
+  width: 100%;
+}
+.lp-inner {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 0 20px 48px;
+  padding: 0 20px;
 }
+.lp-band {
+  padding: 52px 0;
+  /* Cada banda pinta su fondo. Depender del contenedor ya me costó perder el
+     blanco al reordenar el CSS. */
+  background: #fff;
+  border-top: 1px solid var(--border);
+}
+.lp-band-hero {
+  padding: 46px 0 40px;
+  border-top: 0;
+}
+.lp-band-tint {
+  background: #fafbfd;
+}
+.lp-h {
+  margin: 0 0 22px;
+  font-size: 1.42rem;
+  letter-spacing: -0.01em;
+}
+
+/* Tira de aviso. Magenta: es lo único de la página que grita, y para eso está. */
+.lp-banner {
+  padding: 9px 20px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent-2-dark));
+  color: #fff;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .lp-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 32px;
   align-items: center;
-  padding: 40px 0 28px;
 }
 .lp-hero-text h2 {
   margin: 0 0 12px;
-  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  font-size: clamp(2rem, 4.4vw, 3rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
   /* Color sólido primero: si el degradado recortado no se soporta, el titular se
      lee igual. Poner `color: transparent` sin esta red deja el título INVISIBLE. */
   color: var(--brand-dark);
@@ -4363,12 +4416,29 @@ body {
     color: transparent;
   }
 }
-.lp-hero-text p {
-  margin: 0 0 22px;
+.lp-hero-text > p {
+  margin: 0 0 16px;
   max-width: 46ch;
   color: var(--muted);
-  font-size: 1.05rem;
+  font-size: 1.06rem;
   line-height: 1.6;
+}
+.lp-from {
+  margin: 0 0 20px !important;
+  color: var(--text) !important;
+  font-size: 1rem !important;
+}
+.lp-from strong {
+  color: var(--accent-2-dark);
+  font-size: 1.12rem;
+}
+.lp-logo {
+  display: block;
+  height: 54px;
+  width: auto;
+  max-width: 260px;
+  margin: 0 0 18px;
+  object-fit: contain;
 }
 .lp-cta {
   display: flex;
@@ -4376,21 +4446,21 @@ body {
   gap: 10px;
 }
 .lp-cta-main {
-  padding: 13px 22px;
-  font-size: 1.02rem;
+  padding: 14px 24px;
+  font-size: 1.03rem;
 }
 .lp-cta-alt {
-  padding: 13px 20px;
+  padding: 14px 20px;
   border-color: var(--accent-2);
   color: var(--accent-2-dark);
 }
 .lp-trust {
-  margin: 18px 0 0;
+  margin: 22px 0 0;
   color: var(--muted);
   font-size: 0.9rem;
 }
 
-/* Tres folios apilados, girados. Decoración pura: aria-hidden en el marcado. */
+/* Tres folios apilados. Decoración pura: aria-hidden en el marcado. */
 .lp-hero-art {
   position: relative;
   height: 220px;
@@ -4420,13 +4490,29 @@ body {
   border-color: #f7d4e6;
 }
 
+/* Garantías: una tira fina, sin cajas, para que no compita con el hero. */
+.lp-badges {
+  padding: 14px 0;
+  background: var(--brand-soft);
+  border-top: 1px solid #cdeef2;
+  border-bottom: 1px solid #cdeef2;
+}
+.lp-badges .lp-inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 28px;
+  font-size: 0.92rem;
+  color: var(--brand-dark);
+}
+.lp-badge strong {
+  color: var(--text);
+}
+
 .lp-cards {
   display: grid;
-  /* Tres fijas, no auto-fit: con auto-fit la tercera tarjeta caía sola a una
-     segunda fila y quedaba huérfana. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin: 8px 0 44px;
 }
 .lp-card {
   display: flex;
@@ -4437,7 +4523,6 @@ body {
   border: 1px solid var(--border);
   border-top: 3px solid var(--brand);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   color: inherit;
   text-decoration: none;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -4456,7 +4541,7 @@ body {
   font-size: 1.9rem;
   line-height: 1;
 }
-.lp-card h3 {
+.lp-card h4 {
   margin: 0;
   font-size: 1.14rem;
 }
@@ -4480,19 +4565,13 @@ body {
   color: #b45309;
 }
 
-.lp-how h3,
-.lp-contact h3 {
-  margin: 0 0 18px;
-  font-size: 1.3rem;
-}
 .lp-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
-  margin: 0 0 44px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  counter-reset: none;
 }
 .lp-steps li {
   display: flex;
@@ -4520,11 +4599,31 @@ body {
   line-height: 1.55;
 }
 
-.lp-contact {
-  padding: 24px;
-  background: var(--brand-soft);
-  border-radius: var(--radius);
+.lp-notices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
 }
+.lp-notice {
+  padding: 18px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-2);
+  border-radius: var(--radius-sm);
+}
+.lp-notice h4 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+.lp-notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.93rem;
+  line-height: 1.55;
+  /* El texto lo escribe la tienda: puede traer saltos de línea. */
+  white-space: pre-wrap;
+}
+
 .lp-contact ul {
   margin: 0;
   padding: 0;
@@ -4543,17 +4642,50 @@ body {
   .lp-steps {
     grid-template-columns: minmax(0, 1fr);
   }
-  .lp-hero {
-    padding-top: 26px;
+  .lp-band {
+    padding: 38px 0;
   }
   /* El dibujo decorativo no compite con el contenido en un móvil. */
   .lp-hero-art {
     display: none;
   }
+  .lp-badges .lp-inner {
+    justify-content: flex-start;
+  }
 }
 
-/* El nombre de la tienda en la cabecera es un enlace a la portada, pero se lee
-   como marca: sin subrayado y con el color del titular, no el de un enlace. */
+.notice-edit {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+/* Fondo blanco en toda la página de portada, también en los márgenes laterales
+   y por debajo del contenido. */
+.app-landing {
+  background: #fff;
+}
+
+/* ── Logo y marca de la cabecera ─────────────────────────────────────
+   El logo sale de la configuración (data URL), así que cada tienda pone el suyo
+   sin tocar el código ni el repositorio. */
+.topbar h1.has-logo::before {
+  /* Con logo no queremos además la marca dibujada por CSS. */
+  content: none;
+}
+.brand-logo {
+  height: 30px;
+  width: auto;
+  max-width: 160px;
+  object-fit: contain;
+}
+/* El nombre de la tienda es un enlace a la portada, pero se lee como marca: sin
+   subrayado y con el color del titular, no el de un enlace. */
 .topbar h1 a {
   color: inherit;
   text-decoration: none;

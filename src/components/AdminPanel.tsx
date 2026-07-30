@@ -19,6 +19,8 @@ import {
   DEFAULT_LANDING,
   DEFAULT_LEGAL,
   landingOf,
+  type Notice,
+  MAX_LOGO_BYTES,
   DEFAULT_SHIPPING,
   FINISH_LABEL,
   FOLIO_LABEL,
@@ -1313,6 +1315,68 @@ function BusinessEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Ca
  * bienvenida o quitar un producto de la portada sin esperar a un despliegue. Solo
  * texto plano: la web lo pinta como texto, nunca como HTML.
  */
+/**
+ * Logo de la tienda.
+ *
+ * Se guarda dentro de la configuración como data URL, no en el almacenamiento de
+ * archivos: las URLs firmadas de R2 caducan en una hora y el logo tiene que verlo
+ * cualquier visitante. Como la configuración se descarga en cada carga de página,
+ * el tamaño se limita de verdad — un logo de 2 MB lo pagarían todos los clientes.
+ */
+function LogoField({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const [error, setError] = useState('');
+  const logo = draft.business?.logo ?? '';
+
+  const pick = (file: File | undefined) => {
+    setError('');
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) {
+      setError('El logo debe ser una imagen PNG, JPG, WEBP o SVG.');
+      return;
+    }
+    // El data URL crece ~33% respecto al archivo, así que se comprueba el
+    // resultado final y no el tamaño del fichero original.
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result ?? '');
+      if (url.length > MAX_LOGO_BYTES) {
+        setError(
+          `La imagen es demasiado grande (${Math.round(url.length / 1024)} kB). El máximo es ${Math.round(MAX_LOGO_BYTES / 1024)} kB: el logo se descarga en cada visita. Un PNG de unos 300 px de ancho suele sobrar.`
+        );
+        return;
+      }
+      change((d) => { d.business = { ...DEFAULT_BUSINESS, ...d.business, logo: url }; });
+    };
+    reader.onerror = () => setError('No se pudo leer el archivo.');
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="field-block">
+      Logo de la tienda
+      {logo ? (
+        <div className="logo-preview">
+          <img src={logo} alt="Logo de la tienda" />
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => change((d) => { d.business = { ...DEFAULT_BUSINESS, ...d.business, logo: '' }; })}
+          >
+            Quitar logo
+          </button>
+        </div>
+      ) : (
+        <p className="muted">
+          Sin logo se muestra el nombre de la tienda con una marca de color. Sube un PNG con fondo transparente si lo
+          tienes.
+        </p>
+      )}
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(e) => pick(e.target.files?.[0])} />
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  );
+}
+
 function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const t = landingOf(draft);
   const set = (patch: Partial<typeof t>) => change((d) => { d.landing = { ...DEFAULT_LANDING, ...d.landing, ...patch }; });
@@ -1324,6 +1388,7 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
         Lo que ve quien entra en la web por primera vez. El nombre, la dirección y el teléfono no se ponen aquí: salen
         de los datos del negocio y de la ficha legal, para no tenerlos escritos en dos sitios distintos.
       </p>
+      <LogoField draft={draft} change={change} />
       <label className="field-block">
         Frase principal
         <input value={t.claim} onChange={(e) => set({ claim: e.target.value })} maxLength={70} />
@@ -1341,6 +1406,19 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
           placeholder="Ej.: Miles de opositores ya imprimen sus temarios con nosotros"
         />
       </label>
+      <label className="field-block">
+        Aviso en la tira superior (vacío = no se muestra)
+        <input
+          value={t.banner}
+          onChange={(e) => set({ banner: e.target.value })}
+          maxLength={140}
+          placeholder="Ej.: Cerrado del 15 al 22 de agosto · Los pedidos se preparan a la vuelta"
+        />
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={t.showPriceFrom} onChange={(e) => set({ showPriceFrom: e.target.checked })} />
+        Mostrar «imprime desde X € la página» con el precio más bajo de tu tarifa
+      </label>
       <label className="check-row">
         <input type="checkbox" checked={t.showMugs} onChange={(e) => set({ showMugs: e.target.checked })} />
         Mostrar tazas personalizadas en la portada
@@ -1349,7 +1427,65 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
         <input type="checkbox" checked={t.showBadges} onChange={(e) => set({ showBadges: e.target.checked })} />
         Mostrar chapas personalizadas en la portada
       </label>
+      <NoticeBoardEditor draft={draft} change={change} />
     </section>
+  );
+}
+
+/**
+ * Tablón de anuncios de la portada.
+ *
+ * Para lo que la tienda quiera contar y no cabe en una tarifa: material nuevo,
+ * horarios de exámenes, promociones de temporada. Se guarda en la base de datos,
+ * así que lo cambia el dueño cuando quiera y sin desplegar.
+ */
+function NoticeBoardEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const t = landingOf(draft);
+  const write = (notices: Notice[]) => change((d) => { d.landing = { ...DEFAULT_LANDING, ...d.landing, notices }; });
+  const edit = (i: number, patch: Partial<Notice>) =>
+    write(t.notices.map((n, j) => (j === i ? { ...n, ...patch } : n)));
+
+  return (
+    <div className="field-block">
+      Tablón de anuncios
+      <p className="muted">
+        Aparece como una sección propia en la portada. Sin anuncios no se muestra nada, así que se puede dejar vacío.
+      </p>
+      {t.notices.map((n, i) => (
+        <div className="notice-edit" key={i}>
+          <input
+            value={n.title}
+            onChange={(e) => edit(i, { title: e.target.value })}
+            maxLength={80}
+            placeholder="Título del anuncio"
+          />
+          <textarea
+            rows={3}
+            value={n.text}
+            onChange={(e) => edit(i, { text: e.target.value })}
+            maxLength={600}
+            placeholder="Texto del anuncio"
+          />
+          <div className="block-actions">
+            <button type="button" className="btn btn-sm" disabled={i === 0} onClick={() => {
+              const next = [...t.notices];
+              [next[i - 1], next[i]] = [next[i], next[i - 1]];
+              write(next);
+            }}>
+              ↑ Subir
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => write(t.notices.filter((_, j) => j !== i))}>
+              Quitar
+            </button>
+          </div>
+        </div>
+      ))}
+      <div className="block-actions">
+        <button type="button" className="btn" onClick={() => write([...t.notices, { title: '', text: '' }])}>
+          + Añadir anuncio
+        </button>
+      </div>
+    </div>
   );
 }
 
