@@ -109,7 +109,16 @@ function Shop() {
           {/* El nombre sale de la ficha del negocio, igual que en el pie: el mismo
               código tiene que poder vestirse de cualquier tienda. En el mostrador
               no es enlace, porque la tablet no necesita la portada comercial. */}
-          {CURRENT_SOURCE === 'mostrador' ? shopName : <a href="#inicio">{shopName}</a>}
+          {CURRENT_SOURCE === 'mostrador' ? (
+            <span className={shopLogo ? 'sr-only' : ''}>{shopName}</span>
+          ) : (
+            // Con logo el nombre ya está dibujado dentro de la imagen: repetirlo al
+            // lado es ruido. Se mantiene en el marcado (oculto) para que el enlace
+            // a la portada siga teniendo texto para un lector de pantalla.
+            <a href="#inicio" className={shopLogo ? 'sr-only' : ''}>
+              {shopName}
+            </a>
+          )}
           <span className={`source-badge src-${CURRENT_SOURCE}`}>
             {CURRENT_SOURCE === 'mostrador' ? '🏪 Papelería' : '🌐 Web'}
           </span>

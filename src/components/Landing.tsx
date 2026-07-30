@@ -1,5 +1,6 @@
 import { useConfigurator } from '../store/useConfigurator';
 import { cheapestPagePrice, DEFAULT_BUSINESS, landingOf, legalOf } from '../domain/catalog';
+import { Icon } from './Icon';
 
 /**
  * Home page.
@@ -20,9 +21,13 @@ import { cheapestPagePrice, DEFAULT_BUSINESS, landingOf, legalOf } from '../doma
  *     hand into a landing page goes stale, and a stale price on a home page is
  *     misleading advertising, not a cosmetic bug.
  *
- * Bands alternate white and tinted so the sections read as separate blocks. Each
- * band is full width with its own centred inner wrapper — that is why the markup
- * looks doubled up.
+ * Order of the page: hero → guarantees → notice board → what you can order (with
+ * how it works, same block) → contact. Bands alternate white and tinted so the
+ * sections read as separate blocks; each band is full width with its own centred
+ * inner wrapper, which is why the markup looks doubled up.
+ *
+ * No emoji as icons — see ./Icon. The system draws emoji differently on every
+ * device and they cannot take the brand colour.
  */
 export function Landing() {
   const catalog = useConfigurator((s) => s.catalog);
@@ -89,98 +94,43 @@ export function Landing() {
           <div className="lp-inner">
             {freeFrom !== null && (
               <span className="lp-badge">
-                🚚 <strong>Envío gratis desde {eur(freeFrom)}</strong>
+                <Icon name="truck" />
+                <span>
+                  <strong>Envío gratis</strong> desde {eur(freeFrom)}
+                </span>
               </span>
             )}
             {legal.prepTime && (
               <span className="lp-badge">
-                ⏱️ Preparación en <strong>{legal.prepTime}</strong>
+                <Icon name="clock" />
+                <span>
+                  Preparación en <strong>{legal.prepTime}</strong>
+                </span>
               </span>
             )}
             {legal.deliveryTime && (
               <span className="lp-badge">
-                📦 Entrega en <strong>{legal.deliveryTime}</strong>
+                <Icon name="package" />
+                <span>
+                  Entrega en <strong>{legal.deliveryTime}</strong>
+                </span>
               </span>
             )}
-            <span className="lp-badge">🔒 Pago seguro</span>
+            <span className="lp-badge">
+              <Icon name="lock" />
+              <span>Pago seguro</span>
+            </span>
           </div>
         </div>
       )}
 
-      <section className="lp-band">
-        <div className="lp-inner">
-          <h3 className="lp-h">Qué puedes pedir</h3>
-          <div className="lp-cards">
-            <a className="lp-card lp-card-print" href="#imprimir">
-              <span className="lp-card-icon" aria-hidden>
-                🖨️
-              </span>
-              <h4>Copistería online</h4>
-              <p>Fotocopias e impresión en A3, A4 y A5, en color o blanco y negro, con encuadernación si la necesitas.</p>
-              <span className="lp-card-go">Empezar a imprimir →</span>
-            </a>
-            {t.showMugs && (
-              <a className="lp-card lp-card-mug" href="#tazas">
-                <span className="lp-card-icon" aria-hidden>
-                  ☕
-                </span>
-                <h4>Tazas personalizadas</h4>
-                <p>Tu foto o tu diseño en una taza. La ves en 3D antes de pedirla.</p>
-                <span className="lp-card-go">Diseñar mi taza →</span>
-              </a>
-            )}
-            {t.showBadges && (
-              <a className="lp-card lp-card-badge" href="#chapas">
-                <span className="lp-card-icon" aria-hidden>
-                  🎯
-                </span>
-                <h4>Chapas personalizadas</h4>
-                <p>Con imperdible, imán, espejo o abrebotellas. Ideales para eventos y regalos.</p>
-                <span className="lp-card-go">Diseñar mis chapas →</span>
-              </a>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-band lp-band-tint">
-        <div className="lp-inner">
-          <h3 className="lp-h">Cómo funciona</h3>
-          <ol className="lp-steps">
-            <li>
-              <span className="lp-step-n">1</span>
-              <div>
-                <strong>Sube tus archivos</strong>
-                <p>PDF o imágenes. Puedes subir varios documentos en el mismo pedido.</p>
-              </div>
-            </li>
-            <li>
-              <span className="lp-step-n">2</span>
-              <div>
-                <strong>Elige cómo imprimirlos</strong>
-                <p>Tamaño, color, doble cara y encuadernado. El precio se actualiza mientras eliges.</p>
-              </div>
-            </li>
-            <li>
-              <span className="lp-step-n">3</span>
-              <div>
-                <strong>Recíbelos o recógelos</strong>
-                <p>
-                  {freeFrom !== null
-                    ? `Envío a domicilio (gratis desde ${eur(freeFrom)}) o recogida en tienda.`
-                    : 'Envío a domicilio o recogida en tienda.'}
-                </p>
-              </div>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      {/* Tablón de anuncios: lo que la tienda quiera contar. */}
+      {/* Tablón de anuncios: lo primero después de las garantías, porque es lo que
+          la tienda quiere contar hoy. */}
       {t.notices.length > 0 && (
-        <section className="lp-band">
+        <section className="lp-band lp-band-tint">
           <div className="lp-inner">
-            <h3 className="lp-h">Tablón de anuncios</h3>
+            {/* Sin titular: los anuncios ya se explican solos y un rótulo
+                «Tablón de anuncios» solo añade ruido. Cada anuncio lleva el suyo. */}
             <div className="lp-notices">
               {t.notices.map((n, i) => (
                 <article className="lp-notice" key={`${n.title}-${i}`}>
@@ -194,31 +144,121 @@ export function Landing() {
         </section>
       )}
 
+      {/* Qué puedes pedir y cómo funciona van juntos: son la misma idea — lo que
+          vendemos y cómo se compra. */}
+      <section className="lp-band">
+        <div className="lp-inner">
+          <h3 className="lp-h">Qué puedes pedir</h3>
+          <div className="lp-cards">
+            <a className="lp-card lp-card-print" href="#imprimir">
+              <span className="lp-card-icon">
+                <Icon name="printer" />
+              </span>
+              <h4>Copistería online</h4>
+              <p>Fotocopias e impresión en A3, A4 y A5, en color o blanco y negro, con encuadernación si la necesitas.</p>
+              <span className="lp-card-go">Empezar a imprimir →</span>
+            </a>
+            {t.showMugs && (
+              <a className="lp-card lp-card-mug" href="#tazas">
+                <span className="lp-card-icon">
+                  <Icon name="mug" />
+                </span>
+                <h4>Tazas personalizadas</h4>
+                <p>Tu foto o tu diseño en una taza. La ves en 3D antes de pedirla.</p>
+                <span className="lp-card-go">Diseñar mi taza →</span>
+              </a>
+            )}
+            {t.showBadges && (
+              <a className="lp-card lp-card-badge" href="#chapas">
+                <span className="lp-card-icon">
+                  <Icon name="badge" />
+                </span>
+                <h4>Chapas personalizadas</h4>
+                <p>Con imperdible, imán, espejo o abrebotellas. Ideales para eventos y regalos.</p>
+                <span className="lp-card-go">Diseñar mis chapas →</span>
+              </a>
+            )}
+          </div>
+
+          <h4 className="lp-sub">Cómo funciona</h4>
+          <ol className="lp-steps">
+            <li className="lp-step">
+              <span className="lp-step-icon">
+                <Icon name="upload" />
+                <span className="lp-step-n">1</span>
+              </span>
+              <strong>Sube tus archivos</strong>
+              <p>PDF o imágenes. Puedes subir varios documentos en el mismo pedido.</p>
+            </li>
+            <li className="lp-step">
+              <span className="lp-step-icon">
+                <Icon name="sliders" />
+                <span className="lp-step-n">2</span>
+              </span>
+              <strong>Elige cómo imprimirlos</strong>
+              <p>Tamaño, color, doble cara y encuadernado. El precio se actualiza mientras eliges.</p>
+            </li>
+            <li className="lp-step">
+              <span className="lp-step-icon">
+                <Icon name="truck" />
+                <span className="lp-step-n">3</span>
+              </span>
+              <strong>Recíbelos o recógelos</strong>
+              <p>
+                {freeFrom !== null
+                  ? `Envío a domicilio (gratis desde ${eur(freeFrom)}) o recogida en tienda.`
+                  : 'Envío a domicilio o recogida en tienda.'}
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
       {(b.address || legal.phone || b.email) && (
         <section className="lp-band lp-band-tint">
-          <div className="lp-inner lp-contact">
-            <h3 className="lp-h">{shop}</h3>
-            <ul>
-              {b.address && <li>📍 {b.address}</li>}
+          <div className="lp-inner">
+            <h3 className="lp-h">Dónde estamos</h3>
+            <div className="lp-contact">
+              {b.address && (
+                <div className="lp-contact-item">
+                  <span className="lp-contact-icon">
+                    <Icon name="pin" />
+                  </span>
+                  <span className="lp-contact-body">
+                    <strong>Dirección</strong>
+                    {b.address}
+                  </span>
+                </div>
+              )}
               {legal.phone && (
-                <li>
-                  📞 <a href={`tel:${legal.phone.replace(/\s/g, '')}`}>{legal.phone}</a>
-                  {wa && (
-                    <>
-                      {' · '}
-                      <a href={wa} target="_blank" rel="noopener noreferrer">
-                        WhatsApp
-                      </a>
-                    </>
-                  )}
-                </li>
+                <div className="lp-contact-item">
+                  <span className="lp-contact-icon">
+                    <Icon name="phone" />
+                  </span>
+                  <span className="lp-contact-body">
+                    <strong>Teléfono</strong>
+                    <a href={`tel:${legal.phone.replace(/\s/g, '')}`}>{legal.phone}</a>
+                  </span>
+                </div>
               )}
               {b.email && (
-                <li>
-                  ✉️ <a href={`mailto:${b.email}`}>{b.email}</a>
-                </li>
+                <div className="lp-contact-item">
+                  <span className="lp-contact-icon">
+                    <Icon name="mail" />
+                  </span>
+                  <span className="lp-contact-body">
+                    <strong>Correo</strong>
+                    <a href={`mailto:${b.email}`}>{b.email}</a>
+                  </span>
+                </div>
               )}
-            </ul>
+            </div>
+            {wa && (
+              <a className="lp-wa" href={wa} target="_blank" rel="noopener noreferrer">
+                <Icon name="whatsapp" />
+                Escríbenos por WhatsApp
+              </a>
+            )}
           </div>
         </section>
       )}

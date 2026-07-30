@@ -4376,6 +4376,16 @@ body {
 .lp-band-tint {
   background: #fafbfd;
 }
+.lp-h-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent-2-dark);
+}
+.lp-h-icon svg {
+  width: 24px;
+  height: 24px;
+}
 .lp-h {
   margin: 0 0 22px;
   font-size: 1.42rem;
@@ -4501,9 +4511,19 @@ body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px 28px;
+  gap: 10px 30px;
   font-size: 0.92rem;
   color: var(--brand-dark);
+}
+.lp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lp-badge svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
 }
 .lp-badge strong {
   color: var(--text);
@@ -4538,8 +4558,21 @@ body {
   border-top-color: #f59e0b;
 }
 .lp-card-icon {
-  font-size: 1.9rem;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+.lp-card-mug .lp-card-icon {
+  background: var(--accent-2-soft);
+  color: var(--accent-2-dark);
+}
+.lp-card-badge .lp-card-icon {
+  background: #fef3c7;
+  color: #b45309;
 }
 .lp-card h4 {
   margin: 0;
@@ -4565,34 +4598,62 @@ body {
   color: #b45309;
 }
 
+/* Subapartado: «Cómo funciona» vive dentro del bloque de «Qué puedes pedir»,
+   porque son la misma idea (qué vendemos y cómo se compra). */
+.lp-sub {
+  margin: 40px 0 18px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
+  font-size: 1.12rem;
+}
 .lp-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  gap: 24px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.lp-steps li {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
+.lp-step {
+  display: block;
+}
+/* Icono grande con el número en una esquina: se entiende el paso de un vistazo
+   sin necesidad de leer, que es para lo que sirve un «cómo funciona». */
+.lp-step-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+.lp-step-icon svg {
+  width: 24px;
+  height: 24px;
 }
 .lp-step-n {
-  flex: 0 0 32px;
-  height: 32px;
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--accent-2-soft);
-  color: var(--accent-2-dark);
+  background: var(--accent-2);
+  color: #fff;
+  font-size: 0.78rem;
   font-weight: 700;
 }
-.lp-steps strong {
+.lp-step strong {
   display: block;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
+  font-size: 1.02rem;
 }
-.lp-steps p {
+.lp-step p {
   margin: 0;
   color: var(--muted);
   font-size: 0.92rem;
@@ -4624,16 +4685,77 @@ body {
   white-space: pre-wrap;
 }
 
-.lp-contact ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.lp-contact {
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
 }
-.lp-contact a {
+.lp-contact-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.lp-contact-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+.lp-contact-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.lp-contact-body {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
+  /* Un correo largo no debe desbordar su tarjeta. */
+  overflow-wrap: anywhere;
+}
+.lp-contact-body strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.lp-contact-body a {
   color: var(--brand-dark);
   font-weight: 600;
+  text-decoration: none;
+}
+.lp-contact-body a:hover {
+  text-decoration: underline;
+}
+
+/* WhatsApp con su verde, que es como lo reconoce cualquiera. */
+.lp-wa {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 18px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: #25d366;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.lp-wa:hover {
+  background: #1da851;
+}
+.lp-wa svg {
+  width: 21px;
+  height: 21px;
 }
 
 @media (max-width: 760px) {
@@ -4692,4 +4814,19 @@ body {
 }
 .topbar h1 a:hover {
   color: var(--brand-dark);
+}
+
+/* Visible solo para lectores de pantalla. Se usa cuando la información ya está en
+   una imagen (el nombre dentro del logo): el texto sigue en el marcado para que el
+   enlace tenga contenido, pero no se dibuja dos veces. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
