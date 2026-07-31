@@ -8,7 +8,7 @@ export function AccountButton() {
   return (
     <a
       className="cart-button account-button"
-      href="#cuenta"
+      href="/cuenta"
       title={customer ? `Mi cuenta · ${customer.nombre}` : 'Acceder / Mi cuenta'}
       aria-label={customer ? `Mi cuenta (${customer.nombre})` : 'Acceder'}
     >

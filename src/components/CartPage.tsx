@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { navigate } from '../lib/router';
 import { useCart } from '../store/useCart';
 import { deleteProjectFiles } from '../lib/projectFiles';
 import { CartProjectCard } from './CartProjectCard';
@@ -23,7 +24,7 @@ export function CartPage() {
 
   // Editing a project sends the user back to the configurator with it loaded.
   const goToConfigurator = () => {
-    window.location.hash = '';
+    navigate('/');
   };
 
   return (
@@ -31,7 +32,7 @@ export function CartPage() {
       <header className="topbar">
         <h1>Tu carrito</h1>
         <nav className="topnav">
-          <a className="btn" href="#">
+          <a className="btn" href="/">
             ← Seguir comprando
           </a>
           <AccountButton />
@@ -41,7 +42,7 @@ export function CartPage() {
       {items.length === 0 ? (
         <div className="cart-page-empty">
           <p>Tu carrito está vacío.</p>
-          <a className="btn btn-primary" href="#">
+          <a className="btn btn-primary" href="/">
             Configurar un proyecto
           </a>
         </div>
@@ -88,7 +89,7 @@ export function CartPage() {
             <button type="button" className="btn btn-primary cart-checkout" onClick={() => setCheckout(true)}>
               Tramitar pedido
             </button>
-            <a className="btn cart-continue" href="#">
+            <a className="btn cart-continue" href="/">
               Añadir otro proyecto
             </a>
           </aside>

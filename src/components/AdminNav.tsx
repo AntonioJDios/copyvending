@@ -22,7 +22,7 @@ export function AdminNav({ title, current }: { title: string; current: '#pedidos
             <span aria-hidden>{a.icon}</span> {a.label}
           </a>
         ))}
-        <a className="btn" href="#">
+        <a className="btn" href="/">
           ← Tienda
         </a>
         <AdminLogoutButton />

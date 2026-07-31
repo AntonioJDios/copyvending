@@ -20,9 +20,9 @@ export function PrivacyPolicy() {
       <header className="topbar">
         <h1>Política de privacidad</h1>
         <nav className="topnav">
-          <a className="btn" href="#aviso-legal">Aviso legal</a>
-          <a className="btn" href="#condiciones">Condiciones de venta</a>
-          <a className="btn" href="#">← Volver</a>
+          <a className="btn" href="/aviso-legal">Aviso legal</a>
+          <a className="btn" href="/condiciones">Condiciones de venta</a>
+          <a className="btn" href="/">← Volver</a>
         </nav>
       </header>
 

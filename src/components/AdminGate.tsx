@@ -67,7 +67,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
             Falta configurar la contraseña del backoffice en el servidor (variable <code>ADMIN_PASSWORD</code>).
             Hasta entonces el panel permanece cerrado.
           </p>
-          <a className="muted admin-login-back" href="#">
+          <a className="muted admin-login-back" href="/">
             ← Volver a la tienda
           </a>
         </div>
@@ -116,7 +116,7 @@ function AdminLogin({ onOk, expired = false }: { onOk: () => void; expired?: boo
         <button type="submit" className="btn btn-primary" disabled={busy || !password}>
           {busy ? 'Entrando…' : 'Entrar'}
         </button>
-        <a className="muted admin-login-back" href="#">
+        <a className="muted admin-login-back" href="/">
           ← Volver a la tienda
         </a>
       </form>

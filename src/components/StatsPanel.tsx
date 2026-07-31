@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { currentPath } from '../lib/router';
 import { useOrders, type Order } from '../store/useOrders';
 import { aggregate, couponAnalytics, couponDaily, monthKey, monthWindow, pivotCouponAgg, pivotItemAgg, seedFromAgg, seriesBy, splitVat, type Bucket, type ConfigStats, type CouponAggRow, type CouponRow, type ItemAggRow, type SeriesPoint, type Unit } from '../lib/stats';
 import { vatRateOf } from '../domain/catalog';
@@ -97,8 +98,8 @@ export function StatsPanel() {
   const [dailyTo, setDailyTo] = useState(() => isoDay(Date.now()));
   // Deep link like #estadisticas/cupon/CODE opens the Coupons tab focused on it.
   const initialCoupon = (() => {
-    const m = window.location.hash.match(/#estadisticas\/cupon\/(.+)$/i);
-    return m ? decodeURIComponent(m[1].split(/[?&]/)[0]).trim().toUpperCase() : '';
+    const m = currentPath().match(/^\/estadisticas\/cupon\/(.+)$/i);
+    return m ? decodeURIComponent(m[1]).trim().toUpperCase() : '';
   })();
   const [statsTab, setStatsTab] = useState<'resumen' | 'config' | 'cupones'>(initialCoupon ? 'cupones' : 'resumen');
   // Server-side aggregation over the FULL history (KPIs, trend, by-source, period

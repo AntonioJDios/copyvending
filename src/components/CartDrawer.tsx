@@ -1,4 +1,5 @@
 import { useCart } from '../store/useCart';
+import { navigate } from '../lib/router';
 import { CartProjectCard } from './CartProjectCard';
 
 const eur = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
@@ -9,7 +10,7 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
 
   const goToCart = () => {
     onClose();
-    window.location.hash = 'carrito';
+    navigate('/carrito');
   };
 
   return (

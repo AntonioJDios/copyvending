@@ -23,6 +23,7 @@ import { CounterGate } from './components/CounterGate';
 import { SiteFooter } from './components/SiteFooter';
 import { Landing } from './components/Landing';
 import { landingOf } from './domain/catalog';
+import { useRoute } from './lib/router';
 import { applySeo } from './lib/seo';
 import { CURRENT_SOURCE } from './lib/source';
 
@@ -35,17 +36,6 @@ const MugConfigurator = lazy(() => import('./mug/MugConfigurator').then((m) => (
 const ChapaConfigurator = lazy(() => import('./chapa/ChapaConfigurator').then((m) => ({ default: m.ChapaConfigurator })));
 const AssistantStudio = lazy(() => import('./components/AssistantStudio').then((m) => ({ default: m.AssistantStudio })));
 const ClientsPanel = lazy(() => import('./components/ClientsPanel').then((m) => ({ default: m.ClientsPanel })));
-
-/** Minimal hash routing: #admin shows the (future) admin panel, else the shop. */
-function useHashRoute(): string {
-  const [hash, setHash] = useState(() => window.location.hash);
-  useEffect(() => {
-    const on = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
-  }, []);
-  return hash;
-}
 
 export default function App() {
   // The counter front (papeleria.html) has to prove it is the shop's device
@@ -60,10 +50,10 @@ export default function App() {
 }
 
 /** Backoffice routes: no storefront footer there. */
-const ADMIN_ROUTES = ['#admin', '#pedidos', '#estadisticas', '#clientes'];
+const ADMIN_ROUTES = ['/admin', '/pedidos', '/estadisticas', '/clientes'];
 
 function Shop() {
-  const route = useHashRoute();
+  const route = useRoute();
   const fetchCatalog = useConfigurator((s) => s.fetchCatalog);
   const restoreSession = useAuth((s) => s.restore);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -98,7 +88,7 @@ function Shop() {
   // The legal links live in the footer, like in any other shop — rendered once
   // here so every customer-facing page gets them.
   const isAdminRoute = ADMIN_ROUTES.some((r) => route.startsWith(r));
-  const onLanding = CURRENT_SOURCE !== 'mostrador' && (route === '' || route === '#' || route.startsWith('#inicio'));
+  const onLanding = CURRENT_SOURCE !== 'mostrador' && (route === '/' || route.startsWith('/inicio'));
   const isDarkLanding = onLanding && landingTemplate === 'oscura';
   const page = renderPage();
   return (
@@ -135,7 +125,7 @@ function Shop() {
             // Con logo el nombre ya está dibujado dentro de la imagen: repetirlo al
             // lado es ruido. Se mantiene en el marcado (oculto) para que el enlace
             // a la portada siga teniendo texto para un lector de pantalla.
-            <a href="#inicio" className={shopLogo ? 'sr-only' : ''}>
+            <a href="/inicio" className={shopLogo ? 'sr-only' : ''}>
               {shopName}
             </a>
           )}
@@ -146,23 +136,23 @@ function Shop() {
         <nav className="topnav">
           <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
             {hasBackend && (
-              <a className="btn" href="#asistente" onClick={() => setMenuOpen(false)}>
+              <a className="btn" href="/asistente" onClick={() => setMenuOpen(false)}>
                 ✨ Asistente
               </a>
             )}
-            <a className="btn" href="#imprimir" onClick={() => setMenuOpen(false)}>
+            <a className="btn" href="/imprimir" onClick={() => setMenuOpen(false)}>
               Imprimir
             </a>
-            <a className="btn" href="#tazas" onClick={() => setMenuOpen(false)}>
+            <a className="btn" href="/tazas" onClick={() => setMenuOpen(false)}>
               Tazas
             </a>
-            <a className="btn" href="#chapas" onClick={() => setMenuOpen(false)}>
+            <a className="btn" href="/chapas" onClick={() => setMenuOpen(false)}>
               Chapas
             </a>
-            <a className="btn" href="#recoger" onClick={() => setMenuOpen(false)}>
+            <a className="btn" href="/recoger" onClick={() => setMenuOpen(false)}>
               Recoger pedido
             </a>
-            <a className="admin-link" href="#admin" title="Administración" onClick={() => setMenuOpen(false)}>
+            <a className="admin-link" href="/admin" title="Administración" onClick={() => setMenuOpen(false)}>
               ⚙
             </a>
           </div>
@@ -177,7 +167,7 @@ function Shop() {
   }
 
   function renderPage() {
-  if (route.startsWith('#admin'))
+  if (route.startsWith('/admin'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AdminGate>
@@ -185,13 +175,13 @@ function Shop() {
         </AdminGate>
       </Suspense>
     );
-  if (route.startsWith('#tazas'))
+  if (route.startsWith('/tazas'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <MugConfigurator />
       </Suspense>
     );
-  if (route.startsWith('#chapas'))
+  if (route.startsWith('/chapas'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <ChapaConfigurator />
@@ -204,19 +194,19 @@ function Shop() {
         <Landing />
       </div>
     );
-  if (route.startsWith('#carrito')) return <CartPage />;
-  if (route.startsWith('#recoger')) return <RecoverOrder />;
-  if (route.startsWith('#privacidad')) return <PrivacyPolicy />;
-  if (route.startsWith('#aviso-legal')) return <LegalNotice />;
-  if (route.startsWith('#condiciones')) return <TermsOfSale />;
-  if (route.startsWith('#cuenta') || route.startsWith('#acceder')) return <Account />;
-  if (route.startsWith('#asistente'))
+  if (route.startsWith('/carrito')) return <CartPage />;
+  if (route.startsWith('/recoger')) return <RecoverOrder />;
+  if (route.startsWith('/privacidad')) return <PrivacyPolicy />;
+  if (route.startsWith('/aviso-legal')) return <LegalNotice />;
+  if (route.startsWith('/condiciones')) return <TermsOfSale />;
+  if (route.startsWith('/cuenta') || route.startsWith('/acceder')) return <Account />;
+  if (route.startsWith('/asistente'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AssistantStudio />
       </Suspense>
     );
-  if (route.startsWith('#pedidos'))
+  if (route.startsWith('/pedidos'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AdminGate>
@@ -224,7 +214,7 @@ function Shop() {
         </AdminGate>
       </Suspense>
     );
-  if (route.startsWith('#estadisticas'))
+  if (route.startsWith('/estadisticas'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AdminGate>
@@ -232,7 +222,7 @@ function Shop() {
         </AdminGate>
       </Suspense>
     );
-  if (route.startsWith('#clientes'))
+  if (route.startsWith('/clientes'))
     return (
       <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
         <AdminGate>

@@ -35,10 +35,10 @@ export function LandingClara() {
               </p>
             )}
             <div className="lp-cta">
-              <a className="btn btn-primary lp-cta-main" href="#imprimir">
+              <a className="btn btn-primary lp-cta-main" href="/imprimir">
                 Sube tus documentos
               </a>
-              <a className="btn lp-cta-alt" href="#recoger">
+              <a className="btn lp-cta-alt" href="/recoger">
                 Seguir un pedido
               </a>
             </div>
@@ -109,7 +109,7 @@ export function LandingClara() {
         <div className="lp-inner">
           <h3 className="lp-h">Qué puedes pedir</h3>
           <div className="lp-cards">
-            <a className="lp-card lp-card-print" href="#imprimir">
+            <a className="lp-card lp-card-print" href="/imprimir">
               <span className="lp-card-icon">
                 <Icon name="printer" />
               </span>
@@ -118,7 +118,7 @@ export function LandingClara() {
               <span className="lp-card-go">Empezar a imprimir →</span>
             </a>
             {t.showMugs && (
-              <a className="lp-card lp-card-mug" href="#tazas">
+              <a className="lp-card lp-card-mug" href="/tazas">
                 <span className="lp-card-icon">
                   <Icon name="mug" />
                 </span>
@@ -128,7 +128,7 @@ export function LandingClara() {
               </a>
             )}
             {t.showBadges && (
-              <a className="lp-card lp-card-badge" href="#chapas">
+              <a className="lp-card lp-card-badge" href="/chapas">
                 <span className="lp-card-icon">
                   <Icon name="badge" />
                 </span>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { navigate } from '../lib/router';
 import { computePrice } from '../domain/pricing';
 import { validate } from '../domain/rules';
 import { useConfigurator } from '../store/useConfigurator';
@@ -87,7 +88,7 @@ export function PriceBar() {
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
       alert(`Pedido ${editingOrderId} actualizado.`);
       clearProject();
-      window.location.hash = 'recoger';
+      navigate('/recoger');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo actualizar el pedido.');
     } finally {

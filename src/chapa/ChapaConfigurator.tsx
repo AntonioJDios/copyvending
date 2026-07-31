@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { navigate } from '../lib/router';
 import Cropper, { type Area } from 'react-easy-crop';
 import { cropToDataUrl } from '../lib/cropImage';
 import { BadgeScene } from './BadgeScene';
@@ -100,11 +101,11 @@ export function ChapaConfigurator() {
       <header className="topbar">
         <h1>Chapa personalizada</h1>
         <nav className="topnav">
-          <a className="btn" href="#">
+          <a className="btn" href="/">
             ← Volver
           </a>
           <AccountButton />
-          <CartButton onClick={() => (window.location.hash = 'carrito')} />
+          <CartButton onClick={() => (navigate('/carrito'))} />
         </nav>
       </header>
 

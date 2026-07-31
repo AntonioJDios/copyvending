@@ -348,7 +348,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const code = String(randomInt(0, 1000000)).padStart(6, '0');
         const now = Date.now();
         await sql`insert into login_tokens (token, code, email, expires_at, used, created_at) values (${tk}, ${code}, ${email}, ${now + LOGIN_TTL}, false, ${now})`;
-        const link = `${PUBLIC_URL}/#acceder/${tk}`;
+        const link = `${PUBLIC_URL}/acceder/${tk}`;
         try {
           await sendMail(
             email,

@@ -73,12 +73,71 @@ function keyOf(req: VercelRequest): string {
   return k && ALLOWED_KEYS.has(k) ? k : 'catalog';
 }
 
+/**
+ * Rutas públicas de la tienda, para el sitemap.
+ *
+ * Solo lo que un cliente puede visitar y tiene sentido que salga en Google. Fuera
+ * quedan el carrito y la cuenta (no aportan y cambian por usuario), el backoffice
+ * y la tablet del mostrador.
+ */
+export function sitemapPaths(catalog: Record<string, unknown> | null): string[] {
+  const landing = (catalog?.landing ?? {}) as { showMugs?: boolean; showBadges?: boolean };
+  const paths = ['/', '/imprimir'];
+  // No se anuncian secciones que la tienda ha apagado.
+  if (landing.showMugs !== false) paths.push('/tazas');
+  if (landing.showBadges !== false) paths.push('/chapas');
+  paths.push('/recoger', '/aviso-legal', '/condiciones', '/privacidad');
+  return paths;
+}
+
+/** El XML del sitemap, con direcciones absolutas (que es lo único que vale). */
+export function sitemapXml(origin: string, paths: string[], lastmod: string): string {
+  const url = (p: string) =>
+    [
+      '  <url>',
+      `    <loc>${origin}${p}</loc>`,
+      `    <lastmod>${lastmod}</lastmod>`,
+      `    <priority>${p === '/' ? '1.0' : '0.7'}</priority>`,
+      '  </url>',
+    ].join('\n');
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...paths.map(url),
+    '</urlset>',
+    '',
+  ].join('\n');
+}
+
 /** Shared admin settings so every device sees the same shop. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema();
     const sql = db();
     const key = keyOf(req);
+
+    /**
+     * `/sitemap.xml` (reescrito aquí desde vercel.json).
+     *
+     * Va dentro de esta función y no en una propia porque el plan gratuito admite
+     * 12 y ya vamos por 11. Y se genera en el servidor porque un sitemap necesita
+     * direcciones ABSOLUTAS: el dominio cambia en cada despliegue, así que no se
+     * puede dejar escrito en un archivo estático del repositorio.
+     */
+    if (req.method === 'GET' && req.query.sitemap !== undefined) {
+      const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '');
+      if (!host) return res.status(500).send('sin host');
+      const proto = String(req.headers['x-forwarded-proto'] ?? 'https');
+      const rows = (await sql`select value, updated_at from settings where key = 'catalog'`) as {
+        value: Record<string, unknown> | null;
+        updated_at: number | null;
+      }[];
+      const lastmod = new Date(Number(rows[0]?.updated_at) || Date.now()).toISOString().slice(0, 10);
+      const xml = sitemapXml(`${proto}://${host}`, sitemapPaths(rows[0]?.value ?? null), lastmod);
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.status(200).send(xml);
+    }
 
     if (req.method === 'GET') {
       if (PRIVATE_KEYS.has(key) && !requireAdmin(req, res)) return;

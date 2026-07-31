@@ -4115,6 +4115,10 @@ body {
 /* Recoger pedido por código (kiosko) */
 .recover { width: 100%; max-width: 560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 .recover-form { display: flex; gap: 8px; margin-top: 10px; }
+.recover-form input[type='email'] {
+  text-transform: none;
+  letter-spacing: normal;
+}
 .recover-form input {
   flex: 1;
   min-width: 0; /* allow the input to shrink instead of pushing the page wider */
@@ -4123,6 +4127,9 @@ body {
   padding: 12px 14px;
   font-size: 18px;
   letter-spacing: 1px;
+  /* Solo el código va en mayúsculas (P-AB2CD3EF). Aplicarlo también al email lo
+     mostraba como X@Y.ES, que no se parece a lo que el cliente escribió aunque el
+     valor enviado sea el correcto. */
   text-transform: uppercase;
 }
 .recover-error { color: #b3261e; margin-top: 10px; }

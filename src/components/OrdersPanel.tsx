@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { currentQuery, navigate } from '../lib/router';
 import { useOrders, type Order, type OrderStatus } from '../store/useOrders';
 import { useConfigurator } from '../store/useConfigurator';
 import { API_BASE, apiSend } from '../lib/api';
@@ -67,7 +68,7 @@ function OrderItem({ item, orderId, editable }: { item: CartProject; orderId: st
   const onEdit = () => {
     loadProject(item);
     setEditingOrderId(orderId);
-    window.location.hash = '';
+    navigate('/');
   };
   return (
     <div className="ord-item">
@@ -393,8 +394,7 @@ export function OrdersPanel() {
   // `#pedidos?q=PS-123` opens the list already searching for that order, so the
   // log can link straight to the order an incident is about.
   const [term, setTerm] = useState(() => {
-    const q = window.location.hash.match(/[?&]q=([^&]+)/)?.[1];
-    return q ? decodeURIComponent(q) : '';
+    return currentQuery().get('q') ?? '';
   });
 
   // Filters and search run in SQL (like the statistics), so the list is never
@@ -480,7 +480,7 @@ export function OrdersPanel() {
           <button type="button" className="btn" onClick={() => void pullInbox()} disabled={refreshing}>
             {refreshing ? 'Actualizando…' : '↻ Actualizar'}
           </button>
-          <a className="btn" href="#clientes">👥 Clientes</a>
+          <a className="btn" href="/clientes">👥 Clientes</a>
         </div>
         {sources.length > 1 && (
           <div className="orders-filters orders-filters-src">

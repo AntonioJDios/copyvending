@@ -102,7 +102,7 @@ async function sendEmail(to: string, subject: string, text: string, opts: { inRe
 async function sendWelcome(to: string, nombre: string): Promise<void> {
   await sendEmail(
     to,
-    `¡Bienvenido a ${SHOP_NAME}!`, `¡Hola ${nombre}!\n\nTu cuenta en ${SHOP_NAME} está lista. Desde tu área personal puedes ver y gestionar tus pedidos:\n${PUBLIC_URL}/#cuenta\n\nCuando quieras entrar, te enviaremos un enlace de acceso a este correo (no necesitas contraseña).\n\nGracias por confiar en nosotros.\n${SHOP_NAME}`
+    `¡Bienvenido a ${SHOP_NAME}!`, `¡Hola ${nombre}!\n\nTu cuenta en ${SHOP_NAME} está lista. Desde tu área personal puedes ver y gestionar tus pedidos:\n${PUBLIC_URL}/cuenta\n\nCuando quieras entrar, te enviaremos un enlace de acceso a este correo (no necesitas contraseña).\n\nGracias por confiar en nosotros.\n${SHOP_NAME}`
   );
 }
 

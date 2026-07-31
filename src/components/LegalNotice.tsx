@@ -25,9 +25,9 @@ export function LegalNotice() {
       <header className="topbar">
         <h1>Aviso legal</h1>
         <nav className="topnav">
-          <a className="btn" href="#condiciones">Condiciones de venta</a>
-          <a className="btn" href="#privacidad">Privacidad</a>
-          <a className="btn" href="#">← Volver</a>
+          <a className="btn" href="/condiciones">Condiciones de venta</a>
+          <a className="btn" href="/privacidad">Privacidad</a>
+          <a className="btn" href="/">← Volver</a>
         </nav>
       </header>
 
@@ -100,7 +100,7 @@ export function LegalNotice() {
         <h2>7. Protección de datos</h2>
         <p>
           El tratamiento de los datos personales se describe en la{' '}
-          <a href="#privacidad">política de privacidad</a>.
+          <a href="/privacidad">política de privacidad</a>.
         </p>
 
         <h2>8. Cookies</h2>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { currentPath, navigate } from '../lib/router';
 import { useAuth, type MyOrder, type Address } from '../store/useAuth';
 import { apiGet, hasBackend } from '../lib/api';
 import { registerCustomer } from '../lib/customers';
@@ -58,12 +59,12 @@ export function Account() {
   // On mount: verify the magic link if we arrived via #acceder/<token>, else
   // restore any existing session.
   useEffect(() => {
-    const m = window.location.hash.match(/#acceder\/(.+)$/);
+    const m = currentPath().match(/^\/acceder\/(.+)$/);
     if (m) {
       setVerifying(true);
       verify(decodeURIComponent(m[1]).trim())
         .then(() => {
-          window.location.hash = 'cuenta';
+          navigate('/cuenta');
         })
         .catch((e) => setError(e instanceof Error ? e.message : 'Enlace no válido o caducado'))
         .finally(() => setVerifying(false));
@@ -114,7 +115,7 @@ export function Account() {
     try {
       await deleteAccount();
       alert('Tu cuenta y tus datos personales se han eliminado.');
-      window.location.hash = '';
+      navigate('/');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'No se pudo borrar la cuenta.');
     }
@@ -130,7 +131,7 @@ export function Account() {
               Cerrar sesión
             </button>
           )}
-          <a className="btn" href="#">← Tienda</a>
+          <a className="btn" href="/">← Tienda</a>
         </nav>
       </header>
 
@@ -199,7 +200,7 @@ export function Account() {
                   <ul className="account-orders">
                     {orders.map((o) => (
                       <li key={o.id}>
-                        <a href={`#recoger/${o.id}`} className="account-order-id">{o.id}</a>
+                        <a href={`/recoger/${o.id}`} className="account-order-id">{o.id}</a>
                         <span className={`status-pill st-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
                         <span className="muted">{new Date(o.createdAt).toLocaleDateString('es-ES')}</span>
                         <strong>{eur(o.total)}</strong>
@@ -290,7 +291,7 @@ export function Account() {
                   <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                   <span>
                     {legal.consentPrivacy}{' '}
-                    (<a href="#privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
+                    (<a href="/privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
                   </span>
                 </label>
                 <button type="button" className="btn btn-primary checkout-next" onClick={() => void onRegister()} disabled={busy || !registerOk}>

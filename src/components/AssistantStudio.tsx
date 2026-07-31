@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { navigate } from '../lib/router';
 import { MAX_FILE_MB, uploadService, validateFile } from '../lib/uploads';
 import { readFileInfo } from '../lib/pdf';
 import { analyzeFile, type FileAnalysis } from '../lib/analyzePdf';
@@ -168,7 +169,7 @@ export function AssistantStudio() {
         total: pc.total,
       });
     }
-    window.location.hash = 'carrito';
+    navigate('/carrito');
   };
 
   return (
@@ -176,9 +177,9 @@ export function AssistantStudio() {
       <header className="topbar">
         <h1>Asistente</h1>
         <nav className="topnav">
-          <a className="btn" href="#">← Volver</a>
+          <a className="btn" href="/">← Volver</a>
           <AccountButton />
-          <CartButton onClick={() => (window.location.hash = 'carrito')} />
+          <CartButton onClick={() => (navigate('/carrito'))} />
         </nav>
       </header>
 

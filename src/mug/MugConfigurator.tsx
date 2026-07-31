@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { navigate } from '../lib/router';
 import Cropper, { type Area } from 'react-easy-crop';
 import { MUG_ASPECT, buildMugTexture } from '../lib/cropImage';
 import { MugScene } from './MugScene';
@@ -96,11 +97,11 @@ export function MugConfigurator() {
       <header className="topbar">
         <h1>Taza personalizada</h1>
         <nav className="topnav">
-          <a className="btn" href="#">
+          <a className="btn" href="/">
             ← Volver
           </a>
           <AccountButton />
-          <CartButton onClick={() => (window.location.hash = 'carrito')} />
+          <CartButton onClick={() => (navigate('/carrito'))} />
         </nav>
       </header>
 

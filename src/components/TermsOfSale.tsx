@@ -51,9 +51,9 @@ export function TermsOfSale() {
       <header className="topbar">
         <h1>Condiciones de venta</h1>
         <nav className="topnav">
-          <a className="btn" href="#aviso-legal">Aviso legal</a>
-          <a className="btn" href="#privacidad">Privacidad</a>
-          <a className="btn" href="#">← Volver</a>
+          <a className="btn" href="/aviso-legal">Aviso legal</a>
+          <a className="btn" href="/privacidad">Privacidad</a>
+          <a className="btn" href="/">← Volver</a>
         </nav>
       </header>
 
@@ -75,7 +75,7 @@ export function TermsOfSale() {
         <h2>2. Vendedor</h2>
         <p>
           {name}, NIF {nif}, con domicilio en {address} y correo de contacto {email}. Datos completos en el{' '}
-          <a href="#aviso-legal">aviso legal</a>.
+          <a href="/aviso-legal">aviso legal</a>.
         </p>
 
         <h2>3. Productos y servicios</h2>
@@ -228,8 +228,8 @@ export function TermsOfSale() {
         <h2>11. Archivos del cliente</h2>
         <p>
           El cliente es responsable del contenido de los archivos que sube y de disponer de los derechos necesarios para
-          su reproducción, según lo indicado en el <a href="#aviso-legal">aviso legal</a>. El tratamiento de los datos
-          personales se detalla en la <a href="#privacidad">política de privacidad</a>.
+          su reproducción, según lo indicado en el <a href="/aviso-legal">aviso legal</a>. El tratamiento de los datos
+          personales se detalla en la <a href="/privacidad">política de privacidad</a>.
         </p>
 
         <h2>12. Legislación aplicable</h2>

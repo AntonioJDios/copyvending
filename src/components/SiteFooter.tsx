@@ -16,9 +16,9 @@ export function SiteFooter({ dark = false }: { dark?: boolean } = {}) {
   return (
     <footer className={`site-footer${dark ? ' site-footer-oscura' : ''}`}>
       <nav className="site-footer-links">
-        <a href="#aviso-legal">Aviso legal</a>
-        <a href="#condiciones">Condiciones de venta</a>
-        <a href="#privacidad">Política de privacidad</a>
+        <a href="/aviso-legal">Aviso legal</a>
+        <a href="/condiciones">Condiciones de venta</a>
+        <a href="/privacidad">Política de privacidad</a>
       </nav>
       <p className="site-footer-legal">
         © {year} {b.name || 'Copistería'}

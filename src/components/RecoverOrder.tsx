@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { currentPath, currentQuery, navigate } from '../lib/router';
 import { API_BASE } from '../lib/api';
 import { useConfigurator } from '../store/useConfigurator';
 import { useCart } from '../store/useCart';
@@ -41,7 +42,7 @@ export function RecoverOrder() {
     setEditingOrderId(order.id);
     // Saving the edit needs the same proof of ownership as reading it.
     setEditingOrderEmail(email.trim() || (order.customer.email ?? ''));
-    window.location.hash = '';
+    navigate('/');
   };
 
   const lookup = async (codeArg?: string, emailArg?: string) => {
@@ -63,19 +64,17 @@ export function RecoverOrder() {
     }
   };
 
-  // If arrived via a link like #recoger/P-XXXXXXXX?e=<email>, prefill and search.
+  // If arrived via a link like /recoger/P-XXXXXXXX?e=<email>, prefill and search.
   useEffect(() => {
-    const hash = window.location.hash;
-    const m = hash.match(/#recoger\/(.+)$/);
+    const m = currentPath().match(/^\/recoger\/(.+)$/);
     if (m) {
-      // Redsys (y otras pasarelas) añaden parámetros a la URL de retorno; como la
-      // ruta va tras '#', quedan pegados al código → separamos por ? o &.
-      if (/ds_signature/i.test(hash)) setJustPaid(true);
-      const [codePart, ...rest] = m[1].split(/[?&]/);
-      const c = decodeURIComponent(codePart).trim().toUpperCase();
+      const params = currentQuery();
+      // Redsys añade sus propios parámetros a la URL de retorno; su presencia es
+      // lo que nos dice que el cliente vuelve de pagar.
+      if ([...params.keys()].some((k) => /ds_signature|ds_merchantparameters/i.test(k))) setJustPaid(true);
+      const c = decodeURIComponent(m[1]).trim().toUpperCase();
       setCode(c);
       // Our own emails carry the address (`e=`) so the link works in one click.
-      const params = new URLSearchParams(rest.join('&'));
       const e = (params.get('e') ?? '').trim();
       if (e) {
         setEmail(e);
@@ -107,7 +106,7 @@ export function RecoverOrder() {
       <header className="topbar">
         <h1>Recoger pedido</h1>
         <nav className="topnav">
-          <a className="btn" href="#">← Volver</a>
+          <a className="btn" href="/">← Volver</a>
           <AccountButton />
         </nav>
       </header>

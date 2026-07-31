@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { currentPath, navigate } from '../lib/router';
 import { loadGlsSettings, saveGlsSettings, DEFAULT_GLS_SETTINGS, type GlsSettings } from '../lib/glsSettings';
 import { loadCoupons, saveCoupons } from '../lib/coupons';
 import { NEW_COUPON, type Coupon, type CouponType } from '../domain/coupons';
@@ -98,12 +99,19 @@ type AdminSection =
 
 /** Reads the section from `#admin/<section>` and follows navigation. */
 function useSection(): AdminSection {
-  const read = () => (window.location.hash.match(/^#admin\/([a-z]+)/)?.[1] ?? '') as AdminSection;
+  const read = () => (currentPath().match(/^\/admin\/([a-z]+)/)?.[1] ?? '') as AdminSection;
   const [section, setSection] = useState<AdminSection>(read);
   useEffect(() => {
     const on = () => setSection(read());
+    // El router avisa con su propio evento, además de los del navegador.
+    window.addEventListener('popstate', on);
     window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    window.addEventListener('copisteria:nav', on);
+    return () => {
+      window.removeEventListener('popstate', on);
+      window.removeEventListener('hashchange', on);
+      window.removeEventListener('copisteria:nav', on);
+    };
   }, []);
   return section;
 }
@@ -259,7 +267,7 @@ export function AdminPanel() {
     if (dirty && !window.confirm('Tienes cambios sin guardar. ¿Salir de todas formas y perderlos?')) return;
     if (dirty) setDraft(structuredClone(catalog));
     setDirty(false);
-    window.location.hash = 'admin';
+    navigate('/admin');
   };
 
   return (
@@ -272,7 +280,7 @@ export function AdminPanel() {
             <p className="muted">Elige qué quieres configurar.</p>
             <div className="config-grid">
               {CARDS.filter((c) => API_BASE || (c.id !== 'cupones' && c.id !== 'almacenamiento' && c.id !== 'registro' && c.id !== 'herramientas')).map((c) => (
-                <a key={c.id} className={`config-card${c.warn ? ' warn' : ''}`} href={`#admin/${c.id}`}>
+                <a key={c.id} className={`config-card${c.warn ? ' warn' : ''}`} href={`/admin/${c.id}`}>
                   <span className="config-card-icon" aria-hidden>{c.icon}</span>
                   <span className="config-card-label">{c.label}</span>
                   <span className="config-card-hint">{c.hint}</span>
@@ -1731,8 +1739,8 @@ function LegalEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catal
       <section className="card">
         <h2>Datos para los documentos legales</h2>
         <p className="muted">
-          Rellenan los huecos de las plantillas de <a href="#aviso-legal" target="_blank" rel="noopener noreferrer">aviso legal</a> y{' '}
-          <a href="#condiciones" target="_blank" rel="noopener noreferrer">condiciones de venta</a>. Lo que dejes vacío
+          Rellenan los huecos de las plantillas de <a href="/aviso-legal" target="_blank" rel="noopener noreferrer">aviso legal</a> y{' '}
+          <a href="/condiciones" target="_blank" rel="noopener noreferrer">condiciones de venta</a>. Lo que dejes vacío
           aparecerá entre corchetes en la web.
         </p>
         <div className="admin-grid">
@@ -2150,7 +2158,7 @@ function CouponsEditor() {
               </span>
               <span className="coupon-meta-actions">
                 {c.code.trim() && (
-                  <a className="chip" href={`#estadisticas/cupon/${encodeURIComponent(c.code.trim().toUpperCase())}`}>📊 Estadística</a>
+                  <a className="chip" href={`/estadisticas/cupon/${encodeURIComponent(c.code.trim().toUpperCase())}`}>📊 Estadística</a>
                 )}
                 <button type="button" className="chip chip-danger" onClick={() => removeAt(i)}>Eliminar</button>
               </span>

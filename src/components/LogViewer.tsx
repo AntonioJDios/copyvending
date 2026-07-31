@@ -47,7 +47,7 @@ function Row({ e }: { e: LogEvent }) {
         <span className="log-source">{e.source}</span>
         <span className="log-msg">{e.message}</span>
         {e.orderId && (
-          <a className="log-order" href={`#pedidos?q=${encodeURIComponent(e.orderId)}`}>
+          <a className="log-order" href={`/pedidos?q=${encodeURIComponent(e.orderId)}`}>
             {e.orderId}
           </a>
         )}

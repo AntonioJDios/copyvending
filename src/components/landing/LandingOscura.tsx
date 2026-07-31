@@ -79,11 +79,11 @@ export function LandingOscura() {
               </p>
             )}
             <div className="dk-btns">
-              <a className="dk-b1" href="#imprimir">
+              <a className="dk-b1" href="/imprimir">
                 <Icon name="upload" />
                 Sube tus documentos
               </a>
-              <a className="dk-b2" href="#recoger">
+              <a className="dk-b2" href="/recoger">
                 Seguir mi pedido
               </a>
             </div>
@@ -149,7 +149,7 @@ export function LandingOscura() {
           <h3 className="dk-h">Qué te imprimimos</h3>
           <p className="dk-lead">Todo sale de la misma tienda, y todo lo ves antes de pagarlo.</p>
           <div className="dk-cards">
-            <a className="dk-card dk-c-neon" href="#imprimir">
+            <a className="dk-card dk-c-neon" href="/imprimir">
               <i>
                 <Icon name="printer" />
               </i>
@@ -158,7 +158,7 @@ export function LandingOscura() {
               <span className="dk-go">Empezar a imprimir →</span>
             </a>
             {t.showMugs && (
-              <a className="dk-card dk-c-pink" href="#tazas">
+              <a className="dk-card dk-c-pink" href="/tazas">
                 <i>
                   <Icon name="mug" />
                 </i>
@@ -168,7 +168,7 @@ export function LandingOscura() {
               </a>
             )}
             {t.showBadges && (
-              <a className="dk-card dk-c-lime" href="#chapas">
+              <a className="dk-card dk-c-lime" href="/chapas">
                 <i>
                   <Icon name="badge" />
                 </i>

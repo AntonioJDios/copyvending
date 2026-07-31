@@ -470,7 +470,7 @@ async function sendOrderReply(opts: {
   messageId?: string;
 }): Promise<void> {
   // Looking an order up needs code + email, so carry the address in the link.
-  const link = `${PUBLIC_URL}/#recoger/${opts.orderId}?e=${encodeURIComponent(opts.to)}`;
+  const link = `${PUBLIC_URL}/recoger/${opts.orderId}?e=${encodeURIComponent(opts.to)}`;
   const lines = opts.items.map((it) => {
     const c = (it.config || {}) as Record<string, unknown>;
     const parts = [String(c.size || ''), c.color === 'BN' ? 'B/N' : 'Color', c.dobleCara === '1' ? 'doble cara' : 'una cara'];

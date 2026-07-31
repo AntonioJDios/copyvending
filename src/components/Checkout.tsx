@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { navigate } from '../lib/router';
 import { useCart } from '../store/useCart';
 import { useOrders } from '../store/useOrders';
 import { useAuth, type Address } from '../store/useAuth';
@@ -300,7 +301,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
 
   const finish = () => {
     clear();
-    window.location.hash = '';
+    navigate('/');
   };
 
   return (
@@ -335,7 +336,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
               Estás identificado como <b>{customer!.nombre} {customer!.apellidos}</b> · {customer!.email}
               {customer!.telefono ? ` · ${customer!.telefono}` : ''}. Usaremos los datos de tu cuenta.
             </p>
-            <a className="chip" href="#cuenta">Ver mi cuenta</a>
+            <a className="chip" href="/cuenta">Ver mi cuenta</a>
             <button type="button" className="btn btn-primary checkout-next" onClick={() => setStep(1)}>
               Continuar
             </button>
@@ -450,14 +451,14 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
                 <span>
                   {legal.consentPrivacy}{' '}
-                  (<a href="#privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
+                  (<a href="/privacidad" target="_blank" rel="noopener noreferrer">ver política de privacidad</a>)
                 </span>
               </label>
             )}
 
             <p className="muted checkout-privacy">
               Tratamos tus datos para gestionar tu pedido conforme al RGPD. Más información en la{' '}
-              <a href="#privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a>.
+              <a href="/privacidad" target="_blank" rel="noopener noreferrer">política de privacidad</a>.
             </p>
 
                 <button type="button" className="btn btn-primary checkout-next" disabled={!canContinue} onClick={() => setStep(1)}>
@@ -627,7 +628,7 @@ export function Checkout({ onBack }: { onBack: () => void }) {
                   <input type="checkbox" checked={termsOk} onChange={(e) => setTermsOk(e.target.checked)} />
                   <span>
                     {legal.consentTerms}{' '}
-                    (<a href="#condiciones" target="_blank" rel="noopener noreferrer">ver condiciones de venta</a>)
+                    (<a href="/condiciones" target="_blank" rel="noopener noreferrer">ver condiciones de venta</a>)
                   </span>
                 </label>
 

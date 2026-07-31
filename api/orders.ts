@@ -144,7 +144,7 @@ async function sendEmail(to: string, subject: string, text: string, opts: { inRe
 /** Tracking link for the customer. Carries the email (`e=`) because looking an
  *  order up needs code + email — this keeps our own links one-click. */
 const trackLink = (orderId: string, email: string) =>
-  `${PUBLIC_URL}/#recoger/${orderId}?e=${encodeURIComponent(email)}`;
+  `${PUBLIC_URL}/recoger/${orderId}?e=${encodeURIComponent(email)}`;
 
 // "Ready for pickup" notice (pickup orders only). Best-effort via the shop Gmail.
 async function sendReadyMail(to: string, nombre: string, orderId: string): Promise<void> {
@@ -606,7 +606,7 @@ async function alertOnce(source: string, message: string, detail: string | null)
       `⚠ ${SHOP_NAME}: problema en ${source}`,
       `Se ha registrado un error en la tienda.\n\nDónde: ${source}\nQué: ${message}\n` +
         (detail ? `Detalle: ${detail}\n` : '') +
-        `\nPuedes ver el registro completo en ${PUBLIC_URL}/#admin/registro\n\n` +
+        `\nPuedes ver el registro completo en ${PUBLIC_URL}/admin/registro\n\n` +
         'No se enviará otro aviso de este mismo apartado durante una hora.'
     );
   } catch (e) {
@@ -652,7 +652,7 @@ async function flushPendingAlerts(): Promise<void> {
         rows
           .map((r) => `• [${r.source}] ${r.message}${r.detail ? `\n  ${r.detail.slice(0, 300)}` : ''}`)
           .join('\n') +
-        `\n\nRegistro completo: ${PUBLIC_URL}/#admin/registro\n`
+        `\n\nRegistro completo: ${PUBLIC_URL}/admin/registro\n`
     );
   } catch (e) {
     console.error('[alert] barrido de pendientes', e);
