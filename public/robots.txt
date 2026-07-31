@@ -1,0 +1,9 @@
+# Se puede indexar la tienda entera menos la parte de servidor y el backoffice.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /papeleria.html
+
+# No se declara aquí ningún sitemap: el mismo código sirve a varias tiendas con
+# dominios distintos, y un sitemap tiene que llevar direcciones absolutas. Irá
+# cuando las páginas dejen de estar detrás de un `#` y sean rutas de verdad.

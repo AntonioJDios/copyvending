@@ -54,7 +54,7 @@ body {
   top: 0;
   z-index: 20;
 }
-.topbar h1 {
+.topbar .brand {
   font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -64,7 +64,7 @@ body {
   gap: 10px;
 }
 /* Brand mark before the title. */
-.topbar h1::before {
+.topbar .brand::before {
   content: '';
   width: 26px;
   height: 26px;
@@ -4408,7 +4408,7 @@ body {
   gap: 32px;
   align-items: center;
 }
-.lp-hero-text h2 {
+.lp-hero-text h1 {
   margin: 0 0 12px;
   font-size: clamp(2rem, 4.4vw, 3rem);
   line-height: 1.1;
@@ -4418,7 +4418,7 @@ body {
   color: var(--brand-dark);
 }
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  .lp-hero-text h2 {
+  .lp-hero-text h1 {
     /* El degradado de la marca: turquesa a magenta. */
     background: linear-gradient(100deg, var(--brand-dark), var(--accent-2));
     -webkit-background-clip: text;
@@ -4837,7 +4837,7 @@ body {
 /* ── Logo y marca de la cabecera ─────────────────────────────────────
    El logo sale de la configuración (data URL), así que cada tienda pone el suyo
    sin tocar el código ni el repositorio. */
-.topbar h1.has-logo::before {
+.topbar .brand.has-logo::before {
   /* Con logo no queremos además la marca dibujada por CSS. */
   content: none;
 }
@@ -4849,11 +4849,11 @@ body {
 }
 /* El nombre de la tienda es un enlace a la portada, pero se lee como marca: sin
    subrayado y con el color del titular, no el de un enlace. */
-.topbar h1 a {
+.topbar .brand a {
   color: inherit;
   text-decoration: none;
 }
-.topbar h1 a:hover {
+.topbar .brand a:hover {
   color: var(--brand-dark);
 }
 
@@ -5027,4 +5027,31 @@ body {
 }
 .tpl-group-shared {
   border-left-color: var(--muted);
+}
+
+/* Simulacro del resultado de búsqueda: se entiende mejor viéndolo que leyendo
+   una explicación de qué es una meta description. */
+.seo-preview {
+  display: grid;
+  gap: 2px;
+  max-width: 600px;
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.seo-url {
+  color: #202124;
+  font-size: 0.78rem;
+}
+.seo-title {
+  color: #1a0dab;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+.seo-desc {
+  color: #4d5156;
+  font-size: 0.86rem;
+  line-height: 1.45;
 }

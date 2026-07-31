@@ -92,7 +92,7 @@
   gap: 34px;
   align-items: center;
 }
-.dk-hero h2 {
+.dk-hero h1 {
   margin: 0 0 16px;
   font-size: clamp(2.4rem, 5.6vw, 4.2rem);
   line-height: 0.99;
@@ -628,11 +628,11 @@
   border-bottom: 1px solid #242833;
   color: #f4f6fb;
 }
-.app-landing-oscura .topbar h1 a,
-.app-landing-oscura .topbar h1 {
+.app-landing-oscura .topbar .brand a,
+.app-landing-oscura .topbar .brand {
   color: #f4f6fb;
 }
-.app-landing-oscura .topbar h1 a:hover {
+.app-landing-oscura .topbar .brand a:hover {
   color: #19e3d4;
 }
 .app-landing-oscura .topnav-links .btn {

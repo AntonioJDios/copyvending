@@ -27,7 +27,7 @@ export function LandingClara() {
         <div className="lp-inner lp-hero">
           <div className="lp-hero-text">
             {d.logo && <img className="lp-logo" src={d.logo} alt={d.shop} />}
-            <h2>{t.claim}</h2>
+            <h1>{t.claim}</h1>
             <p>{t.subclaim}</p>
             {d.from !== null && (
               <p className="lp-from">

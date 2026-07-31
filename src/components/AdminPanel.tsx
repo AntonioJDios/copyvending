@@ -19,6 +19,11 @@ import {
   DEFAULT_LEGAL,
   landingOf,
   activeContent,
+  DEFAULT_SEO,
+  seoOf,
+  SEO_TITLE_MAX,
+  SEO_DESC_MAX,
+  type SeoConfig,
   isSafeImageUrl,
   type LandingConfig,
   type LandingContent,
@@ -1451,6 +1456,56 @@ function HeroImageField({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
+/**
+ * Lo que ven Google y WhatsApp.
+ *
+ * Va con los ajustes comunes y no con los de cada portada: el título con el que
+ * quieres salir en el buscador no cambia porque cambies el color del diseño.
+ */
+function SeoFields({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
+  const seo = { ...DEFAULT_SEO, ...(draft.seo ?? {}) };
+  const efectivo = seoOf(draft);
+  const set = (patch: Partial<SeoConfig>) => change((d) => { d.seo = { ...DEFAULT_SEO, ...d.seo, ...patch }; });
+  const largo = (v: string, max: number) => (v.length > max ? ` · ${v.length} caracteres, Google corta sobre los ${max}` : '');
+
+  return (
+    <>
+      <label className="field-block">
+        Título en Google (vacío = se compone solo)
+        <input
+          value={seo.title}
+          onChange={(e) => set({ title: e.target.value })}
+          maxLength={120}
+          placeholder={efectivo.title}
+        />
+      </label>
+      <label className="field-block">
+        Descripción en Google (vacío = la frase de apoyo de la portada)
+        <textarea
+          rows={2}
+          value={seo.description}
+          onChange={(e) => set({ description: e.target.value })}
+          maxLength={320}
+          placeholder={efectivo.description}
+        />
+      </label>
+      <p className="muted">
+        Así se vería el resultado de búsqueda:
+      </p>
+      <div className="seo-preview">
+        <span className="seo-url">{typeof window !== 'undefined' ? window.location.host : 'tudominio.es'}</span>
+        <span className="seo-title">{efectivo.title}</span>
+        <span className="seo-desc">{efectivo.description}</span>
+      </div>
+      <p className="muted">
+        Es también lo que sale al pegar el enlace en WhatsApp, junto con la imagen de portada.
+        {largo(efectivo.title, SEO_TITLE_MAX)}
+        {largo(efectivo.description, SEO_DESC_MAX)}
+      </p>
+    </>
+  );
+}
+
 function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const t = landingOf(draft);
   /** Ajustes que valen para las dos portadas. */
@@ -1564,6 +1619,7 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
       <div className="tpl-group tpl-group-shared">
         <h3>En las dos portadas</h3>
         <p className="muted">Esto no cambia al elegir otro diseño.</p>
+        <SeoFields draft={draft} change={change} />
       <label className="check-row">
         <input type="checkbox" checked={t.showPriceFrom} onChange={(e) => set({ showPriceFrom: e.target.checked })} />
         Mostrar «imprime desde X € la página» con el precio más bajo de tu tarifa

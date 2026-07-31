@@ -23,6 +23,7 @@ import { CounterGate } from './components/CounterGate';
 import { SiteFooter } from './components/SiteFooter';
 import { Landing } from './components/Landing';
 import { landingOf } from './domain/catalog';
+import { applySeo } from './lib/seo';
 import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
@@ -79,6 +80,15 @@ function Shop() {
     void fetchCatalog();
   }, [fetchCatalog]);
 
+  // Etiquetas para buscadores y para compartir. Van aquí y no en el index.html
+  // porque salen de la configuración de la tienda, y el mismo build sirve a
+  // varias. Se recalculan cuando llega el catálogo o cambia de página.
+  const catalog = useConfigurator((s) => s.catalog);
+  useEffect(() => {
+    if (CURRENT_SOURCE === 'mostrador') return; // la tablet no se indexa
+    applySeo(catalog);
+  }, [catalog, route]);
+
   // Restore the customer session once, app-wide, so the account state is known
   // on every page (checkout, cart, headers…).
   useEffect(() => {
@@ -111,7 +121,10 @@ function Shop() {
     return (
       <header className="topbar">
         {/* Con logo se quita la marca dibujada por CSS, para no tener dos. */}
-        <h1 className={shopLogo ? 'has-logo' : ''}>
+        {/* El nombre de la tienda es navegación, no el título de la página: el h1
+            de cada pantalla es su propio titular. Tener el mismo h1 en todas las
+            páginas es de los errores de SEO más comunes. */}
+        <div className={`brand${shopLogo ? ' has-logo' : ''}`}>
           {shopLogo && <img className="brand-logo" src={shopLogo} alt={shopName} />}
           {/* El nombre sale de la ficha del negocio, igual que en el pie: el mismo
               código tiene que poder vestirse de cualquier tienda. En el mostrador
@@ -129,7 +142,7 @@ function Shop() {
           <span className={`source-badge src-${CURRENT_SOURCE}`}>
             {CURRENT_SOURCE === 'mostrador' ? '🏪 Papelería' : '🌐 Web'}
           </span>
-        </h1>
+        </div>
         <nav className="topnav">
           <div className={`topnav-links${menuOpen ? ' open' : ''}`}>
             {hasBackend && (
@@ -232,7 +245,7 @@ function Shop() {
     <div className="app">
       {renderHeader()}
       <div className="hero">
-        <h2>Imprime tus documentos online</h2>
+        <h1>Imprime tus documentos online</h1>
         <p>Sube tus PDF o imágenes, elige cómo imprimirlos y añade al carrito. El precio se calcula al instante.</p>
       </div>
       <ProjectName />

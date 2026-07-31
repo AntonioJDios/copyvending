@@ -353,6 +353,46 @@ export function landingOf(catalog: Pick<Catalog, 'landing'> | undefined): Landin
   };
 }
 
+/**
+ * Lo que ven Google y WhatsApp.
+ *
+ * Es de la TIENDA, no de la plantilla: el título con el que quieres aparecer en el
+ * buscador no cambia porque cambies el color de la portada. Los dos campos son
+ * opcionales y se rellenan solos a partir del nombre y la frase principal, para
+ * que una tienda que no toque esto igualmente salga decente.
+ */
+export interface SeoConfig {
+  /** Título de la pestaña y del resultado en Google. */
+  title: string;
+  /** El párrafo que Google enseña debajo del título. */
+  description: string;
+}
+
+export const DEFAULT_SEO: SeoConfig = { title: '', description: '' };
+
+/**
+ * Título y descripción efectivos.
+ *
+ * Los límites (60 y 160 caracteres) son los que Google suele mostrar antes de
+ * cortar con puntos suspensivos. No se recorta el texto —eso lo hace el buscador—
+ * pero el panel avisa, porque una descripción cortada a mitad de frase da mala
+ * impresión en el resultado de búsqueda.
+ */
+export const SEO_TITLE_MAX = 60;
+export const SEO_DESC_MAX = 160;
+
+export function seoOf(
+  catalog: Pick<Catalog, 'seo' | 'business' | 'landing'> | undefined
+): { title: string; description: string } {
+  const seo = { ...DEFAULT_SEO, ...(catalog?.seo ?? {}) };
+  const shop = catalog?.business?.name?.trim() || 'Copistería';
+  const content = activeContent(landingOf(catalog));
+  return {
+    title: seo.title.trim() || `${shop} · ${content.claim}`,
+    description: seo.description.trim() || content.subclaim,
+  };
+}
+
 /** Textos de la plantilla que la tienda tiene puesta. */
 export function activeContent(landing: LandingConfig): LandingContent {
   return landing.template === 'oscura' ? landing.oscura : landing.clara;
@@ -418,6 +458,8 @@ export interface Catalog {
   legal?: LegalConfig;
   /** Home page texts (optional; absent = the generic defaults). */
   landing?: LandingConfig;
+  /** Título y descripción para buscadores (opcional; se derivan si faltan). */
+  seo?: SeoConfig;
   /** Home delivery config (optional; absent = disabled). */
   shipping?: ShippingConfig;
   /** Paper sizes offered to the customer. */

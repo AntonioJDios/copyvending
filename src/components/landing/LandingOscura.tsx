@@ -71,7 +71,7 @@ export function LandingOscura() {
         <div className="dk-in dk-hero-grid">
           <div>
             {d.logo && <img className="dk-logo" src={d.logo} alt={d.shop} />}
-            <h2>{t.claim}</h2>
+            <h1>{t.claim}</h1>
             <p className="dk-sub">{t.subclaim}</p>
             {d.from !== null && (
               <p className="dk-price">
