@@ -4449,14 +4449,6 @@ body {
   color: var(--accent-2-dark);
   font-size: 1.12rem;
 }
-.lp-logo {
-  display: block;
-  height: 54px;
-  width: auto;
-  max-width: 260px;
-  margin: 0 0 18px;
-  object-fit: contain;
-}
 .lp-cta {
   display: flex;
   flex-wrap: wrap;
