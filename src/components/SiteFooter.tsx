@@ -9,12 +9,12 @@ import { DEFAULT_BUSINESS } from '../domain/catalog';
  * No clearance needed for the configurator's price bar: it is sticky, not fixed, so
  * it scrolls away at the end of the page and this footer follows it.
  */
-export function SiteFooter() {
+export function SiteFooter({ dark = false }: { dark?: boolean } = {}) {
   const b = useConfigurator((s) => s.catalog.business) ?? DEFAULT_BUSINESS;
   const year = new Date().getFullYear();
 
   return (
-    <footer className="site-footer">
+    <footer className={`site-footer${dark ? ' site-footer-oscura' : ''}`}>
       <nav className="site-footer-links">
         <a href="#aviso-legal">Aviso legal</a>
         <a href="#condiciones">Condiciones de venta</a>

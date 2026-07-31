@@ -181,7 +181,22 @@ export interface Notice {
   text: string;
 }
 
+/**
+ * Plantillas de portada.
+ *
+ * Un juego pequeño y CERRADO de diseños con nombre, y cualquier tienda puede
+ * elegir cualquiera. Eso es una función del producto; un componente hecho para una
+ * tienda concreta sería un fork disfrazado, y con seis de esos el mantenimiento se
+ * vuelve imposible. Regla: dos o tres, y ninguna con nada de un cliente dentro.
+ *
+ * Las dos leen EXACTAMENTE los mismos datos (ver useLandingData): solo cambia la
+ * presentación. Añadir un campo obliga a tocar las dos, y ese es el precio.
+ */
+export type LandingTemplate = 'clara' | 'oscura';
+
 export interface LandingConfig {
+  /** Diseño de la portada. */
+  template: LandingTemplate;
   /** Frase principal de la portada. */
   claim: string;
   /** Frase de apoyo, debajo del claim. */
@@ -212,6 +227,9 @@ export interface LandingConfig {
 }
 
 export const DEFAULT_LANDING: LandingConfig = {
+  // La clara por defecto: es la sobria, y una tienda que no ha elegido nada no
+  // debería encontrarse de repente con una portada en negro y neón.
+  template: 'clara',
   claim: 'Tu copistería online',
   subclaim:
     'Sube tus PDF o imágenes, elige cómo imprimirlos y el precio se calcula al instante. Recíbelos en casa o recógelos en tienda.',

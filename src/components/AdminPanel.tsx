@@ -1388,6 +1388,37 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
         Lo que ve quien entra en la web por primera vez. El nombre, la dirección y el teléfono no se ponen aquí: salen
         de los datos del negocio y de la ficha legal, para no tenerlos escritos en dos sitios distintos.
       </p>
+      <div className="field-block">
+        Diseño de la portada
+        <div className="tpl-pick">
+          {([
+            { id: 'clara', label: 'Clara', hint: 'Fondo blanco, sobria. Vale para cualquier tienda.' },
+            { id: 'oscura', label: 'Oscura', hint: 'Negro y neón, tono joven. Pensada para público universitario y de oposiciones.' },
+          ] as const).map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={`tpl-opt tpl-${o.id}${t.template === o.id ? ' tpl-on' : ''}`}
+              onClick={() => set({ template: o.id })}
+            >
+              <span className="tpl-demo" aria-hidden>
+                <span className="tpl-bar" />
+                <span className="tpl-title" />
+                <span className="tpl-row">
+                  <span /><span /><span />
+                </span>
+              </span>
+              <strong>{o.label}</strong>
+              <span className="muted">{o.hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="muted">
+          Cambia el aspecto de la página de inicio. Los textos, el logo, los anuncios y los precios son los mismos en
+          las dos: solo cambia cómo se ven.
+        </p>
+      </div>
+
       <LogoField draft={draft} change={change} />
       <label className="field-block">
         Frase principal

@@ -70,3 +70,28 @@ describe('precio «desde» de la portada', () => {
     expect(cheapestPagePrice({ pagePrices: { a: 0 } })).toBeNull();
   });
 });
+
+/**
+ * Las plantillas son un juego cerrado y las dos leen los MISMOS datos. Lo que se
+ * vigila aquí es que un valor raro en la base de datos (una plantilla de una
+ * versión futura, o un dedazo) no deje la tienda sin portada.
+ */
+describe('plantillas de portada', () => {
+  it('por defecto es la clara', () => {
+    // Una tienda que no ha elegido nada no debe encontrarse una portada en negro.
+    expect(DEFAULT_LANDING.template).toBe('clara');
+    expect(landingOf(undefined).template).toBe('clara');
+  });
+
+  it('respeta la plantilla guardada', () => {
+    expect(landingOf({ landing: { ...DEFAULT_LANDING, template: 'oscura' } }).template).toBe('oscura');
+  });
+
+  it('un valor desconocido no rompe la configuración', () => {
+    // El componente cae en la clara ante cualquier cosa que no sea 'oscura'; aquí
+    // solo se comprueba que el valor llega tal cual y no revienta al leerlo.
+    const raro = landingOf({ landing: { ...DEFAULT_LANDING, template: 'neon' as never } });
+    expect(raro.claim).toBe(DEFAULT_LANDING.claim);
+    expect(raro.template).toBe('neon');
+  });
+});

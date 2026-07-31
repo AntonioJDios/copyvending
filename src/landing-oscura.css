@@ -1,0 +1,645 @@
+/*
+ * Plantilla de portada «oscura».
+ *
+ * En su propio archivo y con todo prefijado `dk-`: no comparte ni una regla con la
+ * clara, así que retocar una no puede romper la otra. index.css ya pasa de 4.000
+ * líneas y meter aquí un tema entero lo haría inmanejable.
+ *
+ * Reglas de la casa:
+ *  - Todo el movimiento se apaga con `prefers-reduced-motion` (al final del archivo).
+ *  - Nada se oculta esperando a JavaScript: sin JS, la página se ve completa.
+ *  - Ni una imagen. Las anillas, el confeti y el celo están dibujados.
+ */
+
+.dk {
+  /* Paleta propia, sin tocar las variables globales: los mismos turquesa y
+     magenta de la marca subidos de tono para que aguanten sobre negro. */
+  --ink: #0a0b0f;
+  --ink-2: #12141b;
+  --line: #242833;
+  --fg: #f4f6fb;
+  --dim: #9aa3b6;
+  --neon: #19e3d4;
+  --pink: #ff2d87;
+  --lime: #c6f24e;
+
+  display: block;
+  background: var(--ink);
+  color: var(--fg);
+}
+
+.dk-in {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 22px;
+}
+
+/* ── Tira de aviso ──────────────────────────────────────────────────── */
+.dk-banner {
+  padding: 10px 20px;
+  background: linear-gradient(90deg, var(--pink), #c00d63);
+  color: #fff;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* ── Anillas: el motivo de la marca, dibujado y en bucle ────────────── */
+.dk-coil {
+  height: 26px;
+  opacity: 0.5;
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='26' viewBox='0 0 120 26'%3E%3Cg fill='none' stroke='%2319e3d4' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 20 C 2 14, 4 4, 12 5'/%3E%3Cpath d='M21 20 C 17 14, 19 4, 27 5'/%3E%3Cpath d='M36 20 C 32 14, 34 4, 42 5'/%3E%3Cpath d='M51 20 C 47 14, 49 4, 57 5'/%3E%3Cpath d='M66 20 C 62 14, 64 4, 72 5'/%3E%3Cpath d='M81 20 C 77 14, 79 4, 87 5'/%3E%3Cpath d='M96 20 C 92 14, 94 4, 102 5'/%3E%3Cpath d='M111 20 C 107 14, 109 4, 117 5'/%3E%3C/g%3E%3C/svg%3E");
+  animation: dk-coilmove 14s linear infinite;
+}
+.dk-coil-pink {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='26' viewBox='0 0 120 26'%3E%3Cg fill='none' stroke='%23ff2d87' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 20 C 2 14, 4 4, 12 5'/%3E%3Cpath d='M21 20 C 17 14, 19 4, 27 5'/%3E%3Cpath d='M36 20 C 32 14, 34 4, 42 5'/%3E%3Cpath d='M51 20 C 47 14, 49 4, 57 5'/%3E%3Cpath d='M66 20 C 62 14, 64 4, 72 5'/%3E%3Cpath d='M81 20 C 77 14, 79 4, 87 5'/%3E%3Cpath d='M96 20 C 92 14, 94 4, 102 5'/%3E%3Cpath d='M111 20 C 107 14, 109 4, 117 5'/%3E%3C/g%3E%3C/svg%3E");
+}
+@keyframes dk-coilmove {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 120px 0;
+  }
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────── */
+.dk-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 60px 0 54px;
+}
+.dk-hero:before,
+.dk-hero:after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+.dk-hero:before {
+  inset: -40% 30% 40% -20%;
+  background: radial-gradient(circle, rgba(25, 227, 212, 0.16), transparent 62%);
+}
+.dk-hero:after {
+  inset: 20% -25% -50% 45%;
+  background: radial-gradient(circle, rgba(255, 45, 135, 0.15), transparent 62%);
+}
+.dk-hero-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 34px;
+  align-items: center;
+}
+.dk-hero h2 {
+  margin: 0 0 16px;
+  font-size: clamp(2.4rem, 5.6vw, 4.2rem);
+  line-height: 0.99;
+  letter-spacing: -0.035em;
+  font-weight: 900;
+}
+.dk-sub {
+  margin: 0 0 20px;
+  max-width: 44ch;
+  color: var(--dim);
+  font-size: 1.1rem;
+  line-height: 1.55;
+}
+.dk-logo {
+  display: block;
+  height: 46px;
+  width: auto;
+  max-width: 240px;
+  margin: 0 0 20px;
+  object-fit: contain;
+}
+.dk-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 24px;
+  padding: 8px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 0.98rem;
+}
+.dk-price b {
+  color: var(--lime);
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+.dk-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dk-b1,
+.dk-b2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 15px 26px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  font-weight: 800;
+  font-size: 1rem;
+  text-decoration: none;
+}
+.dk-b1 {
+  background: var(--neon);
+  color: #04211f;
+  transition: transform 0.12s, box-shadow 0.2s;
+}
+.dk-b1:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(25, 227, 212, 0.35);
+}
+.dk-b2 {
+  border-color: var(--line);
+  color: var(--fg);
+}
+.dk-b2:hover {
+  border-color: var(--pink);
+  color: var(--pink);
+}
+.dk-b1 svg,
+.dk-b2 svg {
+  width: 20px;
+  height: 20px;
+}
+.dk-trust {
+  margin: 20px 0 0;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+/* Confeti: trocitos de papel cayendo, cada uno a su ritmo. */
+.dk-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dk-cf {
+  position: absolute;
+  border-radius: 2px;
+  animation: dk-fall linear infinite;
+}
+.dk-cf-dot {
+  border-radius: 50%;
+}
+.dk-tone-a {
+  background: var(--neon);
+}
+.dk-tone-b {
+  background: var(--pink);
+}
+.dk-tone-c {
+  background: var(--lime);
+}
+/* El triángulo se hace con bordes, así que no lleva fondo. */
+.dk-cf-tri {
+  background: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 10px solid var(--lime);
+}
+@keyframes dk-fall {
+  0% {
+    transform: translateY(-40px) rotate(0deg);
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(420px) rotate(320deg);
+    opacity: 0;
+  }
+}
+
+/* Cuaderno dibujado: tres folios girados con sus anillas arriba. */
+.dk-pad {
+  position: relative;
+  height: 290px;
+  animation: dk-float 6s ease-in-out infinite;
+}
+@keyframes dk-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+.dk-sheet {
+  position: absolute;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+}
+.dk-s1 {
+  inset: 14px 8% 8px 4%;
+  transform: rotate(-5deg);
+  background: #161923;
+}
+.dk-s2 {
+  inset: 8px 4% 14px 8%;
+  transform: rotate(3.5deg);
+}
+.dk-s3 {
+  inset: 0 6% 22px 6%;
+  background: linear-gradient(160deg, #1b2030, #12141b);
+}
+.dk-rings {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  right: 14px;
+  height: 26px;
+  background-repeat: repeat-x;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='26' viewBox='0 0 120 26'%3E%3Cg fill='none' stroke='%23ff2d87' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 20 C 2 14, 4 4, 12 5'/%3E%3Cpath d='M21 20 C 17 14, 19 4, 27 5'/%3E%3Cpath d='M36 20 C 32 14, 34 4, 42 5'/%3E%3Cpath d='M51 20 C 47 14, 49 4, 57 5'/%3E%3Cpath d='M66 20 C 62 14, 64 4, 72 5'/%3E%3Cpath d='M81 20 C 77 14, 79 4, 87 5'/%3E%3Cpath d='M96 20 C 92 14, 94 4, 102 5'/%3E%3Cpath d='M111 20 C 107 14, 109 4, 117 5'/%3E%3C/g%3E%3C/svg%3E");
+}
+.dk-lines {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 64px;
+  bottom: 22px;
+  background: repeating-linear-gradient(transparent 0 21px, var(--line) 21px 22px);
+}
+
+/* ── Marquesina ─────────────────────────────────────────────────────── */
+.dk-mq {
+  overflow: hidden;
+  background: var(--pink);
+  color: #180310;
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+.dk-mq-in {
+  display: flex;
+  gap: 26px;
+  padding: 11px 0;
+  white-space: nowrap;
+  font-weight: 900;
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  animation: dk-slide 26s linear infinite;
+}
+/* Separador entre mensajes, sin ensuciar el marcado. */
+.dk-mq-in span:not(:last-child):after {
+  content: ' ·';
+  opacity: 0.55;
+}
+@keyframes dk-slide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ── Secciones ──────────────────────────────────────────────────────── */
+.dk-sec {
+  padding: 58px 0;
+}
+.dk-h {
+  margin: 0 0 8px;
+  font-size: 1.95rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.dk-h2 {
+  margin-top: 52px;
+}
+.dk-lead {
+  margin: 0 0 28px;
+  color: var(--dim);
+}
+
+.dk-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.dk-card {
+  position: relative;
+  padding: 26px 24px 22px;
+  border-radius: 18px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform 0.14s, border-color 0.14s;
+}
+.dk-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--c);
+}
+.dk-card:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--c);
+}
+.dk-c-neon {
+  --c: var(--neon);
+}
+.dk-c-pink {
+  --c: var(--pink);
+}
+.dk-c-lime {
+  --c: var(--lime);
+}
+.dk-card i {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  margin-bottom: 16px;
+  color: var(--c);
+  /* Sin color-mix: no todos los navegadores lo soportan y aquí no hace falta. */
+  background: rgba(255, 255, 255, 0.06);
+}
+.dk-card i svg {
+  width: 26px;
+  height: 26px;
+}
+.dk-card h4 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.dk-card p {
+  margin: 0 0 16px;
+  color: var(--dim);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+.dk-go {
+  color: var(--c);
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.dk-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dk-step {
+  position: relative;
+  padding: 24px;
+  border-radius: 18px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.dk-n {
+  position: absolute;
+  top: -10px;
+  right: 18px;
+  font-size: 3.4rem;
+  font-weight: 900;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 2px var(--line);
+}
+.dk-step i {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--neon);
+}
+.dk-step i svg {
+  width: 28px;
+  height: 28px;
+}
+.dk-step b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 1.05rem;
+}
+.dk-step p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+/* ── Tablón: papelitos con celo ─────────────────────────────────────── */
+.dk-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 26px;
+}
+.dk-note {
+  position: relative;
+  padding: 26px 24px;
+  border-radius: 4px;
+  color: #141414;
+  background: linear-gradient(170deg, #fff8b0, #ffe95c);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  transform: rotate(-1.2deg);
+}
+.dk-note:nth-child(2n) {
+  background: linear-gradient(170deg, #bdf3ff, #7fe3ff);
+  transform: rotate(1.4deg);
+}
+.dk-note:nth-child(3n) {
+  background: linear-gradient(170deg, #ffc7e6, #ff9ed2);
+  transform: rotate(-1.8deg);
+}
+/* El celo. */
+.dk-note:before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 76px;
+  height: 22px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(255, 255, 255, 0.45);
+  border-left: 1px dashed rgba(0, 0, 0, 0.15);
+  border-right: 1px dashed rgba(0, 0, 0, 0.15);
+}
+.dk-note h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+.dk-note p {
+  margin: 0;
+  color: #2a2a2a;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  /* Lo escribe la tienda: puede traer saltos de línea. */
+  white-space: pre-wrap;
+}
+
+/* ── Contacto ───────────────────────────────────────────────────────── */
+.dk-contact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 16px;
+}
+.dk-ci {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.dk-ci > i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(25, 227, 212, 0.12);
+  color: var(--neon);
+}
+.dk-ci > i svg {
+  width: 20px;
+  height: 20px;
+}
+.dk-ci > div {
+  min-width: 0;
+}
+.dk-ci s {
+  display: block;
+  text-decoration: none;
+  font-size: 0.74rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.dk-ci span,
+.dk-ci a {
+  font-weight: 700;
+  color: var(--fg);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dk-ci a:hover {
+  color: var(--neon);
+}
+.dk-wa {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: #25d366;
+  color: #04210f;
+  font-weight: 900;
+  text-decoration: none;
+}
+.dk-wa:hover {
+  background: #1da851;
+}
+.dk-wa svg {
+  width: 21px;
+  height: 21px;
+}
+
+@media (max-width: 820px) {
+  .dk-hero-grid,
+  .dk-cards,
+  .dk-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dk-hero {
+    padding: 38px 0 40px;
+  }
+  .dk-sec {
+    padding: 44px 0;
+  }
+  .dk-pad {
+    order: 2;
+    height: 220px;
+  }
+}
+
+/* Quien pide menos movimiento no se traga NADA de esto: ni confeti cayendo, ni
+   marquesina deslizándose, ni cuaderno flotando. */
+@media (prefers-reduced-motion: reduce) {
+  .dk *,
+  .dk *:before,
+  .dk *:after,
+  .dk-coil,
+  .dk-mq-in,
+  .dk-pad,
+  .dk-cf {
+    animation: none !important;
+    transition: none !important;
+  }
+  /* El confeti quieto en mitad de una caída queda raro: mejor no verlo. */
+  .dk-confetti {
+    display: none;
+  }
+}
+
+/* ── Cabecera y pie en la portada oscura ────────────────────────────
+   La cabecera es compartida con el resto de la web, así que no se toca: se
+   reviste solo cuando el contenedor lleva .app-landing-oscura. */
+.app-landing-oscura .topbar {
+  background: rgba(10, 11, 15, 0.86);
+  border-bottom: 1px solid #242833;
+  color: #f4f6fb;
+}
+.app-landing-oscura .topbar h1 a,
+.app-landing-oscura .topbar h1 {
+  color: #f4f6fb;
+}
+.app-landing-oscura .topbar h1 a:hover {
+  color: #19e3d4;
+}
+.app-landing-oscura .topnav-links .btn {
+  background: transparent;
+  border-color: #242833;
+  color: #9aa3b6;
+}
+.app-landing-oscura .topnav-links .btn:hover {
+  border-color: #19e3d4;
+  color: #19e3d4;
+}
+.app-landing-oscura .admin-link,
+.app-landing-oscura .burger {
+  color: #9aa3b6;
+  background: transparent;
+  border-color: #242833;
+}
+.app-landing-oscura .source-badge {
+  background: #12141b;
+  color: #9aa3b6;
+}
+
+.site-footer-oscura {
+  background: #0a0b0f;
+  border-top: 1px solid #242833;
+  color: #9aa3b6;
+}
+.site-footer-oscura a {
+  color: #9aa3b6;
+}
+.site-footer-oscura a:hover {
+  color: #19e3d4;
+}

@@ -22,6 +22,7 @@ import { AdminGate } from './components/AdminGate';
 import { CounterGate } from './components/CounterGate';
 import { SiteFooter } from './components/SiteFooter';
 import { Landing } from './components/Landing';
+import { landingOf } from './domain/catalog';
 import { CURRENT_SOURCE } from './lib/source';
 
 // Heavy / secondary screens are loaded on demand (keeps three.js out of the
@@ -70,6 +71,8 @@ function Shop() {
   const [menuOpen, setMenuOpen] = useState(false);
   const shopName = useConfigurator((s) => s.catalog.business?.name) || 'Copistería';
   const shopLogo = useConfigurator((s) => s.catalog.business?.logo) || '';
+  // La plantilla de portada decide el fondo del contenedor: la oscura lo pone negro.
+  const landingTemplate = useConfigurator((s) => landingOf(s.catalog).template);
 
   // Pull the shared admin catalog (prices) so every device shows the same shop.
   useEffect(() => {
@@ -85,11 +88,15 @@ function Shop() {
   // The legal links live in the footer, like in any other shop — rendered once
   // here so every customer-facing page gets them.
   const isAdminRoute = ADMIN_ROUTES.some((r) => route.startsWith(r));
+  const onLanding = CURRENT_SOURCE !== 'mostrador' && (route === '' || route === '#' || route.startsWith('#inicio'));
+  const isDarkLanding = onLanding && landingTemplate === 'oscura';
   const page = renderPage();
   return (
     <>
       {page}
-      {!isAdminRoute && <SiteFooter />}
+      {/* La portada oscura pinta también la cabecera y el pie: un bloque blanco
+          arriba y otro abajo sobre una página negra queda como un error. */}
+      {!isAdminRoute && <SiteFooter dark={isDarkLanding} />}
     </>
   );
 
@@ -177,9 +184,9 @@ function Shop() {
         <ChapaConfigurator />
       </Suspense>
     );
-  if (CURRENT_SOURCE !== 'mostrador' && (route === '' || route === '#' || route.startsWith('#inicio')))
+  if (onLanding)
     return (
-      <div className="app app-landing">
+      <div className={`app app-landing${isDarkLanding ? ' app-landing-oscura' : ''}`}>
         {renderHeader()}
         <Landing />
       </div>
