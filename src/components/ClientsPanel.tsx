@@ -76,7 +76,7 @@ export function ClientsPanel() {
 
   return (
     <div className="app admin">
-      <AdminNav title="Clientes" current="#clientes" />
+      <AdminNav title="Clientes" current="/clientes" />
 
       <div className="admin-body">
         <section className="card">

@@ -79,7 +79,7 @@ function SourceToggles({ draft, change, mod, label, sources = ['online', 'mostra
 /**
  * Configuration sections. `''` is the dashboard.
  *
- * The section lives in the hash (`#admin/precios`), not in component state, so the
+ * The section lives in the URL (`/admin/precios`), not in component state, so the
  * tablet's back gesture returns to the dashboard instead of leaving the backoffice,
  * and a section can be linked to directly.
  */
@@ -97,7 +97,7 @@ type AdminSection =
   | 'registro'
   | 'herramientas';
 
-/** Reads the section from `#admin/<section>` and follows navigation. */
+/** Reads the section from `/admin/<section>` and follows navigation. */
 function useSection(): AdminSection {
   const read = () => (currentPath().match(/^\/admin\/([a-z]+)/)?.[1] ?? '') as AdminSection;
   const [section, setSection] = useState<AdminSection>(read);
@@ -272,7 +272,7 @@ export function AdminPanel() {
 
   return (
     <div className="app admin">
-      <AdminNav title={current ? `Configuración · ${current.label}` : 'Configuración'} current="#admin" />
+      <AdminNav title={current ? `Configuración · ${current.label}` : 'Configuración'} current="/admin" />
 
       <div className="admin-body">
         {!section ? (

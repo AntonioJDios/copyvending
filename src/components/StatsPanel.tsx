@@ -304,7 +304,7 @@ export function StatsPanel() {
 
   return (
     <div className="app admin">
-      <AdminNav title="Estadísticas" current="#estadisticas" />
+      <AdminNav title="Estadísticas" current="/estadisticas" />
 
       <div className="admin-body stats">
         {/* Controles */}

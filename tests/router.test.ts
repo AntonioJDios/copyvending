@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathFromLegacyHash } from '../src/lib/router';
 import { sitemapPaths, sitemapXml } from '../api/catalog';
 
@@ -71,5 +73,42 @@ describe('sitemap', () => {
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(xml).toContain('http://www.sitemaps.org/schemas/sitemap/0.9');
     expect(xml.trimEnd().endsWith('</urlset>')).toBe(true);
+  });
+});
+
+/**
+ * Ningún enlace de navegación debe volver al `#`.
+ *
+ * Al pasar a rutas reales se me escapó AdminNav, que guardaba las direcciones en
+ * un campo `hash` y las pintaba con `href={a.hash}`: la conversión buscaba
+ * `href="#` y no lo vio, así que los cuatro botones de arriba del backoffice
+ * dejaron de funcionar y lo encontró el usuario, no los tests.
+ *
+ * Esto lee los fuentes y falla si reaparece un enlace con `#`. Los colores
+ * (`#cccccc`) no cuentan: se distinguen porque llevan seis dígitos.
+ */
+describe('no quedan enlaces con #', () => {
+  const SRC = join(import.meta.dirname, '..', 'src');
+
+  function tsxFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) return tsxFiles(p);
+      return e.isFile() && e.name.endsWith('.tsx') ? [p] : [];
+    });
+  }
+
+  it('ni escritos a mano ni guardados en una constante', () => {
+    const malos: string[] = [];
+    for (const f of tsxFiles(SRC)) {
+      const src = readFileSync(f, 'utf8');
+      src.split('\n').forEach((line, i) => {
+        // href="#algo" — la forma clásica.
+        if (/href="#[a-zA-Z]/.test(line)) malos.push(`${f}:${i + 1}`);
+        // hash: '#algo' — la que se me escapó.
+        if (/hash:\s*'#[a-zA-Z]/.test(line)) malos.push(`${f}:${i + 1}`);
+      });
+    }
+    expect(malos, `Enlaces con # (deberían ser rutas):\n${malos.join('\n')}`).toEqual([]);
   });
 });

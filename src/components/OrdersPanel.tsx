@@ -473,7 +473,7 @@ export function OrdersPanel() {
 
   return (
     <div className="app admin">
-      <AdminNav title="Pedidos" current="#pedidos" />
+      <AdminNav title="Pedidos" current="/pedidos" />
 
       <div className="orders-body">
         <div className="orders-search">
