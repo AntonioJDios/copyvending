@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { cheapestPagePrice, DEFAULT_LANDING, landingOf } from '../src/domain/catalog';
+import {
+  activeContent,
+  cheapestPagePrice,
+  DEFAULT_CONTENT_CLARA,
+  DEFAULT_CONTENT_OSCURA,
+  DEFAULT_LANDING,
+  landingOf,
+} from '../src/domain/catalog';
 
 /**
- * The home page reads its texts from the shop's configuration. A catalogue saved
- * before this feature existed has no `landing` key at all, and a shop that saved
- * only one field has a partial one — in both cases the page must still render, so
- * the accessor has to fill the gaps rather than hand back `undefined`.
+ * La portada lee sus textos de la configuración de la tienda. Un catálogo guardado
+ * antes de que esto existiera no tiene la clave `landing`, y una tienda que solo
+ * cambió un campo la tiene a medias: en los dos casos la página tiene que
+ * renderizarse igual, así que el accesor rellena los huecos.
  */
 describe('textos de la portada', () => {
   it('un catálogo sin portada usa los valores por defecto', () => {
@@ -14,9 +21,9 @@ describe('textos de la portada', () => {
   });
 
   it('completa los campos que falten sin perder los guardados', () => {
-    const partial = landingOf({ landing: { claim: 'Imprime en Málaga' } as never });
-    expect(partial.claim).toBe('Imprime en Málaga');
-    expect(partial.subclaim).toBe(DEFAULT_LANDING.subclaim);
+    const partial = landingOf({ landing: { clara: { claim: 'Imprime en Málaga' } } as never });
+    expect(partial.clara.claim).toBe('Imprime en Málaga');
+    expect(partial.clara.subclaim).toBe(DEFAULT_CONTENT_CLARA.subclaim);
     expect(partial.showMugs).toBe(true);
   });
 
@@ -29,22 +36,92 @@ describe('textos de la portada', () => {
   it('los textos por defecto no nombran ninguna tienda concreta', () => {
     // El mismo build sirve a varias copisterías: un valor por defecto con el
     // nombre de una de ellas aparecería en la web de las demás.
-    const texts = `${DEFAULT_LANDING.claim} ${DEFAULT_LANDING.subclaim} ${DEFAULT_LANDING.trust}`.toLowerCase();
+    const texts = [DEFAULT_CONTENT_CLARA, DEFAULT_CONTENT_OSCURA]
+      .map((c) => `${c.claim} ${c.subclaim} ${c.trust} ${c.banner}`)
+      .join(' ')
+      .toLowerCase();
     for (const brand of ['fotocopiator', 'aljaybe', 'copyvending']) {
       expect(texts).not.toContain(brand);
     }
   });
 
-  it('el aviso y el tablón nacen vacíos', () => {
+  it('el aviso y el tablón nacen vacíos en las dos portadas', () => {
     // Una tienda recién instalada no debe mostrar una tira de aviso en blanco ni
     // una sección de anuncios sin anuncios.
-    expect(DEFAULT_LANDING.banner).toBe('');
-    expect(DEFAULT_LANDING.notices).toEqual([]);
+    for (const c of [DEFAULT_CONTENT_CLARA, DEFAULT_CONTENT_OSCURA]) {
+      expect(c.banner).toBe('');
+      expect(c.notices).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Cada plantilla guarda SUS textos. Lo importante aquí es que cambiar de portada
+ * no pise lo escrito en la otra: la tienda tiene que poder probar la oscura y
+ * volverse atrás sin haber perdido su tablón.
+ */
+describe('textos por plantilla', () => {
+  const cfg = landingOf({
+    landing: {
+      template: 'clara',
+      clara: { ...DEFAULT_CONTENT_CLARA, claim: 'Copistería del centro' },
+      oscura: { ...DEFAULT_CONTENT_OSCURA, claim: 'Sin dramas', notices: [{ title: 'Ojo', text: 'Cerrado' }] },
+    } as never,
   });
 
-  it('conserva los anuncios guardados', () => {
-    const notices = [{ title: 'Vuelta al cole', text: 'Ya tenemos el material.' }];
-    expect(landingOf({ landing: { ...DEFAULT_LANDING, notices } }).notices).toEqual(notices);
+  it('cada plantilla conserva lo suyo', () => {
+    expect(cfg.clara.claim).toBe('Copistería del centro');
+    expect(cfg.oscura.claim).toBe('Sin dramas');
+    expect(cfg.oscura.notices).toHaveLength(1);
+    // Y la clara no se ha contaminado con los anuncios de la oscura.
+    expect(cfg.clara.notices).toEqual([]);
+  });
+
+  it('activeContent devuelve los de la plantilla puesta', () => {
+    expect(activeContent(cfg).claim).toBe('Copistería del centro');
+    expect(activeContent({ ...cfg, template: 'oscura' }).claim).toBe('Sin dramas');
+  });
+
+  it('por defecto es la clara', () => {
+    // Una tienda que no ha elegido nada no debe encontrarse una portada en negro.
+    expect(DEFAULT_LANDING.template).toBe('clara');
+    expect(landingOf(undefined).template).toBe('clara');
+  });
+
+  it('una plantilla desconocida cae en la clara', () => {
+    // Un valor viejo o un dedazo en la base de datos no puede dejar sin portada.
+    expect(landingOf({ landing: { template: 'neon' } as never }).template).toBe('clara');
+  });
+});
+
+/**
+ * Migración. Las configuraciones guardadas ANTES de que hubiera plantillas tenían
+ * los textos sueltos en la raíz. Si no se recogieran, una tienda que ya había
+ * escrito su portada y su tablón los vería desaparecer al desplegar.
+ */
+describe('configuraciones guardadas antes de las plantillas', () => {
+  const viejo = landingOf({
+    landing: {
+      claim: 'Tu copistería de siempre',
+      banner: 'Cerrado en agosto',
+      notices: [{ title: 'Vuelta al cole', text: 'Ya tenemos material' }],
+      showMugs: false,
+    } as never,
+  });
+
+  it('los textos sueltos pasan a ser los de la clara', () => {
+    expect(viejo.clara.claim).toBe('Tu copistería de siempre');
+    expect(viejo.clara.banner).toBe('Cerrado en agosto');
+    expect(viejo.clara.notices).toHaveLength(1);
+  });
+
+  it('no se pierden los ajustes compartidos', () => {
+    expect(viejo.showMugs).toBe(false);
+  });
+
+  it('la oscura arranca con sus propios valores, no con los heredados', () => {
+    expect(viejo.oscura.claim).toBe(DEFAULT_CONTENT_OSCURA.claim);
+    expect(viejo.oscura.banner).toBe('');
   });
 });
 
@@ -68,30 +145,5 @@ describe('precio «desde» de la portada', () => {
     expect(cheapestPagePrice({ pagePrices: { a: 0, b: 0.04 } })).toBe(0.04);
     expect(cheapestPagePrice({ pagePrices: { a: Number.NaN, b: 0.04 } })).toBe(0.04);
     expect(cheapestPagePrice({ pagePrices: { a: 0 } })).toBeNull();
-  });
-});
-
-/**
- * Las plantillas son un juego cerrado y las dos leen los MISMOS datos. Lo que se
- * vigila aquí es que un valor raro en la base de datos (una plantilla de una
- * versión futura, o un dedazo) no deje la tienda sin portada.
- */
-describe('plantillas de portada', () => {
-  it('por defecto es la clara', () => {
-    // Una tienda que no ha elegido nada no debe encontrarse una portada en negro.
-    expect(DEFAULT_LANDING.template).toBe('clara');
-    expect(landingOf(undefined).template).toBe('clara');
-  });
-
-  it('respeta la plantilla guardada', () => {
-    expect(landingOf({ landing: { ...DEFAULT_LANDING, template: 'oscura' } }).template).toBe('oscura');
-  });
-
-  it('un valor desconocido no rompe la configuración', () => {
-    // El componente cae en la clara ante cualquier cosa que no sea 'oscura'; aquí
-    // solo se comprueba que el valor llega tal cual y no revienta al leerlo.
-    const raro = landingOf({ landing: { ...DEFAULT_LANDING, template: 'neon' as never } });
-    expect(raro.claim).toBe(DEFAULT_LANDING.claim);
-    expect(raro.template).toBe('neon');
   });
 });

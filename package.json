@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -b",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "preview": "vite preview"
   },

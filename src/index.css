@@ -4920,3 +4920,26 @@ body {
 .tpl-oscura .tpl-row span:nth-child(3) {
   border-top-color: #c6f24e;
 }
+
+/* Aviso de qué portada se está editando. */
+.tpl-editing {
+  margin: 4px 0 14px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: 0.9rem;
+}
+.tpl-editing strong {
+  text-transform: capitalize;
+}
+.linklike {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}

@@ -194,24 +194,46 @@ export interface Notice {
  */
 export type LandingTemplate = 'clara' | 'oscura';
 
-export interface LandingConfig {
-  /** Diseño de la portada. */
-  template: LandingTemplate;
-  /** Frase principal de la portada. */
+/**
+ * Textos de UNA portada.
+ *
+ * Cada plantilla tiene los suyos porque el tono cambia de verdad: la clara dice
+ * «Tu copistería online» y la oscura «Imprime tus apuntes sin dramas». Obligar a
+ * compartirlos llevaría a un texto tibio que no funciona en ninguna de las dos.
+ *
+ * Solo texto plano, nunca HTML: lo pinta React como texto, así que no hay forma
+ * de colar un script desde el panel.
+ */
+export interface LandingContent {
+  /** Frase principal. */
   claim: string;
-  /** Frase de apoyo, debajo del claim. */
+  /** Frase de apoyo, debajo. */
   subclaim: string;
   /** Frase corta de confianza (vacía = no se muestra). */
   trust: string;
   /**
-   * Aviso en la tira superior de la web (vacío = no aparece la tira).
+   * Aviso en la tira superior (vacío = no aparece).
    *
-   * Para lo urgente y temporal: cerrado por vacaciones, un cupón, un cambio de
-   * horario. Separado del tablón porque esto se ve sin bajar la página.
+   * Para lo urgente y temporal: cerrado por vacaciones, un cupón, un horario
+   * distinto. Separado del tablón porque esto se ve sin bajar la página.
    */
   banner: string;
-  /** Tablón de anuncios de la tienda. Vacío = no se muestra la sección. */
+  /** Tablón de anuncios. En la oscura se pintan como post-its. Vacío = no se muestra. */
   notices: Notice[];
+}
+
+export interface LandingConfig {
+  /** Diseño de la portada. */
+  template: LandingTemplate;
+  /**
+   * Textos de cada plantilla, por separado.
+   *
+   * Cambiar de plantilla no debe borrar lo escrito en la otra: se guarda todo y
+   * cada una muestra lo suyo, así que se puede probar la oscura y volver sin
+   * perder nada.
+   */
+  clara: LandingContent;
+  oscura: LandingContent;
   /**
    * Mostrar «desde X € la página» con el precio más bajo de la tarifa.
    *
@@ -226,16 +248,34 @@ export interface LandingConfig {
   showBadges: boolean;
 }
 
-export const DEFAULT_LANDING: LandingConfig = {
-  // La clara por defecto: es la sobria, y una tienda que no ha elegido nada no
-  // debería encontrarse de repente con una portada en negro y neón.
-  template: 'clara',
+/** Qué se configura una vez y vale para las dos portadas. */
+export const SHARED_LANDING_FIELDS = ['showPriceFrom', 'showMugs', 'showBadges'] as const;
+
+export const DEFAULT_CONTENT_CLARA: LandingContent = {
   claim: 'Tu copistería online',
   subclaim:
     'Sube tus PDF o imágenes, elige cómo imprimirlos y el precio se calcula al instante. Recíbelos en casa o recógelos en tienda.',
   trust: '',
   banner: '',
   notices: [],
+};
+
+/** El mismo mensaje, en el tono de la plantilla oscura. */
+export const DEFAULT_CONTENT_OSCURA: LandingContent = {
+  claim: 'Imprime tus apuntes sin dramas',
+  subclaim:
+    'Sube el PDF, elige cómo lo quieres y nosotros lo tenemos listo. Encuadernado, a color y en tu casa o para recoger. Sin colas y sin madrugar.',
+  trust: '',
+  banner: '',
+  notices: [],
+};
+
+export const DEFAULT_LANDING: LandingConfig = {
+  // La clara por defecto: es la sobria, y una tienda que no ha elegido nada no
+  // debería encontrarse de repente con una portada en negro y neón.
+  template: 'clara',
+  clara: DEFAULT_CONTENT_CLARA,
+  oscura: DEFAULT_CONTENT_OSCURA,
   showPriceFrom: true,
   showMugs: true,
   showBadges: true,
@@ -253,8 +293,39 @@ export function cheapestPagePrice(catalog: Pick<Catalog, 'pagePrices'> | undefin
   return prices.length > 0 ? Math.min(...prices) : null;
 }
 
+/**
+ * Configuración efectiva de la portada, con los huecos rellenos.
+ *
+ * Se encarga también de las configuraciones GUARDADAS ANTES de que hubiera
+ * plantillas, que tenían los textos sueltos en la raíz (`claim`, `notices`…). Esos
+ * se recogen como textos de la clara, que era la única portada que existía. Sin
+ * esto, una tienda que ya había escrito su tablón lo vería desaparecer.
+ */
 export function landingOf(catalog: Pick<Catalog, 'landing'> | undefined): LandingConfig {
-  return { ...DEFAULT_LANDING, ...(catalog?.landing ?? {}) };
+  const raw = (catalog?.landing ?? {}) as Partial<LandingConfig> & Partial<LandingContent>;
+  const legacy: Partial<LandingContent> = {};
+  if (typeof raw.claim === 'string') legacy.claim = raw.claim;
+  if (typeof raw.subclaim === 'string') legacy.subclaim = raw.subclaim;
+  if (typeof raw.trust === 'string') legacy.trust = raw.trust;
+  if (typeof raw.banner === 'string') legacy.banner = raw.banner;
+  if (Array.isArray(raw.notices)) legacy.notices = raw.notices;
+
+  return {
+    // Una plantilla desconocida (un valor viejo, o un dedazo) cae en la de por
+    // defecto en lugar de dejar la tienda sin portada. El valor de reserva sale de
+    // DEFAULT_LANDING y no escrito a mano aquí: si no, la constante mentiría.
+    template: raw.template === 'oscura' || raw.template === 'clara' ? raw.template : DEFAULT_LANDING.template,
+    clara: { ...DEFAULT_CONTENT_CLARA, ...legacy, ...(raw.clara ?? {}) },
+    oscura: { ...DEFAULT_CONTENT_OSCURA, ...(raw.oscura ?? {}) },
+    showPriceFrom: raw.showPriceFrom ?? DEFAULT_LANDING.showPriceFrom,
+    showMugs: raw.showMugs ?? DEFAULT_LANDING.showMugs,
+    showBadges: raw.showBadges ?? DEFAULT_LANDING.showBadges,
+  };
+}
+
+/** Textos de la plantilla que la tienda tiene puesta. */
+export function activeContent(landing: LandingConfig): LandingContent {
+  return landing.template === 'oscura' ? landing.oscura : landing.clara;
 }
 
 /** Owner-editable behaviour of the AI assistant (from the admin panel). */

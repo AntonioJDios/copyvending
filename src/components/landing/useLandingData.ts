@@ -1,5 +1,14 @@
 import { useConfigurator } from '../../store/useConfigurator';
-import { cheapestPagePrice, DEFAULT_BUSINESS, landingOf, legalOf, type LandingConfig, type Notice } from '../../domain/catalog';
+import {
+  activeContent,
+  cheapestPagePrice,
+  DEFAULT_BUSINESS,
+  landingOf,
+  legalOf,
+  type LandingConfig,
+  type LandingContent,
+  type Notice,
+} from '../../domain/catalog';
 
 /**
  * Todo lo que necesita una portada, ya calculado.
@@ -17,9 +26,16 @@ import { cheapestPagePrice, DEFAULT_BUSINESS, landingOf, legalOf, type LandingCo
  *  - **Lo que no está configurado no se promete.** Cada campo puede venir vacío, y
  *    entonces la plantilla no lo pinta en lugar de mostrar un hueco o un cero.
  */
+/**
+ * Lo que una plantilla necesita saber de la configuración: SUS textos, más los
+ * ajustes que valen para las dos (qué productos se enseñan, si se muestra el
+ * precio). Así una plantilla no puede leer por error los textos de la otra.
+ */
+export type LandingTexts = LandingContent & Pick<LandingConfig, 'showMugs' | 'showBadges' | 'showPriceFrom'>;
+
 export interface LandingData {
-  /** Textos editables por la tienda. */
-  t: LandingConfig;
+  /** Textos de la plantilla activa, más los ajustes compartidos. */
+  t: LandingTexts;
   /** Nombre de la tienda (o un genérico si no está configurado). */
   shop: string;
   /** Logo como data URL, o cadena vacía. */
@@ -46,7 +62,13 @@ export interface LandingData {
 
 export function useLandingData(): LandingData {
   const catalog = useConfigurator((s) => s.catalog);
-  const t = landingOf(catalog);
+  const landing = landingOf(catalog);
+  const t: LandingTexts = {
+    ...activeContent(landing),
+    showMugs: landing.showMugs,
+    showBadges: landing.showBadges,
+    showPriceFrom: landing.showPriceFrom,
+  };
   const b = catalog.business ?? DEFAULT_BUSINESS;
   const legal = legalOf(catalog);
   const ship = catalog.shipping;

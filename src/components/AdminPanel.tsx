@@ -16,9 +16,11 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_VAT_PERCENT,
   DEFAULT_BUSINESS,
-  DEFAULT_LANDING,
   DEFAULT_LEGAL,
   landingOf,
+  activeContent,
+  type LandingConfig,
+  type LandingContent,
   type Notice,
   MAX_LOGO_BYTES,
   DEFAULT_SHIPPING,
@@ -1379,7 +1381,25 @@ function LogoField({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog
 
 function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const t = landingOf(draft);
-  const set = (patch: Partial<typeof t>) => change((d) => { d.landing = { ...DEFAULT_LANDING, ...d.landing, ...patch }; });
+  /** Ajustes que valen para las dos portadas. */
+  const set = (patch: Partial<LandingConfig>) =>
+    change((d) => { d.landing = { ...landingOf(d), ...patch }; });
+  /** Textos de la portada que está seleccionada ahora mismo. */
+  const texts = activeContent(t);
+  const setText = (patch: Partial<LandingContent>) =>
+    change((d) => {
+      const cur = landingOf(d);
+      d.landing = { ...cur, [cur.template]: { ...activeContent(cur), ...patch } };
+    });
+  /** Traer los textos de la otra portada, para no reescribirlos a mano. */
+  const other = t.template === 'oscura' ? 'clara' : 'oscura';
+  const copyFromOther = () => {
+    if (!window.confirm(`¿Copiar los textos de la portada ${other}? Se sobrescriben los de esta.`)) return;
+    change((d) => {
+      const cur = landingOf(d);
+      d.landing = { ...cur, [cur.template]: { ...cur[other === 'clara' ? 'clara' : 'oscura'] } };
+    });
+  };
 
   return (
     <section className="card">
@@ -1414,25 +1434,31 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
           ))}
         </div>
         <p className="muted">
-          Cambia el aspecto de la página de inicio. Los textos, el logo, los anuncios y los precios son los mismos en
-          las dos: solo cambia cómo se ven.
+          Cada portada tiene <strong>sus propios textos y anuncios</strong>, así que puedes probar una sin perder lo
+          escrito en la otra. El logo, los precios y los datos de contacto son los mismos en las dos.
         </p>
       </div>
 
       <LogoField draft={draft} change={change} />
+      <p className="tpl-editing">
+        Estás editando los textos de la portada <strong>{t.template}</strong>.{' '}
+        <button type="button" className="linklike" onClick={copyFromOther}>
+          Copiar los de la {other}
+        </button>
+      </p>
       <label className="field-block">
         Frase principal
-        <input value={t.claim} onChange={(e) => set({ claim: e.target.value })} maxLength={70} />
+        <input value={texts.claim} onChange={(e) => setText({ claim: e.target.value })} maxLength={70} />
       </label>
       <label className="field-block">
         Frase de apoyo
-        <textarea rows={3} value={t.subclaim} onChange={(e) => set({ subclaim: e.target.value })} maxLength={300} />
+        <textarea rows={3} value={texts.subclaim} onChange={(e) => setText({ subclaim: e.target.value })} maxLength={300} />
       </label>
       <label className="field-block">
         Frase de confianza (opcional)
         <input
-          value={t.trust}
-          onChange={(e) => set({ trust: e.target.value })}
+          value={texts.trust}
+          onChange={(e) => setText({ trust: e.target.value })}
           maxLength={120}
           placeholder="Ej.: Miles de opositores ya imprimen sus temarios con nosotros"
         />
@@ -1440,8 +1466,8 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
       <label className="field-block">
         Aviso en la tira superior (vacío = no se muestra)
         <input
-          value={t.banner}
-          onChange={(e) => set({ banner: e.target.value })}
+          value={texts.banner}
+          onChange={(e) => setText({ banner: e.target.value })}
           maxLength={140}
           placeholder="Ej.: Cerrado del 15 al 22 de agosto · Los pedidos se preparan a la vuelta"
         />
@@ -1472,17 +1498,25 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
  */
 function NoticeBoardEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const t = landingOf(draft);
-  const write = (notices: Notice[]) => change((d) => { d.landing = { ...DEFAULT_LANDING, ...d.landing, notices }; });
+  const notices = activeContent(t).notices;
+  // Los anuncios son de la portada seleccionada: en la oscura se pintan como
+  // post-its y el tono suele ser otro, así que no se comparten.
+  const write = (next: Notice[]) =>
+    change((d) => {
+      const cur = landingOf(d);
+      d.landing = { ...cur, [cur.template]: { ...activeContent(cur), notices: next } };
+    });
   const edit = (i: number, patch: Partial<Notice>) =>
-    write(t.notices.map((n, j) => (j === i ? { ...n, ...patch } : n)));
+    write(notices.map((n, j) => (j === i ? { ...n, ...patch } : n)));
 
   return (
     <div className="field-block">
       Tablón de anuncios
       <p className="muted">
-        Aparece como una sección propia en la portada. Sin anuncios no se muestra nada, así que se puede dejar vacío.
+        Aparece como una sección propia en la portada <strong>{t.template}</strong>. Sin anuncios no se muestra
+        nada, así que se puede dejar vacío.
       </p>
-      {t.notices.map((n, i) => (
+      {notices.map((n, i) => (
         <div className="notice-edit" key={i}>
           <input
             value={n.title}
@@ -1499,20 +1533,20 @@ function NoticeBoardEditor({ draft, change }: { draft: Catalog; change: (fn: (d:
           />
           <div className="block-actions">
             <button type="button" className="btn btn-sm" disabled={i === 0} onClick={() => {
-              const next = [...t.notices];
+              const next = [...notices];
               [next[i - 1], next[i]] = [next[i], next[i - 1]];
               write(next);
             }}>
               ↑ Subir
             </button>
-            <button type="button" className="btn btn-sm" onClick={() => write(t.notices.filter((_, j) => j !== i))}>
+            <button type="button" className="btn btn-sm" onClick={() => write(notices.filter((_, j) => j !== i))}>
               Quitar
             </button>
           </div>
         </div>
       ))}
       <div className="block-actions">
-        <button type="button" className="btn" onClick={() => write([...t.notices, { title: '', text: '' }])}>
+        <button type="button" className="btn" onClick={() => write([...notices, { title: '', text: '' }])}>
           + Añadir anuncio
         </button>
       </div>
