@@ -4660,25 +4660,58 @@ body {
   line-height: 1.55;
 }
 
+/* Tablón: papelitos con celo, girados. Los mismos que en la portada oscura —
+   es lo que mejor cuenta que aquello es un tablón de anuncios de verdad — pero
+   con la sombra más suave, porque aquí el fondo es blanco y no negro. */
 .lp-notices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 16px;
+  /* Ancho de papelito, no de columna: con `1fr` dos avisos se estiraban media
+     pantalla y parecían barras de color. Se colocan desde la izquierda. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 300px));
+  justify-content: start;
+  gap: 26px;
 }
 .lp-notice {
-  padding: 18px 20px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent-2);
-  border-radius: var(--radius-sm);
+  /* Un papelito es casi cuadrado: sin esto, un aviso corto queda como una
+     barra de color y se pierde la metáfora del tablón. */
+  min-height: 130px;
+  position: relative;
+  padding: 24px 22px;
+  border-radius: 4px;
+  color: #1f2430;
+  background: linear-gradient(170deg, #fff8b0, #ffe95c);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.16);
+  transform: rotate(-1.2deg);
+}
+.lp-notice:nth-child(2n) {
+  background: linear-gradient(170deg, #d6f3fb, #a8e6f7);
+  transform: rotate(1.4deg);
+}
+.lp-notice:nth-child(3n) {
+  background: linear-gradient(170deg, #ffd9ec, #ffb3d8);
+  transform: rotate(-1.8deg);
+}
+/* El celo. */
+.lp-notice:before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 76px;
+  height: 22px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(255, 255, 255, 0.6);
+  border-left: 1px dashed rgba(0, 0, 0, 0.12);
+  border-right: 1px dashed rgba(0, 0, 0, 0.12);
 }
 .lp-notice h4 {
   margin: 0 0 6px;
   font-size: 1.05rem;
+  font-weight: 800;
 }
 .lp-notice p {
   margin: 0;
-  color: var(--muted);
+  color: #2a2f3a;
   font-size: 0.93rem;
   line-height: 1.55;
   /* El texto lo escribe la tienda: puede traer saltos de línea. */
@@ -4762,6 +4795,9 @@ body {
   .lp-hero,
   .lp-cards,
   .lp-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lp-notices {
     grid-template-columns: minmax(0, 1fr);
   }
   .lp-band {
@@ -4968,4 +5004,27 @@ body {
 }
 .hero-manual input {
   margin-top: 8px;
+}
+
+/* ── Grupos del editor de portada ───────────────────────────────────
+   Lo de cada plantilla, separado de lo común: si no, no se sabe qué se está
+   tocando ni qué se pierde al cambiar de diseño. */
+.tpl-group {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.tpl-group > h3 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+.tpl-name {
+  text-transform: capitalize;
+  color: var(--brand-dark);
+}
+.tpl-group-shared {
+  border-left-color: var(--muted);
 }

@@ -444,10 +444,15 @@
 /* ── Tablón: papelitos con celo ─────────────────────────────────────── */
 .dk-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  /* Ancho de papelito, no de columna (ver .lp-notices). */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 300px));
+  justify-content: start;
   gap: 26px;
 }
 .dk-note {
+  /* Un papelito es casi cuadrado: sin esto, un aviso corto queda como una
+     barra de color y se pierde la metáfora del tablón. */
+  min-height: 130px;
   position: relative;
   padding: 26px 24px;
   border-radius: 4px;
@@ -575,6 +580,9 @@
   .dk-pad {
     order: 2;
     height: 220px;
+  }
+  .dk-board {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

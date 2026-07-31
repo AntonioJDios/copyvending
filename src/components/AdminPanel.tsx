@@ -1512,12 +1512,20 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
       </div>
 
       <LogoField draft={draft} change={change} />
-      <p className="tpl-editing">
-        Estás editando los textos de la portada <strong>{t.template}</strong>.{' '}
-        <button type="button" className="linklike" onClick={copyFromOther}>
-          Copiar los de la {other}
-        </button>
-      </p>
+
+      {/* Lo propio de la portada elegida. Aparece solo cuando esa portada está
+          seleccionada: enseñar ajustes que no se están usando confunde más de lo
+          que ayuda, y la imagen de portada solo la pinta la oscura. */}
+      <div className="tpl-group">
+        <h3>
+          Portada <span className="tpl-name">{t.template}</span>
+        </h3>
+        <p className="tpl-editing">
+          Estos textos son solo de esta portada: si cambias a la {other}, lo escrito aquí se queda guardado.{' '}
+          <button type="button" className="linklike" onClick={copyFromOther}>
+            Copiar los de la {other}
+          </button>
+        </p>
       <label className="field-block">
         Frase principal
         <input value={texts.claim} onChange={(e) => setText({ claim: e.target.value })} maxLength={70} />
@@ -1544,7 +1552,18 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
           placeholder="Ej.: Cerrado del 15 al 22 de agosto · Los pedidos se preparan a la vuelta"
         />
       </label>
-      <HeroImageField value={texts.heroImage} onChange={(heroImage) => setText({ heroImage })} />
+      {/* Solo la oscura pinta una foto de portada; en la clara sería un ajuste
+          que no hace nada. */}
+      {t.template === 'oscura' && (
+        <HeroImageField value={texts.heroImage} onChange={(heroImage) => setText({ heroImage })} />
+      )}
+
+        <NoticeBoardEditor draft={draft} change={change} />
+      </div>
+
+      <div className="tpl-group tpl-group-shared">
+        <h3>En las dos portadas</h3>
+        <p className="muted">Esto no cambia al elegir otro diseño.</p>
       <label className="check-row">
         <input type="checkbox" checked={t.showPriceFrom} onChange={(e) => set({ showPriceFrom: e.target.checked })} />
         Mostrar «imprime desde X € la página» con el precio más bajo de tu tarifa
@@ -1557,7 +1576,7 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
         <input type="checkbox" checked={t.showBadges} onChange={(e) => set({ showBadges: e.target.checked })} />
         Mostrar chapas personalizadas en la portada
       </label>
-      <NoticeBoardEditor draft={draft} change={change} />
+      </div>
     </section>
   );
 }
