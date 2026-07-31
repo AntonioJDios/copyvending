@@ -689,3 +689,20 @@
   background: radial-gradient(circle, rgba(25, 227, 212, 0.22), rgba(255, 45, 135, 0.14) 55%, transparent 72%);
   filter: blur(6px);
 }
+
+/* El logo de la cabecera, en un círculo perfecto.
+   Cuadrado y blanco sobre negro parecía un recorte mal hecho; en un disco pasa a
+   ser una marca. Como dentro de un círculo pequeño no se lee el nombre que
+   muchos logos llevan dibujado, al lado se muestra el nombre de la tienda. */
+.app-landing-oscura .brand-redondo .brand-logo {
+  width: 46px;
+  height: 46px;
+  max-width: none;
+  padding: 5px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #fff;
+  /* `contain` para que no recorte el dibujo: un logo apaisado cabe dentro. */
+  object-fit: contain;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 6px 18px rgba(25, 227, 212, 0.25);
+}

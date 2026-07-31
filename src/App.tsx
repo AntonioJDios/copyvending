@@ -108,24 +108,26 @@ function Shop() {
    * menú desplegado a media interacción.
    */
   function renderHeader() {
+    const ocultarNombre = !!shopLogo && !isDarkLanding;
     return (
       <header className="topbar">
         {/* Con logo se quita la marca dibujada por CSS, para no tener dos. */}
         {/* El nombre de la tienda es navegación, no el título de la página: el h1
             de cada pantalla es su propio titular. Tener el mismo h1 en todas las
             páginas es de los errores de SEO más comunes. */}
-        <div className={`brand${shopLogo ? ' has-logo' : ''}`}>
+        <div className={`brand${shopLogo ? ' has-logo' : ''}${isDarkLanding ? ' brand-redondo' : ''}`}>
           {shopLogo && <img className="brand-logo" src={shopLogo} alt={shopName} />}
           {/* El nombre sale de la ficha del negocio, igual que en el pie: el mismo
               código tiene que poder vestirse de cualquier tienda. En el mostrador
               no es enlace, porque la tablet no necesita la portada comercial. */}
+          {/* Con el logo entero al lado, repetir el nombre es ruido y se oculta
+              (queda en el marcado para el lector de pantalla). Pero en la portada
+              oscura el logo va dentro de un círculo pequeño, donde no se lee: ahí
+              el nombre tiene que estar a la vista. */}
           {CURRENT_SOURCE === 'mostrador' ? (
-            <span className={shopLogo ? 'sr-only' : ''}>{shopName}</span>
+            <span className={ocultarNombre ? 'sr-only' : ''}>{shopName}</span>
           ) : (
-            // Con logo el nombre ya está dibujado dentro de la imagen: repetirlo al
-            // lado es ruido. Se mantiene en el marcado (oculto) para que el enlace
-            // a la portada siga teniendo texto para un lector de pantalla.
-            <a href="/inicio" className={shopLogo ? 'sr-only' : ''}>
+            <a href="/inicio" className={ocultarNombre ? 'sr-only' : ''}>
               {shopName}
             </a>
           )}
