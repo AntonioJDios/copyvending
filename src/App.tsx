@@ -194,6 +194,9 @@ function Shop() {
       <div className={`app app-landing${isDarkLanding ? ' app-landing-oscura' : ''}`}>
         {renderHeader()}
         <Landing />
+        {/* El cajón del carrito vive en cada pantalla que tenga la cabecera: sin
+            esto, en la portada el botón del carrito no abría nada. */}
+        <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       </div>
     );
   if (route.startsWith('/carrito')) return <CartPage />;
