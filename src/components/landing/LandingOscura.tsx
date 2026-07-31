@@ -89,16 +89,29 @@ export function LandingOscura() {
             </div>
             {t.trust && <p className="dk-trust">{t.trust}</p>}
           </div>
-          {/* Cuaderno dibujado. Cuando la tienda pueda subir su foto de portada,
-              irá aquí; hasta entonces esto no deja el hueco vacío. */}
-          <div className="dk-pad" aria-hidden>
-            <span className="dk-sheet dk-s1" />
-            <span className="dk-sheet dk-s2" />
-            <span className="dk-sheet dk-s3">
-              <span className="dk-rings" />
-              <span className="dk-lines" />
-            </span>
-          </div>
+          {/* Con foto, la foto; sin foto, el cuaderno dibujado. Nunca un hueco. */}
+          {t.heroImage ? (
+            <div className="dk-pad dk-pad-photo">
+              <img
+                className="dk-shot"
+                src={t.heroImage}
+                alt=""
+                /* Decorativa: lo que cuenta ya está en el titular, y un lector de
+                   pantalla no debería leer la descripción de una foto de adorno. */
+                aria-hidden
+                loading="eager"
+              />
+            </div>
+          ) : (
+            <div className="dk-pad" aria-hidden>
+              <span className="dk-sheet dk-s1" />
+              <span className="dk-sheet dk-s2" />
+              <span className="dk-sheet dk-s3">
+                <span className="dk-rings" />
+                <span className="dk-lines" />
+              </span>
+            </div>
+          )}
         </div>
       </section>
 

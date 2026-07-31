@@ -19,6 +19,7 @@ import {
   DEFAULT_LEGAL,
   landingOf,
   activeContent,
+  isSafeImageUrl,
   type LandingConfig,
   type LandingContent,
   type Notice,
@@ -1472,6 +1473,34 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
           placeholder="Ej.: Cerrado del 15 al 22 de agosto · Los pedidos se preparan a la vuelta"
         />
       </label>
+      <label className="field-block">
+        Imagen de portada (opcional)
+        <input
+          value={texts.heroImage}
+          onChange={(e) => setText({ heroImage: e.target.value })}
+          placeholder="https://tudominio.es/imagenes/portada.jpg"
+          maxLength={500}
+        />
+      </label>
+      {!isSafeImageUrl(texts.heroImage) ? (
+        <p className="form-error">
+          La dirección tiene que empezar por <strong>https://</strong>. Con http normal el navegador marca la web como
+          no segura.
+        </p>
+      ) : texts.heroImage ? (
+        <div className="hero-preview">
+          <img src={texts.heroImage} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          <span className="muted">
+            Si no ves la imagen aquí, tus clientes tampoco: comprueba que el enlace sea público y directo al archivo.
+          </span>
+        </div>
+      ) : (
+        <p className="muted">
+          Solo la usa la portada oscura. Sin imagen se dibuja una ilustración, así que no queda hueco. Súbela a tu
+          hosting o a tu almacenamiento y pega aquí el enlace; que no pase de unos 150 kB, porque la descarga cada
+          visita.
+        </p>
+      )}
       <label className="check-row">
         <input type="checkbox" checked={t.showPriceFrom} onChange={(e) => set({ showPriceFrom: e.target.checked })} />
         Mostrar «imprime desde X € la página» con el precio más bajo de tu tarifa

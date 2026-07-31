@@ -643,3 +643,26 @@
 .site-footer-oscura a:hover {
   color: #19e3d4;
 }
+
+/* Foto de portada. Sobre negro, una imagen clara es donde va el ojo: se le da
+   esquina redonda, un giro leve y un resplandor de marca detrás. */
+.dk-pad-photo {
+  height: auto;
+}
+.dk-shot {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: auto;
+  border-radius: 22px;
+  transform: rotate(-1.2deg);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+.dk-pad-photo:before {
+  content: '';
+  position: absolute;
+  inset: -14% -10% -18% -10%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(25, 227, 212, 0.22), rgba(255, 45, 135, 0.14) 55%, transparent 72%);
+  filter: blur(6px);
+}

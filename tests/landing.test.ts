@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activeContent,
+  isSafeImageUrl,
   cheapestPagePrice,
   DEFAULT_CONTENT_CLARA,
   DEFAULT_CONTENT_OSCURA,
@@ -145,5 +146,30 @@ describe('precio «desde» de la portada', () => {
     expect(cheapestPagePrice({ pagePrices: { a: 0, b: 0.04 } })).toBe(0.04);
     expect(cheapestPagePrice({ pagePrices: { a: Number.NaN, b: 0.04 } })).toBe(0.04);
     expect(cheapestPagePrice({ pagePrices: { a: 0 } })).toBeNull();
+  });
+});
+
+/**
+ * La dirección de la imagen de portada la escribe la tienda a mano, así que hay
+ * que mirarla. No es tanto por seguridad —un `src` no ejecuta `javascript:` en los
+ * navegadores actuales— como por no dejarlo dependiendo del navegador, y sobre
+ * todo por no romper el candado de la página con un http a secas.
+ */
+describe('dirección de la imagen de portada', () => {
+  it('acepta https y rutas del propio sitio', () => {
+    expect(isSafeImageUrl('https://fotocopiator.es/portada.jpg')).toBe(true);
+    expect(isSafeImageUrl('/imagenes/portada.jpg')).toBe(true);
+  });
+
+  it('vacío es válido: significa sin imagen', () => {
+    expect(isSafeImageUrl('')).toBe(true);
+    expect(isSafeImageUrl('   ')).toBe(true);
+  });
+
+  it('rechaza http, javascript y lo que no sea una dirección', () => {
+    expect(isSafeImageUrl('http://fotocopiator.es/portada.jpg')).toBe(false);
+    expect(isSafeImageUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeImageUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+    expect(isSafeImageUrl('portada.jpg')).toBe(false);
   });
 });

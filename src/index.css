@@ -4943,3 +4943,17 @@ body {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.hero-preview {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.hero-preview img {
+  max-width: 320px;
+  max-height: 180px;
+  width: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  object-fit: cover;
+}

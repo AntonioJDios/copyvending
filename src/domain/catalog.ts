@@ -220,6 +220,15 @@ export interface LandingContent {
   banner: string;
   /** Tablón de anuncios. En la oscura se pintan como post-its. Vacío = no se muestra. */
   notices: Notice[];
+  /**
+   * Dirección de la imagen de portada (vacío = se dibuja la ilustración).
+   *
+   * Es una URL, no el archivo: una foto pesa cientos de kilobytes y la
+   * configuración se descarga en CADA visita — meterla dentro se lo cobraríamos a
+   * todos los clientes de la tienda. La tienda la sube donde quiera (su hosting,
+   * el bucket público de R2) y pega aquí el enlace.
+   */
+  heroImage: string;
 }
 
 export interface LandingConfig {
@@ -258,6 +267,7 @@ export const DEFAULT_CONTENT_CLARA: LandingContent = {
   trust: '',
   banner: '',
   notices: [],
+  heroImage: '',
 };
 
 /** El mismo mensaje, en el tono de la plantilla oscura. */
@@ -268,6 +278,7 @@ export const DEFAULT_CONTENT_OSCURA: LandingContent = {
   trust: '',
   banner: '',
   notices: [],
+  heroImage: '',
 };
 
 export const DEFAULT_LANDING: LandingConfig = {
@@ -288,6 +299,25 @@ export const DEFAULT_LANDING: LandingConfig = {
  * anunciar un cero. Solo mira el precio por página (sin encuadernado ni
  * recargos), que es justo lo que significa «desde».
  */
+/**
+ * ¿Es una dirección de imagen que se puede poner en un `src`?
+ *
+ * Solo https (o una ruta del propio sitio). Sin esto, el panel aceptaría
+ * `javascript:` — los navegadores actuales no lo ejecutan en una imagen, pero no
+ * es algo que quiera dejar dependiendo del navegador. Y http a secas rompería el
+ * candado de la página.
+ */
+export function isSafeImageUrl(url: string): boolean {
+  const v = url.trim();
+  if (!v) return true; // vacío es válido: significa "sin imagen"
+  if (v.startsWith('/')) return true;
+  try {
+    return new URL(v).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function cheapestPagePrice(catalog: Pick<Catalog, 'pagePrices'> | undefined): number | null {
   const prices = Object.values(catalog?.pagePrices ?? {}).filter((n) => Number.isFinite(n) && n > 0);
   return prices.length > 0 ? Math.min(...prices) : null;

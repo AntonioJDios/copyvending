@@ -3,6 +3,7 @@ import {
   activeContent,
   cheapestPagePrice,
   DEFAULT_BUSINESS,
+  isSafeImageUrl,
   landingOf,
   legalOf,
   type LandingConfig,
@@ -63,8 +64,13 @@ export interface LandingData {
 export function useLandingData(): LandingData {
   const catalog = useConfigurator((s) => s.catalog);
   const landing = landingOf(catalog);
+  const content = activeContent(landing);
   const t: LandingTexts = {
-    ...activeContent(landing),
+    ...content,
+    // Se filtra también aquí, no solo en el panel: la configuración se puede
+    // escribir por la API o a mano en la base de datos, y la portada no debería
+    // fiarse de que alguien haya pasado antes por el formulario.
+    heroImage: isSafeImageUrl(content.heroImage) ? content.heroImage.trim() : '',
     showMugs: landing.showMugs,
     showBadges: landing.showBadges,
     showPriceFrom: landing.showPriceFrom,
