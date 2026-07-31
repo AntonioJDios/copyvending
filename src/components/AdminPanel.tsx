@@ -113,6 +113,7 @@ import { API_BASE, apiSend } from '../lib/api';
 import { AdminNav } from './AdminNav';
 import { LogViewer } from './LogViewer';
 import { fetchEvents } from '../lib/statsApi';
+import { uploadHeroImage } from '../lib/heroImage';
 import { downloadBackup, downloadDbExport, parseBackup, restoreBackup } from '../lib/catalogBackup';
 import { downscaleDataUrl } from '../lib/imageDownscale';
 
@@ -1380,6 +1381,76 @@ function LogoField({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog
   );
 }
 
+/**
+ * Imagen de portada: se sube el archivo y se guarda su dirección.
+ *
+ * A diferencia del logo, esto NO va dentro de la configuración: una foto son
+ * cientos de kilobytes y la configuración se descarga en cada visita. Se sube al
+ * almacenamiento —reducida antes en el propio navegador— y se guarda solo el
+ * enlace. También se puede pegar una dirección a mano, por si la tienda prefiere
+ * alojarla en su hosting.
+ */
+function HeroImageField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setError('');
+    setInfo('');
+    setBusy(true);
+    try {
+      const { publicUrl, bytes } = await uploadHeroImage(file);
+      onChange(publicUrl);
+      setInfo(`Subida y optimizada: ${Math.round(bytes / 1024)} kB. Acuérdate de guardar los cambios.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="field-block">
+      Imagen de portada (opcional)
+      {value && (
+        <div className="hero-preview">
+          <img src={value} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          <div className="block-actions">
+            <button type="button" className="btn btn-sm" onClick={() => { onChange(''); setInfo(''); }}>
+              Quitar imagen
+            </button>
+          </div>
+        </div>
+      )}
+      <input type="file" accept="image/*" disabled={busy} onChange={(e) => void pick(e.target.files?.[0])} />
+      {busy && <p className="muted">Subiendo…</p>}
+      {info && <p className="muted">{info}</p>}
+      {error && <p className="form-error">{error}</p>}
+      <details className="hero-manual">
+        <summary>O pegar una dirección</summary>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://tudominio.es/imagenes/portada.jpg"
+          maxLength={500}
+        />
+        {!isSafeImageUrl(value) && (
+          <p className="form-error">
+            La dirección tiene que empezar por <strong>https://</strong>. Con http normal el navegador marca la web
+            como no segura.
+          </p>
+        )}
+      </details>
+      <p className="muted">
+        Solo la usa la portada oscura. Sin imagen se dibuja una ilustración, así que no queda hueco. Al subirla se
+        reduce sola: no hace falta que la prepares.
+      </p>
+    </div>
+  );
+}
+
 function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Catalog) => void) => void }) {
   const t = landingOf(draft);
   /** Ajustes que valen para las dos portadas. */
@@ -1473,34 +1544,7 @@ function LandingEditor({ draft, change }: { draft: Catalog; change: (fn: (d: Cat
           placeholder="Ej.: Cerrado del 15 al 22 de agosto · Los pedidos se preparan a la vuelta"
         />
       </label>
-      <label className="field-block">
-        Imagen de portada (opcional)
-        <input
-          value={texts.heroImage}
-          onChange={(e) => setText({ heroImage: e.target.value })}
-          placeholder="https://tudominio.es/imagenes/portada.jpg"
-          maxLength={500}
-        />
-      </label>
-      {!isSafeImageUrl(texts.heroImage) ? (
-        <p className="form-error">
-          La dirección tiene que empezar por <strong>https://</strong>. Con http normal el navegador marca la web como
-          no segura.
-        </p>
-      ) : texts.heroImage ? (
-        <div className="hero-preview">
-          <img src={texts.heroImage} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-          <span className="muted">
-            Si no ves la imagen aquí, tus clientes tampoco: comprueba que el enlace sea público y directo al archivo.
-          </span>
-        </div>
-      ) : (
-        <p className="muted">
-          Solo la usa la portada oscura. Sin imagen se dibuja una ilustración, así que no queda hueco. Súbela a tu
-          hosting o a tu almacenamiento y pega aquí el enlace; que no pase de unos 150 kB, porque la descarga cada
-          visita.
-        </p>
-      )}
+      <HeroImageField value={texts.heroImage} onChange={(heroImage) => setText({ heroImage })} />
       <label className="check-row">
         <input type="checkbox" checked={t.showPriceFrom} onChange={(e) => set({ showPriceFrom: e.target.checked })} />
         Mostrar «imprime desde X € la página» con el precio más bajo de tu tarifa

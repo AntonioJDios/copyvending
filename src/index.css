@@ -4957,3 +4957,15 @@ body {
   border: 1px solid var(--border);
   object-fit: cover;
 }
+
+.hero-manual {
+  margin: 8px 0;
+}
+.hero-manual summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.hero-manual input {
+  margin-top: 8px;
+}

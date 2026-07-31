@@ -8,6 +8,35 @@ import { createHmac, timingSafeEqual } from 'crypto';
 const MAX_MB = 300;
 const ACCEPTED = ['application/pdf', 'image/'];
 const EXPIRES = 3600; // presigned URL validity (seconds)
+
+/**
+ * Prefijo de los archivos PÚBLICOS (el logo grande, la foto de la portada).
+ *
+ * Todo lo que cuelgue de aquí lo puede descargar cualquiera sin autenticarse, así
+ * que la ruta pública SOLO sirve claves que empiecen por esto. Sin esa
+ * comprobación sería una puerta abierta a los apuntes y los trabajos que suben
+ * los clientes, que viven bajo `jobs/`.
+ */
+const PUBLIC_PREFIX = 'publico/';
+/** Claves públicas admitidas: las genera el servidor, así que el formato es fijo. */
+const PUBLIC_KEY_RE = /^publico\/[0-9a-z-]+\/[0-9a-f-]{36}\.[a-z0-9]{1,5}$/;
+
+/**
+ * ¿Puede servirse esta clave sin autenticación?
+ *
+ * Exportada para poder castigarla a conciencia en los tests: es la única barrera
+ * entre la foto de la portada y los apuntes que suben los clientes. No basta con
+ * mirar el principio de la cadena — la clave tiene que encajar ENTERA con el
+ * formato que genera el servidor, para que ni un `..`, ni una barra de más, ni un
+ * carácter escapado permitan salir de la carpeta.
+ */
+export function isPublicKey(key: string): boolean {
+  if (!key.startsWith(PUBLIC_PREFIX)) return false;
+  if (key.includes('..') || key.includes('//') || key.includes('%')) return false;
+  return PUBLIC_KEY_RE.test(key);
+}
+/** Una foto de portada no debería pesar más que esto ni queriendo. */
+const MAX_PUBLIC_MB = 3;
 /**
  * Almacenamiento R2. SIN valor por defecto, a propósito.
  *
@@ -186,6 +215,41 @@ async function logEvent(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  /**
+   * Entrega de un archivo público, sin autenticación: `GET /api/presign?img=<clave>`.
+   *
+   * Responde con una redirección a una URL firmada. Es lo que permite que la foto
+   * de la portada la vea cualquier visitante aunque las URLs de R2 caduquen: el
+   * navegador sigue la redirección y guarda el resultado en caché.
+   *
+   * LA COMPROBACIÓN DEL PREFIJO ES LO IMPORTANTE DE TODA ESTA FUNCIÓN. Si aceptara
+   * cualquier clave, sería una puerta para descargar los apuntes y los trabajos de
+   * cualquier cliente sin identificarse. Por eso no basta con `startsWith`: la
+   * clave tiene que encajar entera con el formato que genera el servidor, de modo
+   * que ni un `..` ni una barra de más puedan salir de la carpeta.
+   */
+  if (req.method === 'GET' && req.query.img !== undefined) {
+    try {
+      const raw = Array.isArray(req.query.img) ? req.query.img[0] : req.query.img;
+      const key = String(raw ?? '');
+      if (!isPublicKey(key)) return res.status(400).json({ error: 'clave no válida' });
+      if (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY) {
+        return res.status(500).json({ error: 'almacenamiento no configurado' });
+      }
+      const signed = await r2().sign(`${r2BaseUrl()}/${key}?X-Amz-Expires=${EXPIRES}`, {
+        method: 'GET',
+        aws: { signQuery: true },
+      });
+      // Menos que la validez de la firma: si el navegador guardase la redirección
+      // más tiempo del que dura la URL firmada, acabaría pidiendo una caducada.
+      res.setHeader('Cache-Control', `public, max-age=${Math.floor(EXPIRES / 2)}`);
+      return res.redirect(302, signed.url);
+    } catch (e) {
+      console.error('[presign] público', e);
+      return res.status(500).json({ error: 'no se pudo servir el archivo' });
+    }
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 
   try {
@@ -201,6 +265,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       projectId?: string;
       key?: string;
       token?: string;
+      folder?: string;
     };
     const { op, name, type, size, projectId, key, token } = body;
     const client = r2();
@@ -230,6 +295,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // The token travels with the project (cart → order), so the customer can
       // later re-open or delete their own files.
       return res.status(200).json({ key: objectKey, url: signed.url, token: projectToken(projectId) });
+    }
+
+    /**
+     * Subida de un archivo público: la foto de la portada. Solo el administrador.
+     *
+     * Va a su propio prefijo, separado de `jobs/`, porque lo que se sube aquí lo
+     * podrá descargar cualquiera. No se registra en la tabla `files` a propósito:
+     * esa tabla alimenta el barrido de huérfanos, que borra lo que no pertenece a
+     * ningún pedido — y se llevaría por delante la foto de la portada.
+     */
+    if (op === 'putPublic') {
+      if (!isAdmin(req)) return res.status(403).json({ error: 'solo el administrador' });
+      if (typeof name !== 'string' || typeof type !== 'string' || typeof size !== 'number') {
+        return res.status(400).json({ error: 'faltan datos' });
+      }
+      if (!type.startsWith('image/')) return res.status(415).json({ error: 'solo imágenes' });
+      if (size > MAX_PUBLIC_MB * 1024 * 1024) return res.status(413).json({ error: `supera ${MAX_PUBLIC_MB} MB` });
+      const folder = typeof body.folder === 'string' && /^[a-z-]{1,20}$/.test(body.folder) ? body.folder : 'portada';
+      const objectKey = `${PUBLIC_PREFIX}${folder}/${crypto.randomUUID()}${extOf(name) || '.jpg'}`;
+      const signed = await client.sign(`${r2BaseUrl()}/${objectKey}?X-Amz-Expires=${EXPIRES}`, {
+        method: 'PUT',
+        aws: { signQuery: true },
+      });
+      // La dirección que se guarda en la configuración y que verán los visitantes.
+      return res.status(200).json({ key: objectKey, url: signed.url, publicUrl: `/api/presign?img=${encodeURIComponent(objectKey)}` });
     }
 
     if (op === 'get') {
